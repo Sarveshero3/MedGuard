@@ -2,12 +2,12 @@
 
 ## Milestone Checkboxes
 
-- [ ] **Days 1–2: Monorepo Scaffold & Infrastructure Setup**
-  - [ ] Setup monorepo folder layout (`/ms1-core-api`, `/ms2-agent-service`, `/frontend`, `/infra`, `/docs`).
-  - [ ] Create Dockerfiles for `ms1`, `ms2`, and `frontend`.
-  - [ ] Write `docker-compose.yml` linking all services with NGINX and PostgreSQL.
-  - [ ] Initialize PostgreSQL schema v1 (tables matching `schema.md`).
-  - [ ] Configure GitHub Actions CI pipeline (linting and testing checks).
+- [x] **Days 1–2: Monorepo Scaffold & Infrastructure Setup**
+  - [x] Setup monorepo folder layout (`/ms1-core-api`, `/ms2-agent-service`, `/frontend`, `/infra`, `/docs`).
+  - [x] Create Dockerfiles for `ms1`, `ms2`, and `frontend`.
+  - [x] Write `docker-compose.yml` linking all services with NGINX and PostgreSQL.
+  - [x] Initialize PostgreSQL schema v1 (tables matching `schema.md`).
+  - [x] Configure GitHub Actions CI pipeline (linting and testing checks).
   - [ ] Perform vision-LLM extraction spike against 10 real prescription photos in `ms2`.
   - [ ] *Proof It Works*: Stack boots with one command (`docker-compose up --build`); vision model extracts medicine names reliably.
 
@@ -52,3 +52,22 @@
   - [ ] Design robust empty states across all UI screens.
   - [ ] Create final `README.md` and record a video demo.
   - [ ] *Proof It Works*: End-to-end demo of photo upload → extraction → interaction detection → caregiver notification.
+
+---
+
+## Deliverables Added (Milestone 1)
+
+| Deliverable | Location | Status |
+|:---|:---|:---|
+| Monorepo scaffold | Root | ✅ |
+| Express.js backend | `ms1-core-api/` | ✅ |
+| FastAPI backend | `ms2-agent-service/` | ✅ |
+| React + Vite frontend | `frontend/` | ✅ |
+| PostgreSQL schema v1 | `infra/db/init.sql` | ✅ |
+| Docker Compose | `docker-compose.yml` | ✅ |
+| NGINX config | `infra/nginx/nginx.conf` | ✅ |
+| GitHub Actions CI | `.github/workflows/ci.yml` | ✅ |
+| Architecture docs | `docs/architecture.md` | ✅ |
+| Wireframes (6 screens) | `docs/wireframes.md` | ✅ |
+| README | `README.md` | ✅ |
+| Skills directory | `skills/` | ✅ Pushed |

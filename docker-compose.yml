@@ -1,0 +1,103 @@
+# ============================================================
+# MedGuard — Docker Compose (Development)
+# Boots: PostgreSQL, ms1-core-api, ms2-agent-service,
+#         frontend (dev server), and NGINX reverse proxy
+# ============================================================
+
+services:
+  # ── PostgreSQL ─────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-medguard}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-medguard_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-medguard}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-medguard}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - backend
+
+  # ── ms1 — Core API (Express.js) ───────────────────────────
+  ms1-core-api:
+    build:
+      context: ./ms1-core-api
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      MS1_PORT: 4000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-medguard}:${POSTGRES_PASSWORD:-medguard_dev}@postgres:5432/${POSTGRES_DB:-medguard}
+      JWT_SECRET: ${JWT_SECRET:-change-me-to-a-random-64-char-string}
+      MS2_BASE_URL: http://ms2-agent-service:8000
+    ports:
+      - "4000:4000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - backend
+      - frontend-net
+
+  # ── ms2 — Agent Service (FastAPI + LangGraph) ─────────────
+  ms2-agent-service:
+    build:
+      context: ./ms2-agent-service
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      MS2_PORT: 8000
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-sk-placeholder}
+      MS1_BASE_URL: http://ms1-core-api:4000
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - "8000:8000"
+    networks:
+      - backend
+
+  # ── Frontend (React + Vite dev server) ─────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      VITE_API_BASE_URL: /api
+    networks:
+      - frontend-net
+
+  # ── NGINX Reverse Proxy ───────────────────────────────────
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./infra/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - ms1-core-api
+      - frontend
+    networks:
+      - frontend-net
+      - backend
+
+# ── Volumes ──────────────────────────────────────────────────
+volumes:
+  postgres_data:
+
+# ── Networks ─────────────────────────────────────────────────
+networks:
+  frontend-net:
+    driver: bridge
+  backend:
+    driver: bridge
+    internal: true   # ms2 and postgres are not exposed externally
