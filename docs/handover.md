@@ -1,0 +1,1 @@
+# MedGuard Handover Log
