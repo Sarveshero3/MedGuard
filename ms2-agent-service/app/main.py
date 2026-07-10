@@ -23,8 +23,8 @@ app = FastAPI(
 # ── Middleware ────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Internal service; locked down by NGINX
-    allow_methods=["*"],
+    allow_origins=[settings.ms1_base_url, "http://localhost:4000"],  # Lock down allowed origins to core API
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 

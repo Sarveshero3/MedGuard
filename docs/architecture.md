@@ -223,14 +223,44 @@ erDiagram
 
 | Control | Implementation |
 |:---|:---|
-| **Authentication** | JWT with role claims (`patient`, `caregiver`, `admin`) |
-| **Authorization** | Role-based middleware on every route |
-| **Network isolation** | ms2 + PostgreSQL on internal Docker network |
-| **Upload limits** | 8MB max (NGINX + Express) |
-| **DPDP compliance** | Explicit consent at signup, audit log, delete-my-data route |
-| **EXIF stripping** | Removed in ms2 before processing |
+| **Authentication** | JWT with role claims (`patient`, `caregiver`, `admin`); bcrypt-12 password hashing; 1-hour access token expiry |
+| **Authorization (RBAC)** | `requireRoles()` middleware on every route; role-specific enforcement for admin, patient, and caregiver |
+| **IDOR protection** | `verifyPatientAccess()` + `enforcePatientAccess()` middleware on every data endpoint; ownership verified against DB before read/write/delete |
+| **Email verification** | `is_email_verified` tracked in DB; `enforceEmailVerified` middleware blocks medicine add, update, delete, and AI upload for unverified users |
+| **Password reset** | Crypto-random token with 1-hour expiry; generic response on forgot-password to prevent user enumeration |
+| **Rate limiting** | `express-rate-limit`: auth 5/15min, register 3/1hr, upload 5/10min, general API 100/15min |
+| **Input validation** | `security.js` middleware: body/query/param HTML-escaping, UUID format validation, multer file-type (JPEG/PNG only) and size (8MB) enforcement |
+| **Network isolation** | ms2 + PostgreSQL on internal Docker network; DB port bound to `127.0.0.1` only |
+| **Security headers** | NGINX: `X-Frame-Options`, `X-Content-Type-Options`, `X-XSS-Protection`, `Referrer-Policy`, `Content-Security-Policy`; HSTS ready for production |
+| **CORS lockdown** | ms2 CORS restricted to `ms1-core-api` origin only (not `*`) |
+| **Upload limits** | 8MB max (NGINX `client_max_body_size` + Express JSON limit + Multer `fileSize`) |
+| **Audit logging** | Structured JSON logger with automatic redaction of passwords, tokens, secrets; logs auth attempts, IDOR blocks, rate limit hits, unknown endpoints |
+| **Mock email gating** | Verification/reset token links logged to console ONLY when `NODE_ENV=development`; production path redacts tokens |
+| **DPDP compliance** | Explicit consent at signup, audit log in `consent_records`, delete-my-data route planned |
 | **Append-only data** | `interaction_kb` and `brand_generic_map` have DB triggers preventing UPDATE/DELETE |
-| **HTTPS** | Certbot SSL/TLS at NGINX (production) |
+| **HTTPS** | Certbot SSL/TLS at NGINX (production); HSTS header ready to uncomment |
+
+### Restricted Actions for Unverified Accounts
+
+The following actions require `is_email_verified = true` (enforced server-side, not just UI):
+
+| Action | Endpoint | Middleware |
+|:---|:---|:---|
+| Add medicine manually | `POST /api/medicines` | `enforceEmailVerified` |
+| Update medicine | `PUT /api/medicines/:id` | `enforceEmailVerified` |
+| Delete medicine | `DELETE /api/medicines/:id` | `enforceEmailVerified` |
+| Upload prescription photo (AI extraction) | `POST /api/medicines/upload` | `enforceEmailVerified` |
+
+Unverified users **can** still: log in, view their dashboard, read existing medicines, read alerts, and manage caregiver links.
+
+### Known Limitations / TODOs
+
+| Item | Status |
+|:---|:---|
+| Email dispatch via AWS SES | Mock only (console log); gated behind `NODE_ENV=development`. Must wire SES before production deployment. |
+| Refresh token rotation | Not yet implemented; single access token with 1-hour expiry is used. |
+| Account lockout after N failures | Rate limiter blocks IP, but per-account lockout is not implemented. |
+| CSRF protection | Not applicable (stateless JWT auth, no cookies). |
 
 ---
 

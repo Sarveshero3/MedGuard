@@ -100,11 +100,45 @@ The API will return standard HTTP statuses accompanied by structured JSON error 
     }
     ```
 *   **Common Codes**:
-    *   `UNAUTHORIZED`: Invalid or expired JWT token.
-    *   `FORBIDDEN`: User lacks the necessary role claim (e.g. caregiver trying to add a medicine).
-    *   `INSUFFICIENT_CONSENT`: Action attempted without an active DPDP consent record.
-    *   `FILE_TOO_LARGE`: Prescription upload exceeded the 8MB limit.
-    *   `UNPROCESSABLE_IMAGE`: Image lacks recognizable text or is invalid.
+
+    | Code | HTTP Status | Trigger |
+    |:---|:---|:---|
+    | `UNAUTHORIZED` | 401 | Missing/invalid/expired JWT token |
+    | `FORBIDDEN` | 403 | User lacks the necessary role for the route (RBAC) |
+    | `EMAIL_UNVERIFIED` | 403 | Unverified user attempts a verification-locked action (medicine add/update/delete/upload) |
+    | `VALIDATION_ERROR` | 400 | Request body fails schema validation (bad email format, weak password, missing required fields, invalid UUID) |
+    | `EMAIL_ALREADY_IN_USE` | 409 | Registration attempt with a duplicate email address |
+    | `INVALID_TOKEN` | 400 | Invalid or expired email verification / password reset token |
+    | `RATE_LIMIT_EXCEEDED` | 429 | IP exceeded rate limit on auth (5/15min), register (3/1hr), upload (5/10min), or general API (100/15min) |
+    | `NOT_FOUND` | 404 | Requested resource (medicine, alert, caregiver link, endpoint) does not exist |
+    | `BAD_REQUEST` | 400 | Missing required fields (e.g. `patient_id`, `photo` file) |
+    | `BAD_GATEWAY` | 502 | ms2 agent service unreachable or returned an error during extraction |
+    | `INSUFFICIENT_CONSENT` | 403 | Action attempted without an active DPDP consent record |
+    | `FILE_TOO_LARGE` | 413 | Prescription upload exceeded the 8MB limit |
+    | `UNPROCESSABLE_IMAGE` | 422 | Image lacks recognizable text or is invalid |
+    | `INTERNAL_ERROR` | 500 | Uncaught server error (details never leaked to client) |
+
+### 2b. Authentication Token Schema
+
+JWT tokens issued by `ms1-core-api` contain the following payload:
+
+```json
+{
+  "userId": "uuid-v4",
+  "email": "user@example.com",
+  "role": "patient | caregiver | admin",
+  "iat": 1720000000,
+  "exp": 1720003600
+}
+```
+
+| Property | Notes |
+|:---|:---|
+| Signing algorithm | HS256 |
+| Secret | `JWT_SECRET` env var (minimum 64 chars, never committed) |
+| Access token TTL | 1 hour |
+| Refresh token | Not yet implemented (planned) |
+| `is_email_verified` | Re-checked against DB on every `enforceEmailVerified` call, not trusted from the token |
 
 ---
 

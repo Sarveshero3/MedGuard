@@ -22,12 +22,16 @@ CREATE TYPE flag_status        AS ENUM ('pending_review', 'shown', 'acknowledged
 -- 1. users
 -- ─────────────────────────────────────────────────────────────
 CREATE TABLE users (
-    id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    name          VARCHAR(255)   NOT NULL,
-    email         VARCHAR(255)   NOT NULL UNIQUE,
-    password_hash VARCHAR(255)   NOT NULL,
-    role          user_role      NOT NULL DEFAULT 'patient',
-    created_at    TIMESTAMPTZ    NOT NULL DEFAULT NOW()
+    id                       UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name                     VARCHAR(255)   NOT NULL,
+    email                    VARCHAR(255)   NOT NULL UNIQUE,
+    password_hash            VARCHAR(255)   NOT NULL,
+    role                     user_role      NOT NULL DEFAULT 'patient',
+    is_email_verified        BOOLEAN        NOT NULL DEFAULT FALSE,
+    email_verification_token VARCHAR(255),
+    password_reset_token     VARCHAR(255),
+    password_reset_expires   TIMESTAMPTZ,
+    created_at               TIMESTAMPTZ    NOT NULL DEFAULT NOW()
 );
 CREATE INDEX idx_users_email ON users(email);
 CREATE INDEX idx_users_role  ON users(role);
