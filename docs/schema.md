@@ -10,6 +10,10 @@ Stores user profile information and login credentials.
 - `email` (String, Unique)
 - `password_hash` (String)
 - `role` (Enum: `patient`, `caregiver`, `admin`)
+- `is_email_verified` (Boolean)
+- `email_verification_token` (String, Nullable)
+- `password_reset_token` (String, Nullable)
+- `password_reset_expires` (Timestamp, Nullable)
 - `created_at` (Timestamp)
 
 ### 2. `caregiver_links`

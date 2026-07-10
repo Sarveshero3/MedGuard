@@ -18,11 +18,18 @@
 - **Multi-stage Dockerfiles**: Non-root users, health checks, Alpine-based
 
 ### What's next (Milestone 2: Days 3–4)
-- JWT authentication with role-based middleware
 - Seed data for brand-generic mappings and interaction knowledge base
-- DPDP consent screen implementation
 - AWS SES setup
 - EC2 deployment with HTTPS
+
+### Completed Security & Auth Hardening (Milestone 1 Extension)
+- **JWT & Role Claims**: Robust login, registration, email verification, and password reset flows with role claims and token expiry.
+- **IDOR Protection**: Database ownership validation middleware on all resource routes.
+- **Email Gated Privileged Actions**: Gated upload and write actions to verified emails only.
+- **Abuse & Rate Limiting**: Express-rate-limit configured for auth, register, upload, and general API routes.
+- **Strict Input Validation**: HTML escaping, UUID path checks, strict file mime/size upload validations.
+- **Mock Email Gating**: Gated mock log outputs containing tokens behind `NODE_ENV=development`.
+- **Infrastructure Lockdown**: Restricted Postgres port exposure to `127.0.0.1`. Added CSP security headers to NGINX.
 
 ### Open items
 - Vision LLM extraction spike (10 real prescription photos) — pending
