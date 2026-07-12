@@ -4,10 +4,22 @@ import { FRAME_COUNT, getFramePath, COPY_BEATS } from '@/data/medguardFrames';
 
 const MAX_DPR = 2;
 const PRELOAD_CONCURRENCY = 6;
+const START_SCROLL_THRESHOLD = 0.15; // Stationary background zone for first 15% scroll
+const START_CONTENT_THRESHOLD = 0.20; // Copy beats start at 20% scroll progress
+
+// Adjust copy beats to occupy 20% to 100% of scroll progress
+const ADJUSTED_COPY_BEATS = COPY_BEATS.map((beat) => {
+  const range = 1.0 - START_CONTENT_THRESHOLD;
+  return {
+    ...beat,
+    start: START_CONTENT_THRESHOLD + beat.start * range,
+    end: START_CONTENT_THRESHOLD + beat.end * range,
+  };
+});
 
 /**
- * Scroll-driven 268-frame canvas with semantic copy overlays.
- * Canvas is aria-hidden; all narrative text is readable DOM.
+ * Scroll-driven canvas with clinical overlay grid, cover-fit,
+ * delayed scroll sequence start, and cinematic title card.
  */
 export default function MedGuardScrollScene() {
   const wrapperRef = useRef(null);
@@ -33,19 +45,19 @@ export default function MedGuardScrollScene() {
     return () => mq.removeEventListener('change', handler);
   }, []);
 
-  // Scroll tracking — always active, target is always in DOM
+  // Scroll tracking within the container
   const { scrollYProgress } = useScroll({
     target: wrapperRef,
     offset: ['start start', 'end end'],
   });
 
   const smoothProgress = useSpring(scrollYProgress, {
-    stiffness: 100,
-    damping: 30,
+    stiffness: 90,
+    damping: 26,
     restDelta: 0.001,
   });
 
-  // Track scroll progress for copy overlays
+  // Track scroll progress for overlays
   useMotionValueEvent(smoothProgress, 'change', (v) => {
     setScrollProgress(v);
   });
@@ -69,11 +81,10 @@ export default function MedGuardScrollScene() {
           resolve(true);
         };
         img.onerror = () => resolve(false);
-        img.src = getFramePath(index + 1); // 1-indexed filenames
+        img.src = getFramePath(index + 1);
       });
 
     async function preloadAll() {
-      // Load first frame immediately
       const firstLoaded = await loadImage(0);
       if (cancelled) return;
       if (!firstLoaded) {
@@ -82,7 +93,6 @@ export default function MedGuardScrollScene() {
       }
       setIsReady(true);
 
-      // Load remaining frames with concurrency limit
       const remaining = Array.from({ length: FRAME_COUNT - 1 }, (_, i) => i + 1);
       let cursor = 0;
 
@@ -126,24 +136,23 @@ export default function MedGuardScrollScene() {
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
 
-    // Contain-fit: fit the entire image within the canvas
     const imgAspect = img.naturalWidth / img.naturalHeight;
     const canvasAspect = w / h;
 
     let drawW, drawH, drawX, drawY;
+    // COVER FIT: Cover the entire canvas and crop excess
     if (imgAspect > canvasAspect) {
-      drawW = w * dpr;
-      drawH = drawW / imgAspect;
-      drawX = 0;
-      drawY = (bufH - drawH) / 2;
-    } else {
-      drawH = h * dpr;
+      drawH = bufH;
       drawW = drawH * imgAspect;
       drawX = (bufW - drawW) / 2;
       drawY = 0;
+    } else {
+      drawW = bufW;
+      drawH = drawW / imgAspect;
+      drawX = 0;
+      drawY = (bufH - drawH) / 2;
     }
 
-    // White background
     ctx.fillStyle = '#FFFFFF';
     ctx.fillRect(0, 0, bufW, bufH);
     ctx.drawImage(img, drawX, drawY, drawW, drawH);
@@ -154,7 +163,12 @@ export default function MedGuardScrollScene() {
     if (!isReady || prefersReducedMotion) return;
 
     const unsubscribe = smoothProgress.on('change', (v) => {
-      const targetFrame = Math.min(FRAME_COUNT - 1, Math.round(v * (FRAME_COUNT - 1)));
+      // Map progress to frames with a threshold dead-zone
+      let targetFrame = 0;
+      if (v > START_SCROLL_THRESHOLD) {
+        const mappedProgress = (v - START_SCROLL_THRESHOLD) / (1 - START_SCROLL_THRESHOLD);
+        targetFrame = Math.min(FRAME_COUNT - 1, Math.round(mappedProgress * (FRAME_COUNT - 1)));
+      }
 
       if (targetFrame !== currentFrameRef.current) {
         currentFrameRef.current = targetFrame;
@@ -173,7 +187,6 @@ export default function MedGuardScrollScene() {
       }
     });
 
-    // Draw first frame immediately
     drawFrame(0);
 
     return () => {
@@ -193,7 +206,7 @@ export default function MedGuardScrollScene() {
     return () => observer.disconnect();
   }, [drawFrame, prefersReducedMotion]);
 
-  // --- Reduced motion: static fallback ---
+  // Reduced motion: static overview inline
   if (prefersReducedMotion) {
     return (
       <section className="mg-scene-reduced" aria-label="MedGuard overview">
@@ -204,7 +217,7 @@ export default function MedGuardScrollScene() {
             className="mg-scene-reduced__image"
             loading="eager"
           />
-          {COPY_BEATS.map((beat, i) => (
+          {ADJUSTED_COPY_BEATS.map((beat, i) => (
             <div key={i} className="mg-scene-reduced__beat">
               <h2 className="mg-scene-reduced__headline">{beat.headline}</h2>
               <p className="mg-scene-reduced__body">{beat.body}</p>
@@ -220,8 +233,18 @@ export default function MedGuardScrollScene() {
     );
   }
 
-  // The scene wrapper is ALWAYS rendered so useScroll has its target ref.
-  // Inside it, we either show the loader or the sticky canvas.
+  // Cinematic title animation parameters (persists through threshold)
+  let titleOpacity = 1;
+  const FADE_START = 0.10;
+  const FADE_END = 0.18;
+
+  if (scrollProgress > FADE_START) {
+    titleOpacity = Math.max(0, 1 - (scrollProgress - FADE_START) / (FADE_END - FADE_START));
+  }
+
+  const titleScale = scrollProgress < FADE_START ? 1 : 1 - (scrollProgress - FADE_START) * 0.9;
+  const titleY = scrollProgress < FADE_START ? 0 : -(scrollProgress - FADE_START) * 200;
+
   return (
     <section
       ref={wrapperRef}
@@ -230,7 +253,6 @@ export default function MedGuardScrollScene() {
     >
       <div className="mg-scene__sticky">
         {!isReady ? (
-          /* Loading state — inside the sticky so it's centered in viewport */
           <div className="mg-loader" role="status" aria-label="Loading animation">
             {loadError ? (
               <div className="mg-loader__error">
@@ -252,12 +274,47 @@ export default function MedGuardScrollScene() {
           </div>
         ) : (
           <>
-            {/* Canvas — decorative */}
+            {/* Canvas backdrop */}
             <canvas
               ref={canvasRef}
               className="mg-scene__canvas"
               aria-hidden="true"
             />
+
+            {/* Medical clinical grid overlay */}
+            <div className="mg-grid-overlay" aria-hidden="true" />
+
+            {/* Lens masking overlay */}
+            <div className="mg-scene__lens" aria-hidden="true" />
+
+            {/* Bottom transition blend overlay to merge borders */}
+            <div className="mg-scene__fade-bottom" aria-hidden="true" />
+
+            {/* Opaque fade overlay to gradually fade the background to white at the bottom of scroll */}
+            <div
+              className="mg-scene__opaque-fade"
+              style={{ opacity: Math.min(1, Math.max(0, (scrollProgress - 0.85) * 6.67)) }}
+              aria-hidden="true"
+            />
+
+            {/* Cinematic Center Title Card (Glassmorphic + 3D effects) */}
+            {scrollProgress < FADE_END && (
+              <div
+                className="mg-hero-center-title"
+                style={{
+                  opacity: titleOpacity,
+                  transform: `translate(-50%, -50%) scale(${titleScale}) translateY(${titleY}px)`,
+                  pointerEvents: 'auto'
+                }}
+              >
+                <h1 className="mg-hero-logo">MedGuard</h1>
+                <p className="mg-hero-tagline">AI-Powered Medication Safety</p>
+                <div className="mg-hero-actions">
+                  <a href="/login" className="mg-btn-primary">Get Started</a>
+                  <a href="/login" className="mg-btn-outline">Sign In</a>
+                </div>
+              </div>
+            )}
 
             {/* Scroll indicator */}
             {scrollProgress < 0.05 && (
@@ -272,8 +329,8 @@ export default function MedGuardScrollScene() {
               </div>
             )}
 
-            {/* Copy overlays */}
-            {COPY_BEATS.map((beat, i) => (
+            {/* Copy overlays absolute-positioned within the sticky container */}
+            {ADJUSTED_COPY_BEATS.map((beat, i) => (
               <CopyOverlay key={i} beat={beat} progress={scrollProgress} index={i} />
             ))}
           </>
@@ -285,13 +342,12 @@ export default function MedGuardScrollScene() {
 
 /**
  * Single copy beat overlay.
- * Fades in over first 10% of range, holds, fades out over last 10%.
- * Subtle 20px vertical motion.
+ * Fades in over first 15% of range, holds, fades out over last 15%.
  */
 function CopyOverlay({ beat, progress, index }) {
   const range = beat.end - beat.start;
-  const fadeInEnd = beat.start + range * 0.1;
-  const fadeOutStart = beat.end - range * 0.1;
+  const fadeInEnd = beat.start + range * 0.15;
+  const fadeOutStart = beat.end - range * 0.15;
 
   let opacity = 0;
   let translateY = 20;
@@ -313,16 +369,23 @@ function CopyOverlay({ beat, progress, index }) {
 
   if (opacity <= 0.01) return null;
 
-  const isLeft = index % 2 === 0;
+  const quadrantClasses = [
+    'mg-copy--top-left',
+    'mg-copy--right-center',
+    'mg-copy--right-top',
+    'mg-copy--left-bottom'
+  ];
+  const posClass = quadrantClasses[index] || 'mg-copy--left';
 
   return (
     <div
-      className={`mg-copy ${isLeft ? 'mg-copy--left' : 'mg-copy--right'}`}
+      className={`mg-copy ${posClass}`}
       style={{
         opacity,
         transform: `translateY(${translateY}px)`,
       }}
     >
+      <span className="mg-copy__index">0{index + 1}</span>
       <h2 className="mg-copy__headline">{beat.headline}</h2>
       <p className="mg-copy__body">{beat.body}</p>
       {beat.cta && (

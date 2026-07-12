@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { motion, useScroll, useTransform } from 'framer-motion';
+import { motion } from 'framer-motion';
 import MedGuardScrollScene from '@/components/MedGuardScrollScene';
+import MedGuardFlowchart from '@/components/MedGuardFlowchart';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -13,49 +14,64 @@ const sectionReveal = {
 };
 
 export default function Home() {
-  const [isScrolled, setIsScrolled] = useState(false);
-  const { scrollYProgress } = useScroll();
-  const scaleX = useTransform(scrollYProgress, [0, 1], [0, 1]);
+  // Custom cursor follower tracking
+  const [mousePos, setMousePos] = useState({ x: -100, y: -100 });
+  const [isHovering, setIsHovering] = useState(false);
 
   useEffect(() => {
-    const handler = () => setIsScrolled(window.scrollY > 10);
-    window.addEventListener('scroll', handler, { passive: true });
-    return () => window.removeEventListener('scroll', handler);
+    const handleMouseMove = (e) => {
+      setMousePos({ x: e.clientX, y: e.clientY });
+    };
+
+    const handleMouseOver = (e) => {
+      const target = e.target;
+      if (
+        target.tagName === 'A' ||
+        target.tagName === 'BUTTON' ||
+        target.closest('button') ||
+        target.closest('a') ||
+        target.closest('.card') ||
+        target.closest('.mg-copy')
+      ) {
+        setIsHovering(true);
+      } else {
+        setIsHovering(false);
+      }
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseover', handleMouseOver);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseover', handleMouseOver);
+    };
   }, []);
 
   return (
     <div className="mg-home">
-      {/* Skip animation link */}
+      {/* Skip to Content */}
       <a href="#how-it-works" className="mg-skip-link">
         Skip animation
       </a>
 
-      {/* Fixed Navigation */}
-      <header>
-        <nav className={`mg-nav ${isScrolled ? 'mg-nav--scrolled' : ''}`}>
-          <div className="mg-nav__inner">
-            <a href="#" className="mg-nav__wordmark" aria-label="MedGuard home">
-              MedGuard
-            </a>
-            <ul className="mg-nav__links">
-              <li><a href="#how-it-works">How it works</a></li>
-              <li><a href="#principles">Principles</a></li>
-            </ul>
-          </div>
-        </nav>
+      {/* Custom Medical Cursor Followers */}
+      <div 
+        className="mg-cursor-dot"
+        style={{ left: mousePos.x, top: mousePos.y }}
+      />
+      <div 
+        className={`mg-cursor-ring ${isHovering ? 'mg-cursor-ring--hover' : ''}`}
+        style={{ left: mousePos.x, top: mousePos.y }}
+      />
 
-        {/* Scroll progress */}
-        <div className="mg-scroll-progress" aria-hidden="true">
-          <motion.div className="mg-scroll-progress__bar" style={{ scaleX }} />
-        </div>
-      </header>
+      {/* Main Scrollytelling Scroll Sequence Area */}
+      <MedGuardScrollScene />
 
-      <main>
-        {/* Hero — Scroll Sequence */}
-        <MedGuardScrollScene />
-
+      {/* Static Opaque Main Site Sections (slid up over the sequence) */}
+      <main className="mg-main-content">
+        
         {/* How MedGuard Helps */}
-        <section id="how-it-works" className="mg-section mg-section__centered">
+        <section id="how-it-works" className="mg-section mg-section__centered mg-section--opaque">
           <motion.div
             variants={sectionReveal}
             initial="hidden"
@@ -68,6 +84,9 @@ export default function Home() {
               A clearer path from prescription to informed conversation.
             </p>
           </motion.div>
+
+          {/* Animated Clinical SVG Flowchart */}
+          <MedGuardFlowchart />
 
           <div className="mg-cards">
             <motion.div
@@ -154,10 +173,26 @@ export default function Home() {
           </div>
         </section>
 
+        {/* CTA divider between How it works and Patients/Families */}
+        <section className="mg-cta-divider mg-section--opaque">
+          <div className="mg-cta-divider__inner">
+            <h2 className="mg-cta-divider__title">
+              Securing medication safety is a simple process.
+            </h2>
+            <p className="mg-cta-divider__desc">
+              Create an account to start structure brand translations, check deterministic interactions, and prepare clinician visit briefs.
+            </p>
+            <div className="mg-cta-divider__actions">
+              <a href="/login" className="mg-btn-primary mg-btn-lg">Create Free Account</a>
+              <a href="/login" className="mg-btn-outline mg-btn-lg">Sign In</a>
+            </div>
+          </div>
+        </section>
+
         <Separator />
 
         {/* Built for patients and families */}
-        <section className="mg-section mg-section--surface">
+        <section className="mg-section mg-section--surface mg-section--opaque">
           <motion.div
             className="mg-section__inner"
             variants={sectionReveal}
@@ -198,7 +233,7 @@ export default function Home() {
         <Separator />
 
         {/* Safety needs context */}
-        <section id="principles" className="mg-section mg-section__centered">
+        <section id="principles" className="mg-section mg-section__centered mg-section--opaque">
           <motion.div
             variants={sectionReveal}
             initial="hidden"
@@ -262,7 +297,7 @@ export default function Home() {
         <Separator />
 
         {/* Team */}
-        <section className="mg-section mg-section--surface">
+        <section className="mg-section mg-section--surface mg-section--opaque">
           <motion.div
             className="mg-section__inner mg-section__centered"
             variants={sectionReveal}
@@ -297,7 +332,7 @@ export default function Home() {
         </section>
 
         {/* Final CTA */}
-        <section className="mg-final-cta">
+        <section className="mg-final-cta mg-section--opaque">
           <motion.div
             variants={sectionReveal}
             initial="hidden"
@@ -322,7 +357,7 @@ export default function Home() {
       </main>
 
       {/* Footer */}
-      <footer className="mg-footer">
+      <footer className="mg-footer mg-section--opaque">
         <p className="mg-footer__text">
           MedGuard — Medication safety and visit preparation.
         </p>
