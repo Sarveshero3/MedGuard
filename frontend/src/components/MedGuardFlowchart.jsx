@@ -171,11 +171,13 @@ function StepSection({ step, index, isLast, activeStep, setActiveStep, isComplet
       onComplete(index);
     }
 
-    // 2. Set current active step based on scroll focus
-    if (p > 0.15 && p < 0.85) {
+    // 2. Set current active step based on scroll focus at boundaries
+    if (p >= 0.02 && p < 0.98) {
       setActiveStep(index);
-    } else if (p >= 0.85 && !isLast) {
+    } else if (p >= 0.98 && !isLast) {
       setActiveStep(index + 1);
+    } else if (p < 0.02 && index > 0) {
+      setActiveStep(index - 1);
     }
 
     // 3. Drive fast carousel text animations (slide up from 40px, exit up to -40px)
@@ -211,16 +213,18 @@ function StepSection({ step, index, isLast, activeStep, setActiveStep, isComplet
   const nextX = isLeft ? dimensions.width - 100 : 100;
   const nextY = dimensions.height; // Extends exactly to the bottom of this section
 
-  // Winding curves: Path terminates completely at Step 5 node (no S-curve path for the last step)
+  // Winding S-curve: Includes top vertical connector for index > 0 to prevent teleportation
   const pathD = isLast
-    ? ''
-    : `M ${nodeX} ${nodeY} C ${nodeX} ${dimensions.height * 0.5 + 80}, ${nextX} ${dimensions.height * 0.5 - 80}, ${nextX} ${nextY}`;
+    ? `M ${nodeX} 0 L ${nodeX} ${nodeY}`
+    : index === 0
+      ? `M ${nodeX} ${nodeY} C ${nodeX} ${dimensions.height * 0.5 + 80}, ${nextX} ${dimensions.height * 0.5 - 80}, ${nextX} ${nextY}`
+      : `M ${nodeX} 0 L ${nodeX} ${nodeY} C ${nodeX} ${dimensions.height * 0.5 + 80}, ${nextX} ${dimensions.height * 0.5 - 80}, ${nextX} ${nextY}`;
 
   const dashOffset = isCompleted ? 0 : (1 - scrollYProgress.get()) * pathLen;
 
-  // Only render the traveling marker if this section is active and not the last step
+  // Only render the traveling marker if this section is active
   const isActiveSection = activeStep === index;
-  const showTracker = isActiveSection && !isLast && pathD;
+  const showTracker = isActiveSection && pathD;
 
   return (
     <section ref={sectionRef} className="mg-flow-v__step">
@@ -232,17 +236,6 @@ function StepSection({ step, index, isLast, activeStep, setActiveStep, isComplet
           className="mg-flow-v__step-svg"
           style={{ overflow: 'visible' }}
         >
-          {/* Connector from the top edge to the node (continuous visual line) */}
-          {index > 0 && (
-            <path
-              d={`M ${nodeX} 0 L ${nodeX} ${nodeY}`}
-              fill="none"
-              stroke="var(--mg-accent)"
-              strokeWidth="6"
-              strokeLinecap="round"
-            />
-          )}
-
           {/* Background winding path (faint) */}
           {pathD && (
             <path
