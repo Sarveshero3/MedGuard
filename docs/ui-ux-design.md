@@ -106,14 +106,15 @@ The "How MedGuard helps" section features a scroll-scrubbed vertical winding pat
 - **Step 5 (Prepare)**: Node left, text right
 
 ### Connecting Paths
-- Between each step, a large dramatic sweeping S-curve (cubic bezier) fills most of the viewport height, crossing from one side to the other.
-- A continuation chevron cue bounces near the bottom of each segment to hint the path continues.
-- **Step 5 has no path** — the track terminates completely at the final node. No trailing line, no continuation cue.
+- Winding S-curve sweeps from the node `(nodeX, nodeY)` down to the bottom of the section `(nextX, height)`.
+- For steps after the first, a straight vertical connector runs from the top edge `(nodeX, 0)` to the node `(nodeX, nodeY)`.
+- These meet exactly at the section boundary, creating a continuous visual line with **no visual breaks or gaps** between sections. No chevrons or down arrows are rendered.
+- **Step 5 has no path below it** — the track terminates completely at the final node.
 
 ### Segment-Based Marker & Trail
 - Each step's segment tracks its own local `scrollYProgress` with `useScroll`.
-- A visible traveling marker dot (18px radius, accent-filled, white inner dot) flourishes along the active segment, hidden when near a node (< 5% or > 95% progress).
-- When the marker "arrives" at a node, the node itself switches to active state (accent ring, pulse glow) — no dot sits on top of an icon.
+- A visible traveling tracker marker (18px radius dot) follows the path dynamically as the user scrolls **down and up** within the active section (`activeStep === index`).
+- When the marker "arrives" at a node (at scroll bounds), the node itself switches to its active visual state (accent ring, pulse glow) instead of showing a floating dot on top of the icon.
 - Once a segment crosses 90% progress, it's permanently marked "traveled" in React state — the colored trail stays filled during reverse scrolls.
 
 ### Text Presentation

@@ -84,22 +84,6 @@
   filter: drop-shadow(0 4px 10px rgba(15, 118, 110, 0.4));
 }
 
-/* Bounce animation on continuation chevron */
-.mg-flow-v__cue-chevron {
-  animation: mg-chevron-bounce 1.6s ease-in-out infinite;
-}
-
-@keyframes mg-chevron-bounce {
-  0%, 100% {
-    transform: translateY(0);
-    opacity: 0.6;
-  }
-  50% {
-    transform: translateY(6px);
-    opacity: 1;
-  }
-}
-
 /* Description Card Layer (Top-anchored next to node, rendered directly on page) */
 .mg-flow-v__card-wrapper {
   position: absolute;

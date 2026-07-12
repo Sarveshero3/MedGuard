@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useMemo } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import { useScroll, useTransform, useMotionValueEvent } from 'framer-motion';
 import './MedGuardFlowchart.css';
 
@@ -148,7 +148,6 @@ function StepSection({ step, index, isLast, activeStep, setActiveStep, isComplet
   const [cardOpacity, setCardOpacity] = useState(0);
   const [cardTranslateY, setCardTranslateY] = useState(40);
   const [markerPos, setMarkerPos] = useState({ x: 0, y: 0 });
-  const [showMarker, setShowMarker] = useState(false);
 
   // Measure SVG path length on coordinate changes
   useEffect(() => {
@@ -193,13 +192,10 @@ function StepSection({ step, index, isLast, activeStep, setActiveStep, isComplet
       setCardTranslateY(-40 * t);
     }
 
-    // 4. Animate short traveling marker flourish between nodes (hide at endpoints)
-    if (pathRef.current && pathLen > 0 && p > 0.05 && p < 0.95 && !isCompleted) {
+    // 4. Update the tracker position dynamically along the curve
+    if (pathRef.current && pathLen > 0) {
       const pt = pathRef.current.getPointAtLength(p * pathLen);
       setMarkerPos({ x: pt.x, y: pt.y });
-      setShowMarker(true);
-    } else {
-      setShowMarker(false);
     }
   });
 
@@ -213,14 +209,18 @@ function StepSection({ step, index, isLast, activeStep, setActiveStep, isComplet
 
   // Next node coordinates (opposite side, top of next section / bottom of current section)
   const nextX = isLeft ? dimensions.width - 100 : 100;
-  const nextY = dimensions.height + 160;
+  const nextY = dimensions.height; // Extends exactly to the bottom of this section
 
-  // Winding curves: Path terminates completely at Step 5 node
+  // Winding curves: Path terminates completely at Step 5 node (no S-curve path for the last step)
   const pathD = isLast
     ? ''
-    : `M ${nodeX} ${nodeY} C ${nodeX} ${dimensions.height * 0.5 + 160}, ${nextX} ${dimensions.height * 0.4 + 160}, ${nextX} ${nextY}`;
+    : `M ${nodeX} ${nodeY} C ${nodeX} ${dimensions.height * 0.5 + 80}, ${nextX} ${dimensions.height * 0.5 - 80}, ${nextX} ${nextY}`;
 
   const dashOffset = isCompleted ? 0 : (1 - scrollYProgress.get()) * pathLen;
+
+  // Only render the traveling marker if this section is active and not the last step
+  const isActiveSection = activeStep === index;
+  const showTracker = isActiveSection && !isLast && pathD;
 
   return (
     <section ref={sectionRef} className="mg-flow-v__step">
@@ -232,6 +232,17 @@ function StepSection({ step, index, isLast, activeStep, setActiveStep, isComplet
           className="mg-flow-v__step-svg"
           style={{ overflow: 'visible' }}
         >
+          {/* Connector from the top edge to the node (continuous visual line) */}
+          {index > 0 && (
+            <path
+              d={`M ${nodeX} 0 L ${nodeX} ${nodeY}`}
+              fill="none"
+              stroke="var(--mg-accent)"
+              strokeWidth="6"
+              strokeLinecap="round"
+            />
+          )}
+
           {/* Background winding path (faint) */}
           {pathD && (
             <path
@@ -291,8 +302,8 @@ function StepSection({ step, index, isLast, activeStep, setActiveStep, isComplet
             </g>
           </g>
 
-          {/* Travel Marker (drawn inside SVG coordinate space - 100% sync guaranteed) */}
-          {showMarker && !isCompleted && (
+          {/* Travel Tracker (follows the path accurately as we scroll down/up) */}
+          {showTracker && (
             <g transform={`translate(${markerPos.x}, ${markerPos.y})`}>
               <circle
                 cx="0"
@@ -308,21 +319,6 @@ function StepSection({ step, index, isLast, activeStep, setActiveStep, isComplet
                 cy="0"
                 r="5"
                 fill="var(--mg-white)"
-              />
-            </g>
-          )}
-
-          {/* Continuation chevron cue before path exits section */}
-          {!isLast && (
-            <g transform={`translate(${nextX}, ${dimensions.height - 40})`} className="mg-flow-v__cue">
-              <path
-                d="M -8 -5 L 0 3 L 8 -5"
-                fill="none"
-                stroke="var(--mg-accent)"
-                strokeWidth="3"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="mg-flow-v__cue-chevron"
               />
             </g>
           )}
