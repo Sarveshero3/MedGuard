@@ -107,9 +107,9 @@ The "How MedGuard helps" section features a scroll-scrubbed vertical winding pat
 - **Step 5 (Prepare)**: Node left (offsetX), text right
 
 ### Connecting Paths
-- All nodes are connected sequentially into a **single, unbroken winding path string** (`continuousPathD`) drawn inside a single SVG layer spanning the full `500vh` height.
+- All nodes are connected sequentially into a **single, unbroken winding path string** (`continuousPathD`) drawn inside a single SVG layer spanning the full `450vh` height (the last section is 50vh to close the gap before the CTA).
 - The path is continuous from Step 1 through Step 5's node with no visual breaks, gaps, or chevrons.
-- The path Y coordinates are offset by `320px` to sit cleanly below the container header.
+- The path Y coordinates are offset by the header height (`240px`) plus the respective viewport center offsets.
 
 ### Continuous Tracker & Trail (Color Morphing)
 - A **single active tracker marker** (18px radius dot) is rendered inside the SVG coordinates, positioned **on top of the track but underneath the nodes** in SVG render order.
@@ -129,7 +129,7 @@ The "How MedGuard helps" section features a scroll-scrubbed vertical winding pat
 ### Text Presentation
 - Text (badge, title, description, label) renders **directly on the page** with no bordered card, box, or background.
 - Fast carousel slide-up entrance (+40px below → 0) on scroll-in, slide-up-and-out (0 → -40px above) on scroll-past.
-- Card wrappers are top-positioned at `260px` to align vertically with the shifted `320px` node centers.
+- Card wrappers use a CSS top position of `45%` (steps 1-4) and `25%` (Step 5) with a dynamic inline translate `translateY(calc(-50% + translateY px))` to align **pixel-perfectly** with the node Y centers at all viewport heights.
 
 ### Full-Width Background & Complementary Grid
 - The background color uses a `100vw` breakout to cover the **entire width of the viewport** edge-to-edge.
