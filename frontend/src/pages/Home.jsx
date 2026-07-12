@@ -215,8 +215,8 @@ export default function Home() {
 
             <div className="mg-team">
               {[
-                { name: 'Sarvesh Chandran', initials: 'SC', role: 'Lead' },
                 { name: 'Sahil', initials: 'S', role: null },
+                { name: 'Sarvesh Chandran', initials: 'SC', role: 'Lead' },
                 { name: 'Nyasha Das', initials: 'ND', role: null },
               ].map((member) => (
                 <Card key={member.name}>

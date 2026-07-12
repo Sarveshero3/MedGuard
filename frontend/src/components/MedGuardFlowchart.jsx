@@ -110,7 +110,7 @@ export default function MedGuardFlowchart() {
 
   // Calculate dynamic target Ps based on viewport height and header height on resize
   const targetPs = useMemo(() => {
-    const scrollRange = HEADER_H + 4 * dimensions.height;
+    const scrollRange = HEADER_H + 3.5 * dimensions.height;
     return [
       HEADER_H / scrollRange,
       (HEADER_H + dimensions.height) / scrollRange,
@@ -249,15 +249,16 @@ export default function MedGuardFlowchart() {
     );
   });
 
-  // Calculate nodes positions across the entire 500vh height
+  // Calculate nodes positions across the entire height
   const nodes = useMemo(() => {
     // Bring nodes closer to center layout (offsetX scaled to screen width)
     const offsetX = Math.max(220, Math.min(300, dimensions.width * 0.18));
     return FLOW_STEPS.map((_, idx) => {
       const isLeft = idx % 2 === 0;
+      const verticalOffset = idx === 4 ? 0.25 : 0.45; // Last step section is 50vh tall, so node is centered at 25vh
       return {
         x: isLeft ? offsetX : dimensions.width - offsetX,
-        y: idx * dimensions.height + HEADER_H + dimensions.height * 0.45,
+        y: idx * dimensions.height + HEADER_H + dimensions.height * verticalOffset,
       };
     });
   }, [dimensions]);
@@ -398,11 +399,12 @@ export default function MedGuardFlowchart() {
           const { opacity, translateY } = cardStates[idx] || { opacity: 0, translateY: 40 };
 
           return (
-            <section key={step.id} className="mg-flow-v__step">
+            <section key={step.id} className="mg-flow-v__step" style={idx === 4 ? { height: '50vh', minHeight: '50vh' } : {}}>
               <div
                 className={`mg-flow-v__card-wrapper ${isLeft ? 'mg-flow-v__card-wrapper--right' : 'mg-flow-v__card-wrapper--left'}`}
                 style={{
                   opacity,
+                  top: idx === 4 ? '25%' : '45%',
                   transform: `translateY(calc(-50% + ${translateY}px))`,
                   visibility: opacity > 0.01 ? 'visible' : 'hidden'
                 }}
