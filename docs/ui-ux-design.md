@@ -2,7 +2,7 @@
 
 ## 1. Scope
 
-**In scope**: Public homepage at `/` — scroll-driven frame-sequence hero, editorial copy, static product sections, team section, and a quiet CTA.
+**In scope**: Public homepage at `/` — scroll-driven frame-sequence hero, editorial copy in quadrants, scroll-scrubbed winding path vertical flowchart, static product sections, CTA buttons on center title card, a middle CTA divider, and a caregiver/family section.
 
 **Non-goals**: Login, signup, dashboard, upload, medicines, alerts, caregiver, admin, backend, API, auth, or database changes. No invented clinical claims, metrics, certifications, testimonials, patient data, or safety guarantees.
 
@@ -31,16 +31,14 @@
 
 ## 4. Visual Directions (Three Explored)
 
-### A. "Clinical Editorial" ✅ Recommended
-Apple-level restraint. Premium health-tech confidence. Generous whitespace. Refined sans-serif typography. The frame sequence is the hero — design supports it, never competes. Monochrome palette with a single restrained teal accent.
+### A. "Clinical Editorial" ✅ Selected & Implemented
+Apple-level restraint. Premium health-tech confidence. Generous whitespace. Refined serif typography. The frame sequence is the hero — design supports it, never competes. Monochrome palette with a single restrained teal accent.
 
 ### B. "Warm Caregiving"
 Soft rounded forms, warm neutrals, friendly illustration style. Risk: looks like a wellness app, undermines the safety-critical positioning.
 
 ### C. "Data Dashboard"
 Technical, data-forward, structured grids. Risk: alienates non-technical patients and caregivers. Feels like an internal tool, not a product landing page.
-
-**Selected: Direction A — Clinical Editorial.**
 
 ---
 
@@ -51,118 +49,71 @@ Technical, data-forward, structured grids. Risk: alienates non-technical patient
 |-------|-------|-------|
 | `--mg-ink` | `#0B1F33` | Primary text, headings |
 | `--mg-muted` | `#5D6B78` | Secondary text, descriptions |
-| `--mg-accent` | `#0F766E` | Links, CTAs, accent elements |
+| `--mg-accent` | `#0F766E` | Links, CTAs, accent elements, active SVG path |
 | `--mg-accent-hover` | `#0D6660` | Hover state for accent |
 | `--mg-surface` | `#F4F8F8` | Alternating section background |
-| `--mg-white` | `#FFFFFF` | Page background, canvas background |
-| `--mg-border` | `#E2E8F0` | Subtle dividers |
-| `--mg-scroll-track` | `#0F766E` | Scroll progress indicator |
+| `--mg-white` | `#FFFFFF` | Page background, canvas background, opaque fade cover |
+| `--mg-border` | `rgba(226, 232, 240, 0.8)` | Subtle card dividers |
 
 ### Typography
-- **Font family**: `'Manrope', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif`
-- **Display**: 56px / 1.05 / -1.5px tracking (desktop), 36px / 1.1 / -1px (mobile)
+- **Core Font family**: `'Manrope', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif`
+- **Logo Font family**: `'Cormorant Garamond', serif` (or `'Cinzel', serif` for roman style). Applied as a bold (700 weight), normal (non-italicized) display style with a subtle `-0.5px` letter-spacing.
+- **Display**: 76px / 1.05 / -0.5px tracking (desktop), 48px / 1.1 / -0.5px (mobile)
 - **Body large**: 20px / 1.6 (desktop), 18px / 1.6 (mobile)
 - **Body**: 16px / 1.6
 - **Caption**: 14px / 1.5
-- **Weight range**: 400 (body), 500 (subheadings), 700 (display headings)
-
-### Spacing Scale
-`4px, 8px, 12px, 16px, 24px, 32px, 48px, 64px, 96px, 128px`
-
-### Grid
-- Max content width: `1200px`
-- Horizontal padding: `24px` (mobile), `48px` (tablet), `64px` (desktop)
-- Section vertical spacing: `96px` (desktop), `64px` (mobile)
-
-### Responsive Breakpoints
-- Mobile: `375px`–`767px`
-- Tablet: `768px`–`1023px`
-- Desktop: `1024px`+
-- Large desktop: `1440px`+
 
 ---
 
-## 6. Animation Timeline & Copy Beats (286 Frames)
+## 6. Hero Animation & Copy Beats (286 Frames)
 
-The hero is a full-viewport canvas playing 286 JPG frames driven by scroll position.
+The hero is a full-viewport canvas playing 286 JPG frames driven by scroll position over a `650vh` track.
 
-### Frame Narrative
-| Frame Range | Visual Content | Scroll % |
-|-------------|---------------|----------|
-| 001–059 | Prescription sheet, static then beginning to dissolve | 0–22% |
-| 060–129 | Prescription dissolves into rising binary digits | 23–48% |
-| 130–201 | Binary streams reorganize into a forming neural network | 49–75% |
-| 202–286 | Neural network fully formed and floating | 76–100% |
+### Scroll Dead-Zone (First 15% Scroll Progress)
+For the first 15% of scroll progress, the background sequence remains stationary on frame 0 while the glassmorphic title card remains completely static. This ensures the reader can read the logo and tagline before transition begins.
 
-### Copy Overlays (Semantic DOM)
-Each copy block fades in (first 10% of range), holds, then fades out (last 10%), with a subtle 20px vertical shift.
+### Quadrant Copy Card Position mapping
+The scroll copy cards fade in, hold, and fade out across the remaining `[0.20, 1.0]` scroll progress:
+- **Card 1 (Progress 0.20 - 0.38)**: Top-Left quadrant position.
+- **Card 2 (Progress 0.40 - 0.58)**: Right-Center quadrant position.
+- **Card 3 (Progress 0.60 - 0.78)**: Right-Top quadrant position.
+- **Card 4 (Progress 0.80 - 0.95)**: Left-Bottom quadrant position.
 
-| Scroll % | Headline | Body |
-|----------|----------|------|
-| 0–22% | "Every prescription deserves a second look." | "MedGuard turns a prescription photo into a clearer medication-safety conversation." |
-| 23–48% | "From paper to structured clarity." | "Details that are easy to miss become information you can carry between appointments." |
-| 49–75% | "Connected signals. Safer next steps." | "Medications, changes, and caregiver context—kept together." |
-| 76–100% | "Designed to help you prepare, not diagnose." | "Clearer information for more informed conversations with your clinician." + CTA |
+### Transition Overlays
+- **Bottom Gradient Border Merge**: A transparent-to-white vertical gradient mask (`.mg-scene__fade-bottom`) covering the bottom `15vh` of the viewport to seamlessly blend the sequence into the layout block below.
+- **Opaque Scroll Fade Overlay**: A full-viewport solid white mask (`.mg-scene__opaque-fade`) that transitions from `opacity: 0` to `opacity: 1` as scroll progress moves from 85% to 100%, completing the transition to a solid white background.
 
 ---
 
-## 7. Interaction Principles
+## 7. Interactive SVG Vertical Flowchart
 
-- **No scroll hijacking.** Normal page scroll drives the frame sequence.
-- **No parallax overload.** The frame sequence is the single dramatic element.
-- **Subtle only.** Header state change, section reveals, button hover/focus — all low-distance, purposeful.
-- **No autoplaying elements, cursor effects, or decorative motion competing with frames.**
-- **Loader**: percentage + thin progress line, clean reveal. No spinner clutter.
-
----
-
-## 8. Accessibility
-
-- `prefers-reduced-motion`: static final neural-network frame, skip pinned scrollytelling, normal document flow
-- "Skip animation" link at top of hero
-- Canvas: `aria-hidden="true"`, `role="img"`
-- All copy is semantic HTML (not canvas text)
-- One `<h1>`, sensible heading hierarchy
-- Semantic landmarks: `<header>`, `<main>`, `<section>`, `<footer>`
-- Keyboard-visible focus states on all interactive elements
-- Large touch targets (minimum 44×44px)
-- Contrast validated: `#0B1F33` on `#FFFFFF` = 15.7:1, `#5D6B78` on `#FFFFFF` = 5.1:1
-- Color never used as the sole way to communicate meaning
+The "How MedGuard helps" section features a scroll-scrubbed vertical winding path timeline:
+- **Stepping path**: A custom winding SVG bezier path curves left and right between 5 workflow nodes (Photograph → Structure → Translate → Analyze → Prepare).
+- **Interactive marker**: A clinical target marker dot follows the winding path in real-time, scrubbed directly by the user's viewport scroll progress.
+- **Step activation**: As the marker arrives at a node, that node turns active, and its corresponding detail card fades and slides into view adjacent to the node (alternating left/right sides).
+- **Mobile Fallback**: Below `768px` screen widths, the scroll-scrubbed winding path and marker are deactivated for jank-free performance, falling back to a clean vertical linear cards list timeline.
 
 ---
 
-## 9. Performance & Fallback
+## 8. Interaction & Buttons Placement
 
-- First frame loaded immediately, remaining queued with limited concurrency (4 parallel)
-- Accurate loading progress shown before animation starts
-- Nearest loaded frame shown if a frame is briefly unavailable
-- High-DPI canvas capped at `devicePixelRatio` of 2
-- `ResizeObserver` for responsive canvas sizing
-- `requestAnimationFrame` draws only when frame changes
-- Non-canvas fallback message if assets fail
-- Frame paths use `import.meta.env.BASE_URL` for deployment flexibility
+- **Cinematic Title Card**: Rendered as a glassmorphic card with `pointer-events: auto` to allow navigation. Features primary **Get Started** and outline **Sign In** action buttons.
+- **CTA Divider**: Positioned between the flowchart and the Caregiver sections to provide **Create Free Account** and **Sign In** actions for user onboarding.
+- **Medical Reticle Cursor**: A custom interactive mouse follower themed after medical scanners:
+  - Center dot is styled as a plus crosshair (`+`).
+  - Trailing ring features crosshair targeting tick marks at 12, 3, 6, and 9 o'clock.
 
 ---
 
-## 10. Files Changed
+## 9. Files Changed
 
-| File | Action |
-|------|--------|
-| `docs/ui-ux-design.md` | NEW |
-| `frontend/public/medguard-sequence/*.jpg` | NEW (286 extracted frames) |
-| `frontend/src/pages/Home.jsx` | NEW |
-| `frontend/src/pages/Home.css` | NEW |
-| `frontend/src/components/MedGuardScrollScene.jsx` | NEW |
-| `frontend/src/data/medguardFrames.js` | NEW |
-| `frontend/src/lib/utils.js` | NEW (shadcn cn helper) |
-| `frontend/src/components/ui/button.jsx` | NEW (shadcn) |
-| `frontend/src/components/ui/card.jsx` | NEW (shadcn) |
-| `frontend/src/components/ui/badge.jsx` | NEW (shadcn) |
-| `frontend/src/components/ui/separator.jsx` | NEW (shadcn) |
-| `frontend/src/App.jsx` | MODIFY (route change) |
-| `frontend/index.html` | MODIFY (title, meta, font) |
-| `frontend/src/index.css` | MODIFY (root scoping) |
-| `frontend/vite.config.js` | MODIFY (Tailwind plugin + alias) |
-| `frontend/components.json` | NEW (shadcn config) |
-| `frontend/.gitignore` | MODIFY |
-| `frontend/package.json` | MODIFY (new deps) |
+| File | Action | Description |
+|------|--------|-------------|
+| `docs/ui-ux-design.md` | MODIFY | Document visual changes, fonts, vertical flowchart, reticle cursor, and color palette. |
+| `frontend/public/medguard-sequence/*.jpg` | NEW | 286 extracted JPG frames for the scrollytelling hero. |
+| `frontend/src/pages/Home.jsx` | MODIFY | Renders home layout including custom cursors, vertical flowchart, and CTA sections. |
+| `frontend/src/pages/Home.css` | MODIFY | Core style variables, glassmorphic filters, quadrant placements, and CTA dividers. |
+| `frontend/src/components/MedGuardScrollScene.jsx` | MODIFY | Canvas rendering context, scroll dead-zone tracking, and opaque fade overlays. |
+| `frontend/src/components/MedGuardFlowchart.jsx` | NEW | Vertical scroll-scrubbed winding path SVG timeline component. |
+| `frontend/src/components/MedGuardFlowchart.css` | NEW | Laser animations, node pulses, and side card reveal keyframes. |
+| `frontend/index.html` | MODIFY | Integrated Google Fonts (Cinzel, Cormorant Garamond, Space Grotesk). |

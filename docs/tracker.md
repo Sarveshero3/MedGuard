@@ -71,3 +71,6 @@
 | Wireframes (6 screens) | `docs/wireframes.md` | ✅ |
 | README | `README.md` | ✅ |
 | Skills directory | `skills/` | ✅ Pushed |
+| Vertical winding flowchart | `frontend/src/components/MedGuardFlowchart.jsx` | ✅ |
+| Flowchart styles | `frontend/src/components/MedGuardFlowchart.css` | ✅ |
+| UI/UX design document | `docs/ui-ux-design.md` | ✅ |
