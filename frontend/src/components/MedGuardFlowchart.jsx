@@ -255,7 +255,7 @@ export default function MedGuardFlowchart() {
     const offsetX = Math.max(220, Math.min(300, dimensions.width * 0.18));
     return FLOW_STEPS.map((_, idx) => {
       const isLeft = idx % 2 === 0;
-      const verticalOffset = idx === 4 ? 0.25 : 0.45; // Last step section is 50vh tall, so node is centered at 25vh
+      const verticalOffset = idx === 4 ? 0.0 : 0.45; // Last step node is centered at 0px inside the 50vh section (which equals 4.0H scroll viewport center)
       return {
         x: isLeft ? offsetX : dimensions.width - offsetX,
         y: idx * dimensions.height + HEADER_H + dimensions.height * verticalOffset,
@@ -404,7 +404,7 @@ export default function MedGuardFlowchart() {
                 className={`mg-flow-v__card-wrapper ${isLeft ? 'mg-flow-v__card-wrapper--right' : 'mg-flow-v__card-wrapper--left'}`}
                 style={{
                   opacity,
-                  top: idx === 4 ? '25%' : '45%',
+                  top: idx === 4 ? '0%' : '45%',
                   transform: `translateY(calc(-50% + ${translateY}px))`,
                   visibility: opacity > 0.01 ? 'visible' : 'hidden'
                 }}
