@@ -65,6 +65,9 @@ const FLOW_STEPS = [
   },
 ];
 
+// Fixed header height (matches CSS styling)
+const HEADER_H = 240;
+
 export default function MedGuardFlowchart() {
   const containerRef = useRef(null);
   const pathRef = useRef(null);
@@ -101,44 +104,102 @@ export default function MedGuardFlowchart() {
   });
 
   const [activeStep, setActiveStep] = useState(0);
-  const [markerPos, setMarkerPos] = useState({ x: 100, y: 160 });
+  const [markerPos, setMarkerPos] = useState({ x: 100, y: HEADER_H + 360 });
   const [trailProgress, setTrailProgress] = useState(0);
+  const [currentThemeColor, setCurrentThemeColor] = useState('#0F766E');
+
+  // Calculate dynamic target Ps based on viewport height and header height on resize
+  const targetPs = useMemo(() => {
+    const scrollRange = HEADER_H + 4 * dimensions.height;
+    return [
+      HEADER_H / scrollRange,
+      (HEADER_H + dimensions.height) / scrollRange,
+      (HEADER_H + 2 * dimensions.height) / scrollRange,
+      (HEADER_H + 3 * dimensions.height) / scrollRange,
+      1.0,
+    ];
+  }, [dimensions]);
+
+  // Transform background color gradually based on step centering
+  const backgroundColor = useTransform(
+    scrollYProgress,
+    [0, targetPs[1], targetPs[2], targetPs[3], 1.0],
+    ['#ffffff', '#f0f9ff', '#fefce8', '#faf5ff', '#ffffff']
+  );
+
+  // Transform grid color: COMPLEMENTARY to background for pop
+  // Blue bg → orange grid, Yellow bg → purple grid, Purple bg → green grid
+  const gridColor = useTransform(
+    scrollYProgress,
+    [0, targetPs[1], targetPs[2], targetPs[3], 1.0],
+    [
+      'rgba(15, 118, 110, 0.12)',  // Default: teal
+      'rgba(234, 88, 12, 0.16)',   // Complementary to blue bg: orange
+      'rgba(126, 34, 206, 0.14)',  // Complementary to yellow bg: purple
+      'rgba(22, 163, 74, 0.16)',   // Complementary to purple bg: green
+      'rgba(15, 118, 110, 0.12)',  // Default: teal
+    ]
+  );
+
+  // Transform activeColor (nodes, trace, tracker dot) gradually as you scroll
+  const activeColor = useTransform(
+    scrollYProgress,
+    [0, targetPs[1], targetPs[2], targetPs[3], 1.0],
+    ['#0F766E', '#0284C7', '#CA8A04', '#9333EA', '#0F766E']
+  );
 
   // Calculate card transforms and tracker position globally to avoid sync lags
   const [cardStates, setCardStates] = useState(
     FLOW_STEPS.map(() => ({ opacity: 0, translateY: 40 }))
   );
 
+  // Scroll piecewise helper mapping scrollProgress to trackProgress
+  const getTrackProgress = (p) => {
+    // keys map scrollProgress -> trackProgress [0.0, 0.25, 0.50, 0.75, 1.00]
+    const keys = [
+      [0.0, 0.0],
+      [targetPs[0], 0.0],
+      [targetPs[1], 0.25],
+      [targetPs[2], 0.50],
+      [targetPs[3], 0.75],
+      [targetPs[4], 1.00],
+    ];
+
+    const val = Math.max(0, Math.min(1, p));
+    for (let i = 0; i < keys.length - 1; i++) {
+      const [s0, pp0] = keys[i];
+      const [s1, pp1] = keys[i + 1];
+      if (val >= s0 && val <= s1) {
+        if (s1 === s0) return pp0;
+        const t = (val - s0) / (s1 - s0);
+        
+        // Easing speed warps:
+        // Segment i=2 (Step 2->3) and Segment i=4 (Step 4->5) are warped slower.
+        // Others (Step 1->2, Step 3->4) are linear.
+        let t_warped = t;
+        if (i === 2 || i === 4) {
+          t_warped = Math.pow(t, 1.45);
+        }
+        return pp0 + t_warped * (pp1 - pp0);
+      }
+    }
+    return 1.0;
+  };
+
   useMotionValueEvent(scrollYProgress, 'change', (v) => {
     const p = Math.max(0, Math.min(1, v));
 
-    // Determine current active step based on midpoints of 0.25 segment intervals
-    // Node 0 at 0.0, Node 1 at 0.25, Node 2 at 0.50, Node 3 at 0.75, Node 4 at 1.00
+    // Determine current active step based on scroll focus boundaries
     let stepIdx = 0;
-    if (p < 0.125) stepIdx = 0;
-    else if (p >= 0.125 && p < 0.375) stepIdx = 1;
-    else if (p >= 0.375 && p < 0.625) stepIdx = 2;
-    else if (p >= 0.625 && p < 0.875) stepIdx = 3;
+    if (p < (targetPs[0] + targetPs[1]) / 2) stepIdx = 0;
+    else if (p < (targetPs[1] + targetPs[2]) / 2) stepIdx = 1;
+    else if (p < (targetPs[2] + targetPs[3]) / 2) stepIdx = 2;
+    else if (p < (targetPs[3] + 1.0) / 2) stepIdx = 3;
     else stepIdx = 4;
-    
     setActiveStep(stepIdx);
 
-    // Update global tracker position along the single continuous track
-    // Piecewise segment progress warping to control segment speeds:
-    // Segment 0 (Step 1 -> 2): normal
-    // Segment 1 (Step 2 -> 3): slower (power 1.45)
-    // Segment 2 (Step 3 -> 4): normal
-    // Segment 3 (Step 4 -> 5): slower (power 1.45)
-    const stepIdxGlobal = Math.min(3, Math.floor(p / 0.25));
-    const segmentT = (p - stepIdxGlobal * 0.25) / 0.25;
-    
-    let t_warped = segmentT;
-    if (stepIdxGlobal === 1 || stepIdxGlobal === 3) {
-      t_warped = Math.pow(segmentT, 1.45); // slows down 2nd and 5th steps
-    }
-    const p_warped = (stepIdxGlobal + t_warped) * 0.25;
-
-    // Use the SAME warped progress for both marker AND trail
+    // Get track progress and sync trail
+    const p_warped = getTrackProgress(p);
     setTrailProgress(p_warped);
 
     if (pathRef.current && pathLen > 0) {
@@ -146,28 +207,39 @@ export default function MedGuardFlowchart() {
       setMarkerPos({ x: pt.x, y: pt.y });
     }
 
-    // Update opacity & translations for all text cards based on symmetric midpoint ranges
+    // Get activeColor current value and trigger state update
+    setCurrentThemeColor(activeColor.get());
+
+    // Update opacity & translations for all text cards based on center range offsets
     setCardStates(
       FLOW_STEPS.map((_, idx) => {
-        const centerP = idx * 0.25;
-        
-        // Boundaries for fading card in/out (span of 0.25 step, centered at centerP)
-        const startFadeIn = centerP - 0.125;
-        const endFadeIn = centerP - 0.08;
-        const startFadeOut = centerP + 0.08;
-        const endFadeOut = centerP + 0.125;
-        
+        const centerP = targetPs[idx];
+        const startFadeIn = centerP - 0.12;
+        const endFadeIn = centerP - 0.07;
+        const startFadeOut = centerP + 0.07;
+        const endFadeOut = centerP + 0.12;
+
+        // Step 0 is special: visible immediately on load, only fades out
+        if (idx === 0) {
+          if (p <= startFadeOut) {
+            return { opacity: 1, translateY: 0 };
+          } else if (p > startFadeOut && p <= endFadeOut) {
+            const t = (p - startFadeOut) / (endFadeOut - startFadeOut);
+            return { opacity: 1 - t, translateY: -40 * t };
+          } else {
+            return { opacity: 0, translateY: -40 };
+          }
+        }
+
+        // Standard fade in -> active -> fade out
         if (p < startFadeIn) {
           return { opacity: 0, translateY: 40 };
         } else if (p >= startFadeIn && p < endFadeIn) {
-          // Slide in from below
           const t = (p - startFadeIn) / (endFadeIn - startFadeIn);
           return { opacity: t, translateY: 40 * (1 - t) };
         } else if (p >= endFadeIn && p <= startFadeOut) {
-          // Fully visible
           return { opacity: 1, translateY: 0 };
         } else if (p > startFadeOut && p <= endFadeOut) {
-          // Slide out to above
           const t = (p - startFadeOut) / (endFadeOut - startFadeOut);
           return { opacity: 1 - t, translateY: -40 * t };
         } else {
@@ -179,13 +251,13 @@ export default function MedGuardFlowchart() {
 
   // Calculate nodes positions across the entire 500vh height
   const nodes = useMemo(() => {
-    // Bring nodes closer to center and make them larger
+    // Bring nodes closer to center layout (offsetX scaled to screen width)
     const offsetX = Math.max(220, Math.min(300, dimensions.width * 0.18));
     return FLOW_STEPS.map((_, idx) => {
       const isLeft = idx % 2 === 0;
       return {
         x: isLeft ? offsetX : dimensions.width - offsetX,
-        y: idx * dimensions.height + 320, // Shifted down by 320px for the header space
+        y: idx * dimensions.height + HEADER_H + dimensions.height * 0.45,
       };
     });
   }, [dimensions]);
@@ -203,34 +275,6 @@ export default function MedGuardFlowchart() {
     return d;
   }, [nodes, dimensions]);
 
-  // Transform background color gradually as you scroll
-  const backgroundColor = useTransform(
-    scrollYProgress,
-    [0, 0.25, 0.5, 0.75, 1.0],
-    ['#ffffff', '#f0f9ff', '#fefce8', '#faf5ff', '#ffffff']
-  );
-
-  // Transform grid color: COMPLEMENTARY to background for pop
-  // Blue bg → orange grid, Yellow bg → purple grid, Purple bg → green grid
-  const gridColor = useTransform(
-    scrollYProgress,
-    [0, 0.25, 0.5, 0.75, 1.0],
-    [
-      'rgba(15, 118, 110, 0.12)',  // Default: teal
-      'rgba(234, 88, 12, 0.16)',   // Complementary to blue bg: orange
-      'rgba(126, 34, 206, 0.14)',  // Complementary to yellow bg: purple
-      'rgba(22, 163, 74, 0.16)',   // Complementary to purple bg: green
-      'rgba(15, 118, 110, 0.12)',  // Default: teal
-    ]
-  );
-
-  // Transform activeColor (nodes, trace, tracker dot) gradually as you scroll
-  const activeColor = useTransform(
-    scrollYProgress,
-    [0, 0.25, 0.5, 0.75, 1.0],
-    ['#0F766E', '#0284C7', '#CA8A04', '#9333EA', '#0F766E']
-  );
-
   return (
     <motion.div
       ref={containerRef}
@@ -243,10 +287,10 @@ export default function MedGuardFlowchart() {
       }}
     >
       {/* Title Header area (moved inside container to share background and grid colors) */}
-      <div className="mg-flow-v__header" style={{ padding: '96px 24px 20px', textAlign: 'center' }}>
-        <p className="mg-section__eyebrow" style={{ color: 'var(--mg-accent)', fontSize: '13px', fontWeight: 600, letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '12px' }}>How it works</p>
+      <div className="mg-flow-v__header" style={{ height: `${HEADER_H}px` }}>
+        <p className="mg-section__eyebrow" style={{ color: currentThemeColor, fontSize: '13px', fontWeight: 600, letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '12px', transition: 'color 0.3s ease' }}>How it works</p>
         <h1 className="mg-section__title" style={{ fontSize: '42px', fontWeight: 700, letterSpacing: '-0.5px', color: 'var(--mg-ink)', margin: '0 0 16px', fontFamily: "'Cormorant Garamond', serif" }}>How MedGuard helps</h1>
-        <p className="mg-section__subtitle" style={{ fontSize: '18px', color: 'var(--mg-muted)', maxWidth: '640px', margin: '0 auto' }}>
+        <p className="mg-section__subtitle" style={{ fontSize: '18px', color: 'var(--mg-muted)', maxWidth: '640px', margin: '0 auto', textAlign: 'center' }}>
           A clearer path from prescription to informed conversation.
         </p>
       </div>
@@ -271,30 +315,32 @@ export default function MedGuardFlowchart() {
 
           {/* Active path trail (colored, uses SAME warped progress as tracker) */}
           {continuousPathD && (
-            <motion.path
+            <path
               ref={pathRef}
               d={continuousPathD}
               fill="none"
+              stroke={currentThemeColor}
               strokeWidth="6"
               strokeLinecap="round"
               strokeDasharray={pathLen || 1}
               strokeDashoffset={(1 - trailProgress) * pathLen}
-              style={{ stroke: activeColor }}
               className="mg-flow-v__path-active"
+              style={{ transition: 'stroke 0.3s ease' }}
             />
           )}
 
           {/* Single continuous tracker marker (never teleport, always on the line, rendered under nodes) */}
           {pathLen > 0 && (
             <g transform={`translate(${markerPos.x}, ${markerPos.y})`}>
-              <motion.circle
+              <circle
                 cx="0"
                 cy="0"
                 r="18"
+                fill={currentThemeColor}
                 stroke="var(--mg-white)"
                 strokeWidth="3"
-                style={{ fill: activeColor }}
                 className="mg-flow-v__travel-dot"
+                style={{ transition: 'fill 0.3s ease' }}
               />
               <circle
                 cx="0"
@@ -311,32 +357,34 @@ export default function MedGuardFlowchart() {
             return (
               <g key={FLOW_STEPS[idx].id}>
                 {isActive && (
-                  <motion.circle
+                  <circle
                     cx={node.x}
                     cy={node.y}
                     r="78"
                     fill="none"
+                    stroke={currentThemeColor}
                     strokeWidth="2"
-                    style={{ stroke: activeColor }}
                     className="mg-flow-v__node-pulse"
+                    style={{ transition: 'stroke 0.3s ease' }}
                   />
                 )}
-                <motion.circle
+                <circle
                   cx={node.x}
                   cy={node.y}
                   r="58"
                   fill="var(--mg-white)"
+                  stroke={isActive ? currentThemeColor : 'rgba(226, 232, 240, 0.8)'}
                   strokeWidth="3.5"
-                  style={{ stroke: isActive ? activeColor : 'rgba(226, 232, 240, 0.8)' }}
                   className="mg-flow-v__node-circle"
+                  style={{ transition: 'stroke 0.3s ease' }}
                 />
-                <motion.g
+                <g
                   transform={`translate(${node.x - 19}, ${node.y - 19})`}
-                  style={{ color: isActive ? activeColor : 'var(--mg-muted)' }}
+                  style={{ color: isActive ? currentThemeColor : 'var(--mg-muted)', transition: 'color 0.3s ease' }}
                   className="mg-flow-v__node-icon"
                 >
                   {FLOW_STEPS[idx].icon}
-                </motion.g>
+                </g>
               </g>
             );
           })}
@@ -355,12 +403,12 @@ export default function MedGuardFlowchart() {
                 className={`mg-flow-v__card-wrapper ${isLeft ? 'mg-flow-v__card-wrapper--right' : 'mg-flow-v__card-wrapper--left'}`}
                 style={{
                   opacity,
-                  transform: `translateY(${translateY}px)`,
+                  transform: `translateY(calc(-50% + ${translateY}px))`,
                   visibility: opacity > 0.01 ? 'visible' : 'hidden'
                 }}
               >
                 <div className="mg-flow-v__card-inner">
-                  <div className="mg-flow-v__card-badge">
+                  <div className="mg-flow-v__card-badge" style={{ color: currentThemeColor, background: `${currentThemeColor}14`, transition: 'color 0.3s ease, background 0.3s ease' }}>
                     Step {idx + 1} of 5
                   </div>
                   <h3 className="mg-flow-v__card-title">{step.title}</h3>
