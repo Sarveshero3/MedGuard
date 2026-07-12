@@ -102,6 +102,7 @@ export default function MedGuardFlowchart() {
 
   const [activeStep, setActiveStep] = useState(0);
   const [markerPos, setMarkerPos] = useState({ x: 100, y: 160 });
+  const [trailProgress, setTrailProgress] = useState(0);
 
   // Calculate card transforms and tracker position globally to avoid sync lags
   const [cardStates, setCardStates] = useState(
@@ -129,6 +130,9 @@ export default function MedGuardFlowchart() {
       const factor = (p - 0.25) / 0.75;
       p_warped = 0.25 + Math.pow(factor, 0.78) * 0.75; // Accelerate the tracker at later steps
     }
+
+    // Use the SAME warped progress for both marker AND trail
+    setTrailProgress(p_warped);
 
     if (pathRef.current && pathLen > 0) {
       const pt = pathRef.current.getPointAtLength(p_warped * pathLen);
@@ -197,16 +201,17 @@ export default function MedGuardFlowchart() {
     ['#ffffff', '#f0f9ff', '#fefce8', '#faf5ff', '#ffffff']
   );
 
-  // Transform grid color gradually as you scroll
+  // Transform grid color: COMPLEMENTARY to background for pop
+  // Blue bg → orange grid, Yellow bg → purple grid, Purple bg → green grid
   const gridColor = useTransform(
     scrollYProgress,
     [0, 0.25, 0.5, 0.75, 1.0],
     [
-      'rgba(15, 118, 110, 0.12)', // Default teal grid
-      'rgba(14, 165, 233, 0.16)', // Blue grid
-      'rgba(234, 179, 8, 0.16)',  // Yellow grid
-      'rgba(168, 85, 247, 0.16)', // Purple grid
-      'rgba(15, 118, 110, 0.12)', // Default teal grid
+      'rgba(15, 118, 110, 0.12)',  // Default: teal
+      'rgba(234, 88, 12, 0.16)',   // Complementary to blue bg: orange
+      'rgba(126, 34, 206, 0.14)',  // Complementary to yellow bg: purple
+      'rgba(22, 163, 74, 0.16)',   // Complementary to purple bg: green
+      'rgba(15, 118, 110, 0.12)',  // Default: teal
     ]
   );
 
@@ -216,7 +221,9 @@ export default function MedGuardFlowchart() {
       className="mg-flow-v"
       style={{
         backgroundColor,
-        '--mg-flow-grid': gridColor
+        '--mg-flow-grid': gridColor,
+        width: '100vw',
+        marginLeft: 'calc(-50vw + 50%)',
       }}
     >
       {/* Timeline SVG layer covering full height of timeline */}
@@ -237,16 +244,17 @@ export default function MedGuardFlowchart() {
             />
           )}
 
-          {/* Active path trail (colored, reveals on scroll) */}
+          {/* Active path trail (colored, uses SAME warped progress as tracker) */}
           {continuousPathD && (
-            <motion.path
+            <path
               ref={pathRef}
               d={continuousPathD}
               fill="none"
               stroke="var(--mg-accent)"
               strokeWidth="6"
               strokeLinecap="round"
-              style={{ pathLength: scrollYProgress }}
+              strokeDasharray={pathLen || 1}
+              strokeDashoffset={(1 - trailProgress) * pathLen}
               className="mg-flow-v__path-active"
             />
           )}
