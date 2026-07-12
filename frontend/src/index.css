@@ -1,3 +1,6 @@
+@import 'tailwindcss/theme' layer(theme);
+@import 'tailwindcss/utilities' layer(utilities);
+
 :root {
   --text: #6b6375;
   --text-h: #08060d;
@@ -55,15 +58,19 @@ body {
 }
 
 #root {
+  min-height: 100svh;
+  box-sizing: border-box;
+}
+
+/* Constrained layout for authenticated pages (not the homepage) */
+#root:not(:has(.mg-home)) {
   width: 1126px;
   max-width: 100%;
   margin: 0 auto;
   text-align: center;
   border-inline: 1px solid var(--border);
-  min-height: 100svh;
   display: flex;
   flex-direction: column;
-  box-sizing: border-box;
 }
 
 h1,
