@@ -87,11 +87,36 @@ The scroll copy cards fade in, hold, and fade out across the remaining `[0.20, 1
 
 ## 7. Interactive SVG Vertical Flowchart
 
-The "How MedGuard helps" section features a scroll-scrubbed vertical winding path timeline:
-- **Stepping path**: A custom winding SVG bezier path curves left and right between 5 workflow nodes (Photograph → Structure → Translate → Analyze → Prepare).
-- **Interactive marker**: A clinical target marker dot follows the winding path in real-time, scrubbed directly by the user's viewport scroll progress.
-- **Step activation**: As the marker arrives at a node, that node turns active, and its corresponding detail card fades and slides into view adjacent to the node (alternating left/right sides).
-- **Mobile Fallback**: Below `768px` screen widths, the scroll-scrubbed winding path and marker are deactivated for jank-free performance, falling back to a clean vertical linear cards list timeline.
+The "How MedGuard helps" section features a scroll-scrubbed vertical winding path timeline with 5 dedicated step sections:
+
+### Layout
+- Each step occupies a fixed-height section (500px). Nodes and text cards are **top-anchored** at the same height, not centered.
+- Sides strictly alternate per step:
+  - **Step 1 (Photograph)**: Node top-left, text top-right
+  - **Step 2 (Structure)**: Node top-right, text top-left
+  - **Step 3 (Translate)**: Node top-left, text top-right
+  - **Step 4 (Analyze)**: Node top-right, text top-left
+  - **Step 5 (Prepare)**: Node top-left, text top-right
+
+### Connecting Paths
+- Between each step, a large dramatic sweeping S-curve (cubic bezier) fills most of the vertical space, crossing from one side to the other.
+- A continuation chevron cue animates near the bottom of each segment to hint the path continues.
+
+### Segment-Based Marker & Trail
+- No continuous marker scrub across the full path length. Each step's segment tracks its own local `scrollYProgress`.
+- A small traveling marker dot flourishes along the active segment only, hidden when near a node (< 5% or > 95% progress).
+- When the marker "arrives" at a node, the node itself switches to its active visual state (filled accent ring, pulse glow) instead of rendering a floating dot on top of the icon.
+- Once a segment's scroll progress crosses 90%, it is permanently marked as "traveled" in React state — the colored trail stays filled even during slight reverse scrolls.
+
+### Text Entrance
+- Each step's text card enters with a **fast carousel slide-up** animation (from +40px below) as the user scrolls into the step's range.
+- Scrolling past the step's range exits the card with a quick slide-up-and-out (to -40px above). Only one card is visible at any time.
+
+### Background Gradient
+- The parent container's scroll progress drives a smooth radial gradient color shift between light teal (`#e6f2f2`, `#f4fbfb`) and pure white (`#ffffff`), staying within the light medical theme at all points.
+
+### Mobile Fallback
+- Below `768px` screen widths, the SVG paths and markers are hidden. All five step cards render in a clean vertical list with full opacity and no scroll-driven animations.
 
 ---
 
@@ -109,11 +134,13 @@ The "How MedGuard helps" section features a scroll-scrubbed vertical winding pat
 
 | File | Action | Description |
 |------|--------|-------------|
-| `docs/ui-ux-design.md` | MODIFY | Document visual changes, fonts, vertical flowchart, reticle cursor, and color palette. |
+| `docs/ui-ux-design.md` | MODIFY | Document visual changes, fonts, vertical flowchart v2, reticle cursor, and color palette. |
+| `docs/tracker.md` | MODIFY | Update deliverables with v2 flowchart entries. |
 | `frontend/public/medguard-sequence/*.jpg` | NEW | 286 extracted JPG frames for the scrollytelling hero. |
 | `frontend/src/pages/Home.jsx` | MODIFY | Renders home layout including custom cursors, vertical flowchart, and CTA sections. |
 | `frontend/src/pages/Home.css` | MODIFY | Core style variables, glassmorphic filters, quadrant placements, and CTA dividers. |
 | `frontend/src/components/MedGuardScrollScene.jsx` | MODIFY | Canvas rendering context, scroll dead-zone tracking, and opaque fade overlays. |
-| `frontend/src/components/MedGuardFlowchart.jsx` | NEW | Vertical scroll-scrubbed winding path SVG timeline component. |
-| `frontend/src/components/MedGuardFlowchart.css` | NEW | Laser animations, node pulses, and side card reveal keyframes. |
+| `frontend/src/components/MedGuardFlowchart.jsx` | MODIFY | Overhauled to segment-based architecture with per-step scroll tracking, alternating top-anchored layout, SVG-embedded marker flourishes, traveled state array, and background gradient shifts. |
+| `frontend/src/components/MedGuardFlowchart.css` | MODIFY | Redesigned for alternating flex layout, carousel text entrance/exit, chevron cues, and mobile fallback. |
 | `frontend/index.html` | MODIFY | Integrated Google Fonts (Cinzel, Cormorant Garamond, Space Grotesk). |
+

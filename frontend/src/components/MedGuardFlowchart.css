@@ -1,57 +1,70 @@
 /* ==========================================================================
-   MedGuardFlowchart — Vertical Scroll-Scrubbed Winding Path Styles
-   ========================================================================= */
+   MedGuardFlowchart — Vertical Scroll-Scrubbed Winding Path Overhaul Styles
+   ========================================================================== */
 
 .mg-flow-v {
   position: relative;
-  max-width: 960px;
-  margin: 80px auto;
-  padding: 0 24px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 80px 0;
+  transition: background 0.3s ease;
+  overflow: hidden;
 }
 
-.mg-flow-v__container {
+.mg-flow-v__timeline {
+  max-width: 960px;
+  margin: 0 auto;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.mg-flow-v__step {
   position: relative;
   width: 100%;
-  height: 1000px; /* fixed height for 1:1 translation coordinates */
+  height: 500px; /* fixed height per segment for exact coordination */
+  overflow: visible;
 }
 
-/* Centered coordinate space wrapper for 1:1 translation of coordinates */
-.mg-flow-v__wrapper {
+/* SVG Winding Path Layer */
+.mg-flow-v__svg-layer {
   position: absolute;
   top: 0;
   left: 50%;
   transform: translateX(-50%);
-  width: 400px;
-  height: 1000px;
+  width: 100%;
+  max-width: 960px;
+  height: 500px;
   pointer-events: none;
   z-index: 1;
 }
 
-.mg-flow-v__svg {
+.mg-flow-v__step-svg {
   width: 100%;
   height: 100%;
   overflow: visible;
   display: block;
 }
 
-/* Active colored path trace */
+/* Active path trace animates on scroll */
 .mg-flow-v__path-active {
-  transition: stroke-dashoffset 0.1s ease-out;
+  transition: stroke-dashoffset 0.05s linear;
 }
 
-/* Pulse animation on current active step circle */
-.mg-flow-v__pulse {
-  animation: mg-pulse-ring-v 1.8s cubic-bezier(0.25, 0, 0, 1) infinite;
+/* Pulse animation on active node circle */
+.mg-flow-v__node-pulse {
+  animation: mg-pulse-ring-v 2s cubic-bezier(0.25, 0, 0, 1) infinite;
   transform-origin: center;
 }
 
 @keyframes mg-pulse-ring-v {
   0% {
-    r: 22px;
+    r: 24px;
     opacity: 0.8;
   }
   100% {
-    r: 34px;
+    r: 38px;
     opacity: 0;
   }
 }
@@ -63,80 +76,61 @@
 .mg-flow-v__node-icon {
   color: var(--mg-muted);
   transition: color 0.3s;
-  pointer-events: none;
 }
 
 .mg-flow-v__node-icon--active {
   color: var(--mg-accent);
 }
 
-/* Traveling path marker */
-.mg-flow-v__marker {
+/* Short traveling marker dot flourish */
+.mg-flow-v__travel-dot {
+  filter: drop-shadow(0 2px 6px rgba(15, 118, 110, 0.4));
+}
+
+/* Continuation chevron cue */
+.mg-flow-v__cue-chevron {
+  animation: mg-cue-bounce 1.5s ease-in-out infinite;
+}
+
+@keyframes mg-cue-bounce {
+  0%, 100% {
+    transform: translateY(0);
+    opacity: 0.6;
+  }
+  50% {
+    transform: translateY(6px);
+    opacity: 1;
+  }
+}
+
+/* Description Card Layer (Top-anchored next to node) */
+.mg-flow-v__card-wrapper {
   position: absolute;
-  width: 28px;
-  height: 28px;
-  background: var(--mg-accent);
-  border: 3.5px solid var(--mg-white);
-  border-radius: 50%;
-  box-shadow: 0 4px 12px rgba(15, 118, 110, 0.4);
-  z-index: 5;
-  top: 0;
-  left: 0;
+  top: 24px; /* anchors card at same height as node (y=60 center of circle) */
+  width: 320px;
+  z-index: 10;
   pointer-events: none;
-  will-change: transform;
+  transition: opacity 0.25s linear, transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.25s;
 }
 
-.mg-flow-v__marker-dot {
-  width: 6px;
-  height: 6px;
-  background: var(--mg-white);
-  border-radius: 50%;
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
+/* Position cards on opposite side of nodes */
+.mg-flow-v__card-wrapper--right {
+  left: 480px; /* Right column of centered 960px container */
 }
 
-/* Description cards positioned near nodes */
-.mg-flow-v__card {
-  position: absolute;
-  width: 290px;
+.mg-flow-v__card-wrapper--left {
+  right: 480px; /* Left column of centered 960px container */
+}
+
+.mg-flow-v__card-inner {
   background: var(--mg-white);
   border: 1px solid var(--mg-border);
   border-radius: 20px;
   padding: 24px;
-  box-shadow: 0 10px 30px rgba(11, 31, 51, 0.05);
-  opacity: 0;
-  visibility: hidden;
-  transition: opacity 0.4s ease, transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.4s;
-  pointer-events: none;
-  z-index: 10;
-}
-
-.mg-flow-v__card--visible {
-  opacity: 1;
-  visibility: visible;
+  box-shadow: 0 10px 30px rgba(11, 31, 51, 0.04);
   pointer-events: auto;
 }
 
-/* Position-based alignment and animation offsets */
-.mg-flow-v__card--left {
-  transform: translateY(-50%) translateX(-20px);
-}
-
-.mg-flow-v__card--left.mg-flow-v__card--visible {
-  transform: translateY(-50%) translateX(0);
-}
-
-.mg-flow-v__card--right {
-  transform: translateY(-50%) translateX(20px);
-}
-
-.mg-flow-v__card--right.mg-flow-v__card--visible {
-  transform: translateY(-50%) translateX(0);
-}
-
-/* Card inside elements */
 .mg-flow-v__card-badge {
   display: inline-block;
   font-size: 11px;
@@ -177,38 +171,51 @@
    Mobile/Tablet responsive overrides
    ========================================================================= */
 
-@media (max-width: 900px) {
-  /* Scale width of cards to fit tablet */
-  .mg-flow-v__card {
-    width: 220px;
+@media (max-width: 992px) {
+  .mg-flow-v__timeline {
+    padding: 0 24px;
+  }
+  
+  .mg-flow-v__card-wrapper--right {
+    left: 450px;
+  }
+
+  .mg-flow-v__card-wrapper--left {
+    right: 450px;
   }
 }
 
 @media (max-width: 768px) {
-  /* Fallback to simple, clean, non-janky vertical timeline list */
-  .mg-flow-v__container {
+  .mg-flow-v {
+    padding: 40px 0;
+  }
+
+  .mg-flow-v__step {
     height: auto;
+    margin-bottom: 32px;
   }
 
-  .mg-flow-v__wrapper {
-    display: none; /* Hide SVG path and marker on mobile for jank-free performance */
+  .mg-flow-v__step:last-child {
+    margin-bottom: 0;
   }
 
-  .mg-flow-v__card {
+  .mg-flow-v__svg-layer {
+    display: none; /* Disable SVG curves on mobile to avoid layout breaking and jank */
+  }
+
+  .mg-flow-v__card-wrapper {
     position: relative;
-    width: 100%;
-    top: auto !important;
+    top: auto;
     left: auto !important;
     right: auto !important;
-    transform: none !important;
+    width: 100%;
     opacity: 1 !important;
+    transform: none !important;
     visibility: visible !important;
-    pointer-events: auto !important;
-    margin-bottom: 24px;
-    box-shadow: 0 4px 12px rgba(11, 31, 51, 0.03);
+    pointer-events: auto;
   }
 
-  .mg-flow-v__card:last-child {
-    margin-bottom: 0;
+  .mg-flow-v__card-inner {
+    box-shadow: 0 4px 12px rgba(11, 31, 51, 0.03);
   }
 }
