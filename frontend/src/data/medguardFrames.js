@@ -1,9 +1,9 @@
 /**
  * MedGuard scroll-sequence frame manifest.
- * 268 JPG frames: prescription → binary → neural network.
+ * 286 JPG frames: prescription → binary → neural network.
  */
 
-export const FRAME_COUNT = 268;
+export const FRAME_COUNT = 286;
 
 /** Build the public URL for a 1-indexed frame number. */
 export function getFramePath(index) {

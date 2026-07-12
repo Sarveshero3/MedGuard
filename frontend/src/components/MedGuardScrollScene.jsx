@@ -199,7 +199,7 @@ export default function MedGuardScrollScene() {
       <section className="mg-scene-reduced" aria-label="MedGuard overview">
         <div className="mg-scene-reduced__content">
           <img
-            src={getFramePath(268)}
+            src={getFramePath(FRAME_COUNT)}
             alt=""
             className="mg-scene-reduced__image"
             loading="eager"

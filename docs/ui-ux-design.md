@@ -82,9 +82,9 @@ Technical, data-forward, structured grids. Risk: alienates non-technical patient
 
 ---
 
-## 6. Animation Timeline & Copy Beats (268 Frames)
+## 6. Animation Timeline & Copy Beats (286 Frames)
 
-The hero is a full-viewport canvas playing 268 JPG frames driven by scroll position.
+The hero is a full-viewport canvas playing 286 JPG frames driven by scroll position.
 
 ### Frame Narrative
 | Frame Range | Visual Content | Scroll % |
@@ -92,7 +92,7 @@ The hero is a full-viewport canvas playing 268 JPG frames driven by scroll posit
 | 001–059 | Prescription sheet, static then beginning to dissolve | 0–22% |
 | 060–129 | Prescription dissolves into rising binary digits | 23–48% |
 | 130–201 | Binary streams reorganize into a forming neural network | 49–75% |
-| 202–268 | Neural network fully formed and floating | 76–100% |
+| 202–286 | Neural network fully formed and floating | 76–100% |
 
 ### Copy Overlays (Semantic DOM)
 Each copy block fades in (first 10% of range), holds, then fades out (last 10%), with a subtle 20px vertical shift.
@@ -149,7 +149,7 @@ Each copy block fades in (first 10% of range), holds, then fades out (last 10%),
 | File | Action |
 |------|--------|
 | `docs/ui-ux-design.md` | NEW |
-| `frontend/public/medguard-sequence/*.jpg` | NEW (268 extracted frames) |
+| `frontend/public/medguard-sequence/*.jpg` | NEW (286 extracted frames) |
 | `frontend/src/pages/Home.jsx` | NEW |
 | `frontend/src/pages/Home.css` | NEW |
 | `frontend/src/components/MedGuardScrollScene.jsx` | NEW |
