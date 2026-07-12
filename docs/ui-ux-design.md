@@ -106,16 +106,15 @@ The "How MedGuard helps" section features a scroll-scrubbed vertical winding pat
 - **Step 5 (Prepare)**: Node left, text right
 
 ### Connecting Paths
-- Winding S-curve sweeps from the node `(nodeX, nodeY)` down to the bottom of the section `(nextX, height)`.
-- For steps after the first, a straight vertical connector runs from the top edge `(nodeX, 0)` to the node `(nodeX, nodeY)`.
-- These meet exactly at the section boundary, creating a continuous visual line with **no visual breaks or gaps** between sections. No chevrons or down arrows are rendered.
-- **Step 5 has no path below it** — the track terminates completely at the final node.
+- All nodes are connected sequentially into a **single, unbroken winding path string** (`continuousPathD`) drawn inside a single SVG layer spanning the full `500vh` height.
+- The path is continuous from Step 1 through Step 5's node with no visual breaks, gaps, or chevrons.
+- The path terminates completely at Step 5's node.
 
-### Segment-Based Marker & Trail
-- Each step's segment tracks its own local `scrollYProgress` with `useScroll`.
-- A visible traveling tracker marker (18px radius dot) follows the path dynamically as the user scrolls **down and up** within the active section (`activeStep === index`).
-- When the marker "arrives" at a node (at scroll bounds), the node itself switches to its active visual state (accent ring, pulse glow) instead of showing a floating dot on top of the icon.
-- Once a segment crosses 90% progress, it's permanently marked "traveled" in React state — the colored trail stays filled during reverse scrolls.
+### Continuous Tracker & Trail
+- A **single active tracker marker** (18px radius dot) is rendered inside the SVG coordinates and moves smoothly and continuously along the entire path length based on the global scroll progress (`scrollYProgress` of the `500vh` container).
+- The tracker dot glides smoothly up and down the winding curves as the user scrolls, with **zero teleportation, jumps, or masking**.
+- The active trail is rendered as a single `motion.path` with `pathLength: scrollYProgress`, revealing the colored path continuously.
+- Nodes change to their active visual state (glow pulse) when the scroll progress reaches their respective positions.
 
 ### Text Presentation
 - Text (badge, title, description, label) renders **directly on the page** with no bordered card, box, or background.

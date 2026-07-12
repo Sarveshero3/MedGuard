@@ -1,5 +1,5 @@
-import { useRef, useEffect, useState } from 'react';
-import { useScroll, useTransform, useMotionValueEvent } from 'framer-motion';
+import { useRef, useEffect, useState, useMemo } from 'react';
+import { motion, useScroll, useTransform, useMotionValueEvent } from 'framer-motion';
 import './MedGuardFlowchart.css';
 
 /* ─── Reuse the same 5 step objects (icon, label, description) ─── */
@@ -65,77 +65,20 @@ const FLOW_STEPS = [
   },
 ];
 
-/* ─── Main Flowchart Component ─── */
 export default function MedGuardFlowchart() {
   const containerRef = useRef(null);
-
-  // Track global scroll progress for background color transition
-  const { scrollYProgress } = useScroll({
-    target: containerRef,
-    offset: ['start center', 'end center'],
-  });
-
-  // State to track which segments are completed
-  const [traveledSegments, setTraveledSegments] = useState([false, false, false, false, false]);
-
-  const markSegmentTraveled = (index) => {
-    setTraveledSegments((prev) => {
-      if (prev[index]) return prev;
-      const next = [...prev];
-      next[index] = true;
-      return next;
-    });
-  };
-
-  // State to track current active step
-  const [activeStep, setActiveStep] = useState(0);
-
-  // Smoothly transform background color between light teal and pure white based on scroll
-  const backgroundColor = useTransform(
-    scrollYProgress,
-    [0, 0.25, 0.5, 0.75, 1.0],
-    ['#ffffff', '#f0f9f9', '#e6f4f4', '#f4fbfb', '#ffffff']
-  );
-
-  return (
-    <div
-      ref={containerRef}
-      className="mg-flow-v"
-      style={{ backgroundColor }}
-    >
-      <div className="mg-flow-v__timeline">
-        {FLOW_STEPS.map((step, idx) => (
-          <StepSection
-            key={step.id}
-            step={step}
-            index={idx}
-            isLast={idx === FLOW_STEPS.length - 1}
-            activeStep={activeStep}
-            setActiveStep={setActiveStep}
-            isCompleted={traveledSegments[idx]}
-            onComplete={markSegmentTraveled}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/* ─── Individual Step Section Component ─── */
-function StepSection({ step, index, isLast, activeStep, setActiveStep, isCompleted, onComplete }) {
-  const sectionRef = useRef(null);
   const pathRef = useRef(null);
   const [pathLen, setPathLen] = useState(0);
 
-  // Get screen size dynamically to scale path overlay exactly
+  // Monitor size changes for dynamic path recalculation
   const [dimensions, setDimensions] = useState({ width: 1200, height: 800 });
 
   useEffect(() => {
     const handleResize = () => {
-      if (sectionRef.current) {
+      if (containerRef.current) {
         setDimensions({
-          width: sectionRef.current.clientWidth,
-          height: sectionRef.current.clientHeight,
+          width: containerRef.current.clientWidth,
+          height: window.innerHeight,
         });
       }
     };
@@ -144,102 +87,123 @@ function StepSection({ step, index, isLast, activeStep, setActiveStep, isComplet
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // States driven by local scroll to control carousel card and travel marker
-  const [cardOpacity, setCardOpacity] = useState(0);
-  const [cardTranslateY, setCardTranslateY] = useState(40);
-  const [markerPos, setMarkerPos] = useState({ x: 0, y: 0 });
-
-  // Measure SVG path length on coordinate changes
+  // Measure path length
   useEffect(() => {
     if (pathRef.current) {
       setPathLen(pathRef.current.getTotalLength());
     }
   }, [dimensions]);
 
-  // Track scroll of this step section (Full viewport height 100vh)
+  // Track global scroll of the entire 500vh container
   const { scrollYProgress } = useScroll({
-    target: sectionRef,
+    target: containerRef,
     offset: ['start center', 'end center'],
   });
 
-  // Handle local scroll progress updates
+  const [activeStep, setActiveStep] = useState(0);
+  const [markerPos, setMarkerPos] = useState({ x: 100, y: 160 });
+
+  // Calculate card transforms and tracker position globally to avoid sync lags
+  const [cardStates, setCardStates] = useState(
+    FLOW_STEPS.map(() => ({ opacity: 0, translateY: 40 }))
+  );
+
   useMotionValueEvent(scrollYProgress, 'change', (v) => {
     const p = Math.max(0, Math.min(1, v));
 
-    // 1. Mark segment traveled when scrolled past 90%
-    if (p > 0.9 && !isCompleted) {
-      onComplete(index);
-    }
+    // Determine current active step (0 to 4)
+    const stepInterval = 1 / FLOW_STEPS.length;
+    const stepIdx = Math.min(FLOW_STEPS.length - 1, Math.floor(p / stepInterval));
+    setActiveStep(stepIdx);
 
-    // 2. Set current active step based on scroll focus at boundaries
-    if (p >= 0.02 && p < 0.98) {
-      setActiveStep(index);
-    } else if (p >= 0.98 && !isLast) {
-      setActiveStep(index + 1);
-    } else if (p < 0.02 && index > 0) {
-      setActiveStep(index - 1);
-    }
-
-    // 3. Drive fast carousel text animations (slide up from 40px, exit up to -40px)
-    if (p < 0.15) {
-      const t = p / 0.15;
-      setCardOpacity(t);
-      setCardTranslateY(40 * (1 - t));
-    } else if (p >= 0.15 && p <= 0.8) {
-      setCardOpacity(1);
-      setCardTranslateY(0);
-    } else {
-      const t = (p - 0.8) / 0.2;
-      setCardOpacity(1 - t);
-      setCardTranslateY(-40 * t);
-    }
-
-    // 4. Update the tracker position dynamically along the curve
+    // Update global tracker position along the single continuous track
     if (pathRef.current && pathLen > 0) {
       const pt = pathRef.current.getPointAtLength(p * pathLen);
       setMarkerPos({ x: pt.x, y: pt.y });
     }
+
+    // Update opacity & translations for all text cards based on relative scroll position
+    setCardStates(
+      FLOW_STEPS.map((_, idx) => {
+        const startP = idx * stepInterval;
+        const endP = startP + stepInterval;
+        
+        if (p < startP) {
+          return { opacity: 0, translateY: 40 };
+        } else if (p >= startP && p <= endP) {
+          const stepP = (p - startP) / stepInterval; // local step progress (0 to 1)
+          
+          let opacity = 0;
+          let translateY = 40;
+          if (stepP < 0.15) {
+            const t = stepP / 0.15;
+            opacity = t;
+            translateY = 40 * (1 - t);
+          } else if (stepP >= 0.15 && stepP <= 0.8) {
+            opacity = 1;
+            translateY = 0;
+          } else {
+            const t = (stepP - 0.8) / 0.2;
+            opacity = 1 - t;
+            translateY = -40 * t;
+          }
+          return { opacity, translateY };
+        } else {
+          return { opacity: 0, translateY: -40 };
+        }
+      })
+    );
   });
 
-  // Calculate coordinates based on strictly alternating side layout:
-  // Node coordinates inside the dynamic pixel coordinate space
-  const isLeft = index % 2 === 0;
-  
-  // Large prominent node offsets flush against screen margins
-  const nodeX = isLeft ? 100 : dimensions.width - 100;
-  const nodeY = 160;
+  // Calculate nodes positions across the entire 500vh height
+  const nodes = useMemo(() => {
+    return FLOW_STEPS.map((_, idx) => {
+      const isLeft = idx % 2 === 0;
+      return {
+        x: isLeft ? 100 : dimensions.width - 100,
+        y: idx * dimensions.height + 160,
+      };
+    });
+  }, [dimensions]);
 
-  // Next node coordinates (opposite side, top of next section / bottom of current section)
-  const nextX = isLeft ? dimensions.width - 100 : 100;
-  const nextY = dimensions.height; // Extends exactly to the bottom of this section
+  // Construct a single, unbroken winding path string
+  const continuousPathD = useMemo(() => {
+    if (nodes.length === 0) return '';
+    let d = `M ${nodes[0].x} ${nodes[0].y}`;
+    for (let i = 0; i < nodes.length - 1; i++) {
+      const curr = nodes[i];
+      const next = nodes[i + 1];
+      const midY = curr.y + dimensions.height * 0.5;
+      d += ` C ${curr.x} ${midY + 80}, ${next.x} ${midY - 80}, ${next.x} ${next.y}`;
+    }
+    return d;
+  }, [nodes, dimensions]);
 
-  // Winding S-curve: Includes top vertical connector for index > 0 to prevent teleportation
-  const pathD = isLast
-    ? `M ${nodeX} 0 L ${nodeX} ${nodeY}`
-    : index === 0
-      ? `M ${nodeX} ${nodeY} C ${nodeX} ${dimensions.height * 0.5 + 80}, ${nextX} ${dimensions.height * 0.5 - 80}, ${nextX} ${nextY}`
-      : `M ${nodeX} 0 L ${nodeX} ${nodeY} C ${nodeX} ${dimensions.height * 0.5 + 80}, ${nextX} ${dimensions.height * 0.5 - 80}, ${nextX} ${nextY}`;
+  // Transform background color gradually as you scroll
+  const backgroundColor = useTransform(
+    scrollYProgress,
+    [0, 0.25, 0.5, 0.75, 1.0],
+    ['#ffffff', '#f0f9f9', '#e6f4f4', '#f4fbfb', '#ffffff']
+  );
 
-  const dashOffset = isCompleted ? 0 : (1 - scrollYProgress.get()) * pathLen;
-
-  // Only render the traveling marker if this section is active
-  const isActiveSection = activeStep === index;
-  const showTracker = isActiveSection && pathD;
 
   return (
-    <section ref={sectionRef} className="mg-flow-v__step">
-      {/* SVG Path & Node Layer */}
+    <div
+      ref={containerRef}
+      className="mg-flow-v"
+      style={{ backgroundColor }}
+    >
+      {/* Timeline SVG layer covering full height of timeline */}
       <div className="mg-flow-v__svg-layer">
         <svg
           width="100%"
           height="100%"
-          className="mg-flow-v__step-svg"
           style={{ overflow: 'visible' }}
         >
-          {/* Background winding path (faint) */}
-          {pathD && (
+          {/* Background winding track (faint) */}
+          {continuousPathD && (
             <path
-              d={pathD}
+              d={continuousPathD}
               fill="none"
               stroke="rgba(226, 232, 240, 0.8)"
               strokeWidth="6"
@@ -247,56 +211,57 @@ function StepSection({ step, index, isLast, activeStep, setActiveStep, isComplet
             />
           )}
 
-          {/* Active path trail (colored, stays filled if completed) */}
-          {pathD && (
-            <path
+          {/* Active path trail (colored, reveals on scroll) */}
+          {continuousPathD && (
+            <motion.path
               ref={pathRef}
-              d={pathD}
+              d={continuousPathD}
               fill="none"
               stroke="var(--mg-accent)"
               strokeWidth="6"
               strokeLinecap="round"
-              strokeDasharray={pathLen || 1}
-              strokeDashoffset={isCompleted ? 0 : dashOffset}
+              style={{ pathLength: scrollYProgress }}
               className="mg-flow-v__path-active"
             />
           )}
 
-          {/* Node SVG Group (large and prominent node circles) */}
-          <g>
-            {/* Pulsing glow outer ring if active */}
-            {activeStep >= index && (
-              <circle
-                cx={nodeX}
-                cy={nodeY}
-                r="64"
-                fill="none"
-                stroke="var(--mg-accent)"
-                strokeWidth="2"
-                className="mg-flow-v__node-pulse"
-              />
-            )}
-            {/* Base Circle */}
-            <circle
-              cx={nodeX}
-              cy={nodeY}
-              r="48"
-              fill="var(--mg-white)"
-              stroke={activeStep >= index ? 'var(--mg-accent)' : 'rgba(226, 232, 240, 0.8)'}
-              strokeWidth="3.5"
-              className="mg-flow-v__node-circle"
-            />
-            {/* Embedded step icon */}
-            <g
-              transform={`translate(${nodeX - 16}, ${nodeY - 16})`}
-              className={`mg-flow-v__node-icon ${activeStep >= index ? 'mg-flow-v__node-icon--active' : ''}`}
-            >
-              {step.icon}
-            </g>
-          </g>
+          {/* Render all 5 large nodes inside the same SVG space */}
+          {nodes.map((node, idx) => {
+            const isActive = activeStep >= idx;
+            return (
+              <g key={FLOW_STEPS[idx].id}>
+                {isActive && (
+                  <circle
+                    cx={node.x}
+                    cy={node.y}
+                    r="64"
+                    fill="none"
+                    stroke="var(--mg-accent)"
+                    strokeWidth="2"
+                    className="mg-flow-v__node-pulse"
+                  />
+                )}
+                <circle
+                  cx={node.x}
+                  cy={node.y}
+                  r="48"
+                  fill="var(--mg-white)"
+                  stroke={isActive ? 'var(--mg-accent)' : 'rgba(226, 232, 240, 0.8)'}
+                  strokeWidth="3.5"
+                  className="mg-flow-v__node-circle"
+                />
+                <g
+                  transform={`translate(${node.x - 16}, ${node.y - 16})`}
+                  className={`mg-flow-v__node-icon ${isActive ? 'mg-flow-v__node-icon--active' : ''}`}
+                >
+                  {FLOW_STEPS[idx].icon}
+                </g>
+              </g>
+            );
+          })}
 
-          {/* Travel Tracker (follows the path accurately as we scroll down/up) */}
-          {showTracker && (
+          {/* Single continuous tracker marker (never teleport, always on the line) */}
+          {pathLen > 0 && (
             <g transform={`translate(${markerPos.x}, ${markerPos.y})`}>
               <circle
                 cx="0"
@@ -318,24 +283,35 @@ function StepSection({ step, index, isLast, activeStep, setActiveStep, isComplet
         </svg>
       </div>
 
-      {/* Description Card Layer (Top-anchored, rendered directly on page with no borders/box) */}
-      <div
-        className={`mg-flow-v__card-wrapper ${isLeft ? 'mg-flow-v__card-wrapper--right' : 'mg-flow-v__card-wrapper--left'}`}
-        style={{
-          opacity: cardOpacity,
-          transform: `translateY(${cardTranslateY}px)`,
-          visibility: cardOpacity > 0.01 ? 'visible' : 'hidden'
-        }}
-      >
-        <div className="mg-flow-v__card-inner">
-          <div className="mg-flow-v__card-badge">
-            Step {index + 1} of 5
-          </div>
-          <h3 className="mg-flow-v__card-title">{step.title}</h3>
-          <p className="mg-flow-v__card-desc">{step.desc}</p>
-          <span className="mg-flow-v__card-label">{step.label}</span>
-        </div>
+      {/* Scrolling step overlays layer */}
+      <div className="mg-flow-v__timeline">
+        {FLOW_STEPS.map((step, idx) => {
+          const isLeft = idx % 2 === 0;
+          const { opacity, translateY } = cardStates[idx] || { opacity: 0, translateY: 40 };
+
+          return (
+            <section key={step.id} className="mg-flow-v__step">
+              <div
+                className={`mg-flow-v__card-wrapper ${isLeft ? 'mg-flow-v__card-wrapper--right' : 'mg-flow-v__card-wrapper--left'}`}
+                style={{
+                  opacity,
+                  transform: `translateY(${translateY}px)`,
+                  visibility: opacity > 0.01 ? 'visible' : 'hidden'
+                }}
+              >
+                <div className="mg-flow-v__card-inner">
+                  <div className="mg-flow-v__card-badge">
+                    Step {idx + 1} of 5
+                  </div>
+                  <h3 className="mg-flow-v__card-title">{step.title}</h3>
+                  <p className="mg-flow-v__card-desc">{step.desc}</p>
+                  <span className="mg-flow-v__card-label">{step.label}</span>
+                </div>
+              </div>
+            </section>
+          );
+        })}
       </div>
-    </section>
+    </div>
   );
 }
