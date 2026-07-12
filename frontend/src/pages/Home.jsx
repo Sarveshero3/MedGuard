@@ -88,89 +88,8 @@ export default function Home() {
           {/* Animated Clinical SVG Flowchart */}
           <MedGuardFlowchart />
 
-          <div className="mg-cards">
-            <motion.div
-              variants={sectionReveal}
-              initial="hidden"
-              whileInView="visible"
-              viewport={{ once: true, margin: '-40px' }}
-            >
-              <Card>
-                <CardHeader>
-                  <div className="mg-card__icon">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                      <rect x="3" y="3" width="18" height="18" rx="2" />
-                      <circle cx="9" cy="9" r="2" />
-                      <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
-                    </svg>
-                  </div>
-                  <CardTitle>Capture the prescription</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="mg-audience__text">
-                    Photograph a prescription and let MedGuard extract the medicine name,
-                    dosage, and frequency — resolving Indian brand names to their generic equivalents.
-                  </p>
-                </CardContent>
-              </Card>
-            </motion.div>
 
-            <motion.div
-              variants={sectionReveal}
-              initial="hidden"
-              whileInView="visible"
-              viewport={{ once: true, margin: '-40px' }}
-            >
-              <Card>
-                <CardHeader>
-                  <div className="mg-card__icon">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
-                      <rect x="8" y="2" width="8" height="4" rx="1" ry="1" />
-                      <path d="M9 14h6" />
-                      <path d="M9 18h6" />
-                      <path d="M9 10h6" />
-                    </svg>
-                  </div>
-                  <CardTitle>Bring medication information together</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="mg-audience__text">
-                    All your medicines in one running list — checked against a versioned
-                    safety knowledge base so potential interactions surface in plain language.
-                  </p>
-                </CardContent>
-              </Card>
-            </motion.div>
 
-            <motion.div
-              variants={sectionReveal}
-              initial="hidden"
-              whileInView="visible"
-              viewport={{ once: true, margin: '-40px' }}
-            >
-              <Card>
-                <CardHeader>
-                  <div className="mg-card__icon">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M8 2v4" />
-                      <path d="M16 2v4" />
-                      <rect x="3" y="4" width="18" height="18" rx="2" />
-                      <path d="M3 10h18" />
-                      <path d="m9 16 2 2 4-4" />
-                    </svg>
-                  </div>
-                  <CardTitle>Prepare for the next clinician visit</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="mg-audience__text">
-                    Walk into every appointment knowing what has changed — with a brief
-                    and questions to discuss, always framed as preparation, never diagnosis.
-                  </p>
-                </CardContent>
-              </Card>
-            </motion.div>
-          </div>
         </section>
 
         {/* CTA divider between How it works and Patients/Families */}

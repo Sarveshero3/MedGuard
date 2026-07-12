@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useRef, useEffect, useState, useMemo } from 'react';
+import { useScroll, useTransform, useMotionValueEvent } from 'framer-motion';
 import './MedGuardFlowchart.css';
 
+/* ─── Same 5 step objects, unchanged ─── */
 const FLOW_STEPS = [
   {
     id: 'scan',
@@ -63,120 +65,169 @@ const FLOW_STEPS = [
   },
 ];
 
+/* ─── SVG Winding Path ─── */
+// ViewBox: 400 wide × 1000 tall. Nodes at y=60,280,500,720,940.
+// Path curves left-right between each node.
+const WINDING_PATH_D =
+  'M 200 60 C 200 120, 320 160, 320 200 C 320 240, 80 240, 80 280 ' +
+  'C 80 320, 320 360, 320 400 C 320 440, 80 440, 80 500 ' +
+  'C 80 540, 320 560, 320 600 C 320 640, 80 660, 80 720 ' +
+  'C 80 760, 320 780, 320 840 C 320 880, 200 920, 200 940';
+
+// Fractional positions along path length where each node sits
+// Node 0 = top (0.0), Node 4 = bottom (1.0)
+const NODE_FRACTIONS = [0.0, 0.25, 0.5, 0.75, 1.0];
+
 export default function MedGuardFlowchart() {
+  const sectionRef = useRef(null);
+  const pathRef = useRef(null);
+  const markerRef = useRef(null);
+  const [pathLen, setPathLen] = useState(0);
   const [activeStep, setActiveStep] = useState(0);
 
+  // Measure path length after mount
+  useEffect(() => {
+    if (pathRef.current) {
+      setPathLen(pathRef.current.getTotalLength());
+    }
+  }, []);
+
+  // Scroll-linked progress (0 → 1) through the section
+  const { scrollYProgress } = useScroll({
+    target: sectionRef,
+    offset: ['start center', 'end center'],
+  });
+
+  // Move the marker along the path via CSS transform
+  useMotionValueEvent(scrollYProgress, 'change', (v) => {
+    if (!pathRef.current || !markerRef.current || pathLen === 0) return;
+    const clampedV = Math.max(0, Math.min(1, v));
+    const pt = pathRef.current.getPointAtLength(clampedV * pathLen);
+    markerRef.current.style.transform = `translate(${pt.x - 14}px, ${pt.y - 14}px)`;
+
+    // Determine active step based on scroll thresholds (midpoint between nodes)
+    let step = 0;
+    for (let i = 1; i < NODE_FRACTIONS.length; i++) {
+      const mid = (NODE_FRACTIONS[i - 1] + NODE_FRACTIONS[i]) / 2;
+      if (clampedV >= mid) step = i;
+    }
+    setActiveStep(step);
+  });
+
+  // Compute node positions on the path (static, recalc on pathLen)
+  const nodePositions = useMemo(() => {
+    if (!pathRef.current || pathLen === 0) return FLOW_STEPS.map(() => ({ x: 200, y: 60 }));
+    return NODE_FRACTIONS.map((f) => {
+      const pt = pathRef.current.getPointAtLength(f * pathLen);
+      return { x: pt.x, y: pt.y };
+    });
+  }, [pathLen]);
+
+  // Animated dash for the "traveled" portion of the path
+  const dashOffset = useTransform(scrollYProgress, [0, 1], [pathLen || 1, 0]);
+
   return (
-    <div className="mg-flow">
-      {/* Desktop SVG Flowchart */}
-      <div className="mg-flow__desktop">
-        <svg viewBox="0 0 1000 160" width="100%" height="100%" className="mg-flow__svg">
-          {/* Background Connecting Line */}
-          <path
-            d="M 100 80 L 900 80"
-            stroke="rgba(226, 232, 240, 0.8)"
-            strokeWidth="4"
-            strokeLinecap="round"
-          />
-          
-          {/* Animated Clinical Laser Pulses */}
-          <path
-            d="M 100 80 L 900 80"
-            stroke="var(--mg-accent)"
-            strokeWidth="4"
-            strokeDasharray="30 150"
-            strokeLinecap="round"
-            className="mg-flow__path-glow"
-          />
+    <div ref={sectionRef} className="mg-flow-v">
+      <div className="mg-flow-v__container">
+        {/* SVG and Marker Wrapper (guarantees 1:1 translation coordinates) */}
+        <div className="mg-flow-v__wrapper">
+          {/* SVG Layer */}
+          <svg
+            viewBox="0 0 400 1000"
+            className="mg-flow-v__svg"
+            preserveAspectRatio="xMidYMid meet"
+          >
+            {/* Background path (faint) */}
+            <path
+              d={WINDING_PATH_D}
+              fill="none"
+              stroke="rgba(226, 232, 240, 0.6)"
+              strokeWidth="3"
+              strokeLinecap="round"
+            />
 
-          {/* Interactive Flow Nodes */}
-          {FLOW_STEPS.map((step, idx) => {
-            const cx = 100 + idx * 200;
-            const isActive = idx <= activeStep;
-            const isCurrent = idx === activeStep;
+            {/* Traveled path (accent colored, revealed by scroll) */}
+            <path
+              ref={pathRef}
+              d={WINDING_PATH_D}
+              fill="none"
+              stroke="var(--mg-accent)"
+              strokeWidth="3"
+              strokeLinecap="round"
+              strokeDasharray={pathLen || 1}
+              strokeDashoffset={dashOffset.get ? dashOffset.get() : pathLen || 1}
+              className="mg-flow-v__path-active"
+            />
 
-            return (
-              <g
-                key={step.id}
-                className={`mg-flow__node ${isActive ? 'mg-flow__node--active' : ''} ${isCurrent ? 'mg-flow__node--current' : ''}`}
-                onClick={() => setActiveStep(idx)}
-                style={{ cursor: 'pointer' }}
-              >
-                {/* Outer pulsing ring for current node */}
-                {isCurrent && (
+            {/* Node circles */}
+            {nodePositions.map((pos, idx) => {
+              const isActive = idx <= activeStep;
+              const isCurrent = idx === activeStep;
+              return (
+                <g key={FLOW_STEPS[idx].id}>
+                  {/* Pulse ring for current */}
+                  {isCurrent && (
+                    <circle
+                      cx={pos.x}
+                      cy={pos.y}
+                      r="28"
+                      fill="none"
+                      stroke="var(--mg-accent)"
+                      strokeWidth="1.5"
+                      className="mg-flow-v__pulse"
+                    />
+                  )}
                   <circle
-                    cx={cx}
-                    cy="80"
-                    r="34"
-                    fill="none"
-                    stroke="var(--mg-accent)"
-                    strokeWidth="1.5"
-                    className="mg-flow__pulse-circle"
+                    cx={pos.x}
+                    cy={pos.y}
+                    r="22"
+                    fill="var(--mg-white)"
+                    stroke={isActive ? 'var(--mg-accent)' : 'rgba(226, 232, 240, 0.8)'}
+                    strokeWidth="2.5"
+                    className="mg-flow-v__node-circle"
                   />
-                )}
-                
-                {/* Glow ring */}
-                <circle
-                  cx={cx}
-                  cy="80"
-                  r="26"
-                  fill="var(--mg-white)"
-                  stroke={isActive ? 'var(--mg-accent)' : 'rgba(226, 232, 240, 0.8)'}
-                  strokeWidth="2.5"
-                  className="mg-flow__node-circle"
-                />
-
-                {/* Node Monogram Icon Wrapper */}
-                <g transform={`translate(${cx - 10}, 70)`} className="mg-flow__node-icon">
-                  {step.icon}
+                  {/* Icon inside node */}
+                  <g
+                    transform={`translate(${pos.x - 10}, ${pos.y - 10})`}
+                    className={`mg-flow-v__node-icon ${isActive ? 'mg-flow-v__node-icon--active' : ''}`}
+                  >
+                    {FLOW_STEPS[idx].icon}
+                  </g>
                 </g>
+              );
+            })}
+          </svg>
 
-                {/* Node Label Text */}
-                <text
-                  x={cx}
-                  y="135"
-                  textAnchor="middle"
-                  className={`mg-flow__node-label ${isActive ? 'mg-flow__node-label--active' : ''}`}
-                >
-                  {step.label}
-                </text>
-              </g>
-            );
-          })}
-        </svg>
-      </div>
+          {/* Traveling marker (follows the path exactly within the same wrapper coords) */}
+          <div ref={markerRef} className="mg-flow-v__marker" aria-hidden="true">
+            <div className="mg-flow-v__marker-dot" />
+          </div>
+        </div>
 
-      {/* Mobile Vertical Flow Blocks */}
-      <div className="mg-flow__mobile">
+        {/* Description cards positioned near each node */}
         {FLOW_STEPS.map((step, idx) => {
-          const isActive = idx <= activeStep;
+          const pos = nodePositions[idx];
+          const isLeft = idx % 2 === 0; // alternate sides
+          const isVisible = idx === activeStep;
+
           return (
             <div
               key={step.id}
-              className={`mg-flow__mobile-card ${isActive ? 'mg-flow__mobile-card--active' : ''}`}
-              onClick={() => setActiveStep(idx)}
+              className={`mg-flow-v__card ${isLeft ? 'mg-flow-v__card--left' : 'mg-flow-v__card--right'} ${isVisible ? 'mg-flow-v__card--visible' : ''}`}
+              style={{
+                top: `${(pos.y / 1000) * 100}%`,
+                [isLeft ? 'right' : 'left']: '52%',
+              }}
             >
-              <div className="mg-flow__mobile-header">
-                <div className="mg-flow__mobile-icon">{step.icon}</div>
-                <span className="mg-flow__mobile-label">{step.label}</span>
+              <div className="mg-flow-v__card-badge">
+                Step {idx + 1} of 5
               </div>
-              <p className="mg-flow__mobile-title">{step.title}</p>
+              <h3 className="mg-flow-v__card-title">{step.title}</h3>
+              <p className="mg-flow-v__card-desc">{step.desc}</p>
+              <span className="mg-flow-v__card-label">{step.label}</span>
             </div>
           );
         })}
-      </div>
-
-      {/* Step Info Panel */}
-      <div className="mg-flow__info-panel">
-        <div className="mg-flow__info-badge">
-          Step {activeStep + 1} of 5
-        </div>
-        <h3 className="mg-flow__info-title">
-          {FLOW_STEPS[activeStep].title}
-        </h3>
-        <p className="mg-flow__info-desc">
-          {FLOW_STEPS[activeStep].desc}
-        </p>
       </div>
     </div>
   );

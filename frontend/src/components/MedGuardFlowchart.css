@@ -1,109 +1,143 @@
 /* ==========================================================================
-   MedGuardFlowchart — Animated Clinical SVG Workflow Styles
-   ========================================================================== */
+   MedGuardFlowchart — Vertical Scroll-Scrubbed Winding Path Styles
+   ========================================================================= */
 
-.mg-flow {
+.mg-flow-v {
+  position: relative;
   max-width: 960px;
-  margin: 0 auto 56px;
-  background: var(--mg-white);
-  border: 1px solid var(--mg-border);
-  border-radius: 24px;
-  padding: 40px;
-  box-shadow: 0 10px 30px rgba(11, 31, 51, 0.02);
+  margin: 80px auto;
+  padding: 0 24px;
 }
 
-.mg-flow__desktop {
+.mg-flow-v__container {
+  position: relative;
+  width: 100%;
+  height: 1000px; /* fixed height for 1:1 translation coordinates */
+}
+
+/* Centered coordinate space wrapper for 1:1 translation of coordinates */
+.mg-flow-v__wrapper {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 400px;
+  height: 1000px;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.mg-flow-v__svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
   display: block;
 }
 
-.mg-flow__svg {
-  overflow: visible;
+/* Active colored path trace */
+.mg-flow-v__path-active {
+  transition: stroke-dashoffset 0.1s ease-out;
 }
 
-/* Pulsing Clinical Laser Path */
-.mg-flow__path-glow {
-  animation: mg-laser-flow 3s linear infinite;
-}
-
-@keyframes mg-laser-flow {
-  from {
-    stroke-dashoffset: 180;
-  }
-  to {
-    stroke-dashoffset: -180;
-  }
-}
-
-/* Pulsing Outer Node Ring */
-.mg-flow__pulse-circle {
-  animation: mg-pulse-ring 1.8s cubic-bezier(0.25, 0, 0, 1) infinite;
+/* Pulse animation on current active step circle */
+.mg-flow-v__pulse {
+  animation: mg-pulse-ring-v 1.8s cubic-bezier(0.25, 0, 0, 1) infinite;
   transform-origin: center;
 }
 
-@keyframes mg-pulse-ring {
+@keyframes mg-pulse-ring-v {
   0% {
-    r: 28px;
+    r: 22px;
     opacity: 0.8;
   }
   100% {
-    r: 44px;
+    r: 34px;
     opacity: 0;
   }
 }
 
-/* Node Elements */
-.mg-flow__node {
-  transition: transform 0.3s ease;
+.mg-flow-v__node-circle {
+  transition: stroke 0.3s, fill 0.3s;
 }
 
-.mg-flow__node-circle {
-  transition: stroke 0.3s, fill 0.3s, filter 0.3s;
-  box-shadow: 0 4px 10px rgba(11, 31, 51, 0.05);
-}
-
-.mg-flow__node:hover .mg-flow__node-circle {
-  stroke: var(--mg-accent);
-  filter: drop-shadow(0 4px 8px rgba(15, 118, 110, 0.25));
-}
-
-.mg-flow__node:hover {
-  transform: translateY(-2px);
-}
-
-.mg-flow__node-icon {
+.mg-flow-v__node-icon {
   color: var(--mg-muted);
   transition: color 0.3s;
+  pointer-events: none;
 }
 
-.mg-flow__node--active .mg-flow__node-icon {
+.mg-flow-v__node-icon--active {
   color: var(--mg-accent);
 }
 
-.mg-flow__node-label {
-  font-size: 13px;
-  font-weight: 700;
-  fill: var(--mg-muted);
-  transition: fill 0.3s;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
+/* Traveling path marker */
+.mg-flow-v__marker {
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  background: var(--mg-accent);
+  border: 3.5px solid var(--mg-white);
+  border-radius: 50%;
+  box-shadow: 0 4px 12px rgba(15, 118, 110, 0.4);
+  z-index: 5;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  will-change: transform;
 }
 
-.mg-flow__node-label--active {
-  fill: var(--mg-ink);
+.mg-flow-v__marker-dot {
+  width: 6px;
+  height: 6px;
+  background: var(--mg-white);
+  border-radius: 50%;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
 }
 
-/* Step Info Display Panel */
-.mg-flow__info-panel {
-  margin-top: 32px;
-  padding: 24px;
-  background: var(--mg-surface);
-  border-radius: 16px;
+/* Description cards positioned near nodes */
+.mg-flow-v__card {
+  position: absolute;
+  width: 290px;
+  background: var(--mg-white);
   border: 1px solid var(--mg-border);
-  text-align: center;
-  transition: all 0.3s ease;
+  border-radius: 20px;
+  padding: 24px;
+  box-shadow: 0 10px 30px rgba(11, 31, 51, 0.05);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.4s ease, transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.4s;
+  pointer-events: none;
+  z-index: 10;
 }
 
-.mg-flow__info-badge {
+.mg-flow-v__card--visible {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+/* Position-based alignment and animation offsets */
+.mg-flow-v__card--left {
+  transform: translateY(-50%) translateX(-20px);
+}
+
+.mg-flow-v__card--left.mg-flow-v__card--visible {
+  transform: translateY(-50%) translateX(0);
+}
+
+.mg-flow-v__card--right {
+  transform: translateY(-50%) translateX(20px);
+}
+
+.mg-flow-v__card--right.mg-flow-v__card--visible {
+  transform: translateY(-50%) translateX(0);
+}
+
+/* Card inside elements */
+.mg-flow-v__card-badge {
   display: inline-block;
   font-size: 11px;
   font-weight: 700;
@@ -111,83 +145,70 @@
   background: rgba(15, 118, 110, 0.08);
   padding: 4px 10px;
   border-radius: 9999px;
-  letter-spacing: 1px;
+  letter-spacing: 0.5px;
   text-transform: uppercase;
   margin-bottom: 12px;
 }
 
-.mg-flow__info-title {
-  font-size: 20px;
+.mg-flow-v__card-title {
+  font-size: 18px;
   font-weight: 700;
   color: var(--mg-ink);
   margin: 0 0 8px;
 }
 
-.mg-flow__info-desc {
-  font-size: 15px;
+.mg-flow-v__card-desc {
+  font-size: 14px;
   color: var(--mg-muted);
-  line-height: 1.6;
-  max-width: 560px;
-  margin: 0 auto;
+  line-height: 1.5;
+  margin: 0 0 12px;
 }
 
-/* Mobile Vertical Flow */
-.mg-flow__mobile {
-  display: none;
+.mg-flow-v__card-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--mg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* ==========================================================================
+   Mobile/Tablet responsive overrides
+   ========================================================================= */
+
+@media (max-width: 900px) {
+  /* Scale width of cards to fit tablet */
+  .mg-flow-v__card {
+    width: 220px;
+  }
 }
 
 @media (max-width: 768px) {
-  .mg-flow {
-    padding: 24px;
-    border-radius: 16px;
+  /* Fallback to simple, clean, non-janky vertical timeline list */
+  .mg-flow-v__container {
+    height: auto;
   }
-  .mg-flow__desktop {
-    display: none;
+
+  .mg-flow-v__wrapper {
+    display: none; /* Hide SVG path and marker on mobile for jank-free performance */
   }
-  .mg-flow__mobile {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
+
+  .mg-flow-v__card {
+    position: relative;
+    width: 100%;
+    top: auto !important;
+    left: auto !important;
+    right: auto !important;
+    transform: none !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+    pointer-events: auto !important;
     margin-bottom: 24px;
+    box-shadow: 0 4px 12px rgba(11, 31, 51, 0.03);
   }
-  .mg-flow__mobile-card {
-    flex: 1 1 calc(50% - 12px);
-    border: 1px solid var(--mg-border);
-    border-radius: 12px;
-    padding: 16px;
-    cursor: pointer;
-    background: var(--mg-white);
-    transition: all 0.2s;
-  }
-  .mg-flow__mobile-card--active {
-    border-color: var(--mg-accent);
-    background: rgba(15, 118, 110, 0.02);
-  }
-  .mg-flow__mobile-header {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 8px;
-  }
-  .mg-flow__mobile-icon {
-    color: var(--mg-muted);
-  }
-  .mg-flow__mobile-card--active .mg-flow__mobile-icon {
-    color: var(--mg-accent);
-  }
-  .mg-flow__mobile-label {
-    font-size: 11px;
-    font-weight: 700;
-    color: var(--mg-muted);
-    text-transform: uppercase;
-  }
-  .mg-flow__mobile-card--active .mg-flow__mobile-label {
-    color: var(--mg-accent);
-  }
-  .mg-flow__mobile-title {
-    font-size: 14px;
-    font-weight: 700;
-    color: var(--mg-ink);
-    margin: 0;
+
+  .mg-flow-v__card:last-child {
+    margin-bottom: 0;
   }
 }
