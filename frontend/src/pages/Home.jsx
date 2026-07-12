@@ -70,26 +70,9 @@ export default function Home() {
       {/* Static Opaque Main Site Sections (slid up over the sequence) */}
       <main className="mg-main-content">
         
-        {/* How MedGuard Helps */}
-        <section id="how-it-works" className="mg-section mg-section__centered mg-section--opaque">
-          <motion.div
-            variants={sectionReveal}
-            initial="hidden"
-            whileInView="visible"
-            viewport={{ once: true, margin: '-80px' }}
-          >
-            <p className="mg-section__eyebrow">How it works</p>
-            <h1 className="mg-section__title">How MedGuard helps</h1>
-            <p className="mg-section__subtitle">
-              A clearer path from prescription to informed conversation.
-            </p>
-          </motion.div>
-
-          {/* Animated Clinical SVG Flowchart */}
+        {/* How MedGuard Helps (Full viewport width and height colors) */}
+        <section id="how-it-works" style={{ padding: 0, overflow: 'hidden' }}>
           <MedGuardFlowchart />
-
-
-
         </section>
 
         {/* CTA divider between How it works and Patients/Families */}

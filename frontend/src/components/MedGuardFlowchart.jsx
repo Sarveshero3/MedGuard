@@ -10,7 +10,7 @@ const FLOW_STEPS = [
     title: 'Prescription Scan',
     desc: 'Extract handwritten or printed text directly from prescription images.',
     icon: (
-      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
         <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
         <circle cx="12" cy="13" r="4" />
       </svg>
@@ -22,7 +22,7 @@ const FLOW_STEPS = [
     title: 'OCR Extraction',
     desc: 'Parse medicine names, dosages, and frequencies into tabular data.',
     icon: (
-      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
         <rect x="3" y="4" width="18" height="18" rx="2" />
         <path d="M7 8h10M7 12h10M7 16h6" />
       </svg>
@@ -34,7 +34,7 @@ const FLOW_STEPS = [
     title: 'Generic Resolution',
     desc: 'Map brand names to generic molecule equivalents automatically.',
     icon: (
-      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
         <path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z" />
         <path d="m8.5 8.5 7 7" />
       </svg>
@@ -46,7 +46,7 @@ const FLOW_STEPS = [
     title: 'Safety Check',
     desc: 'Verify cross-interactions deterministically using safety logic.',
     icon: (
-      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
         <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
       </svg>
     ),
@@ -57,7 +57,7 @@ const FLOW_STEPS = [
     title: 'Visit Brief',
     desc: 'Generate preparation guides and structured questions for doctor appointments.',
     icon: (
-      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
         <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" />
       </svg>
@@ -124,12 +124,19 @@ export default function MedGuardFlowchart() {
     setActiveStep(stepIdx);
 
     // Update global tracker position along the single continuous track
-    // Warp the progress slightly for steps 3, 4, and 5 to speed up the tracker
-    let p_warped = p;
-    if (p > 0.25) {
-      const factor = (p - 0.25) / 0.75;
-      p_warped = 0.25 + Math.pow(factor, 0.78) * 0.75; // Accelerate the tracker at later steps
+    // Piecewise segment progress warping to control segment speeds:
+    // Segment 0 (Step 1 -> 2): normal
+    // Segment 1 (Step 2 -> 3): slower (power 1.45)
+    // Segment 2 (Step 3 -> 4): normal
+    // Segment 3 (Step 4 -> 5): slower (power 1.45)
+    const stepIdxGlobal = Math.min(3, Math.floor(p / 0.25));
+    const segmentT = (p - stepIdxGlobal * 0.25) / 0.25;
+    
+    let t_warped = segmentT;
+    if (stepIdxGlobal === 1 || stepIdxGlobal === 3) {
+      t_warped = Math.pow(segmentT, 1.45); // slows down 2nd and 5th steps
     }
+    const p_warped = (stepIdxGlobal + t_warped) * 0.25;
 
     // Use the SAME warped progress for both marker AND trail
     setTrailProgress(p_warped);
@@ -172,11 +179,13 @@ export default function MedGuardFlowchart() {
 
   // Calculate nodes positions across the entire 500vh height
   const nodes = useMemo(() => {
+    // Bring nodes closer to center and make them larger
+    const offsetX = Math.max(220, Math.min(300, dimensions.width * 0.18));
     return FLOW_STEPS.map((_, idx) => {
       const isLeft = idx % 2 === 0;
       return {
-        x: isLeft ? 100 : dimensions.width - 100,
-        y: idx * dimensions.height + 160,
+        x: isLeft ? offsetX : dimensions.width - offsetX,
+        y: idx * dimensions.height + 320, // Shifted down by 320px for the header space
       };
     });
   }, [dimensions]);
@@ -215,6 +224,13 @@ export default function MedGuardFlowchart() {
     ]
   );
 
+  // Transform activeColor (nodes, trace, tracker dot) gradually as you scroll
+  const activeColor = useTransform(
+    scrollYProgress,
+    [0, 0.25, 0.5, 0.75, 1.0],
+    ['#0F766E', '#0284C7', '#CA8A04', '#9333EA', '#0F766E']
+  );
+
   return (
     <motion.div
       ref={containerRef}
@@ -226,6 +242,15 @@ export default function MedGuardFlowchart() {
         marginLeft: 'calc(-50vw + 50%)',
       }}
     >
+      {/* Title Header area (moved inside container to share background and grid colors) */}
+      <div className="mg-flow-v__header" style={{ padding: '96px 24px 20px', textAlign: 'center' }}>
+        <p className="mg-section__eyebrow" style={{ color: 'var(--mg-accent)', fontSize: '13px', fontWeight: 600, letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '12px' }}>How it works</p>
+        <h1 className="mg-section__title" style={{ fontSize: '42px', fontWeight: 700, letterSpacing: '-0.5px', color: 'var(--mg-ink)', margin: '0 0 16px', fontFamily: "'Cormorant Garamond', serif" }}>How MedGuard helps</h1>
+        <p className="mg-section__subtitle" style={{ fontSize: '18px', color: 'var(--mg-muted)', maxWidth: '640px', margin: '0 auto' }}>
+          A clearer path from prescription to informed conversation.
+        </p>
+      </div>
+
       {/* Timeline SVG layer covering full height of timeline */}
       <div className="mg-flow-v__svg-layer">
         <svg
@@ -246,15 +271,15 @@ export default function MedGuardFlowchart() {
 
           {/* Active path trail (colored, uses SAME warped progress as tracker) */}
           {continuousPathD && (
-            <path
+            <motion.path
               ref={pathRef}
               d={continuousPathD}
               fill="none"
-              stroke="var(--mg-accent)"
               strokeWidth="6"
               strokeLinecap="round"
               strokeDasharray={pathLen || 1}
               strokeDashoffset={(1 - trailProgress) * pathLen}
+              style={{ stroke: activeColor }}
               className="mg-flow-v__path-active"
             />
           )}
@@ -262,13 +287,13 @@ export default function MedGuardFlowchart() {
           {/* Single continuous tracker marker (never teleport, always on the line, rendered under nodes) */}
           {pathLen > 0 && (
             <g transform={`translate(${markerPos.x}, ${markerPos.y})`}>
-              <circle
+              <motion.circle
                 cx="0"
                 cy="0"
                 r="18"
-                fill="var(--mg-accent)"
                 stroke="var(--mg-white)"
                 strokeWidth="3"
+                style={{ fill: activeColor }}
                 className="mg-flow-v__travel-dot"
               />
               <circle
@@ -286,31 +311,32 @@ export default function MedGuardFlowchart() {
             return (
               <g key={FLOW_STEPS[idx].id}>
                 {isActive && (
-                  <circle
+                  <motion.circle
                     cx={node.x}
                     cy={node.y}
-                    r="64"
+                    r="78"
                     fill="none"
-                    stroke="var(--mg-accent)"
                     strokeWidth="2"
+                    style={{ stroke: activeColor }}
                     className="mg-flow-v__node-pulse"
                   />
                 )}
-                <circle
+                <motion.circle
                   cx={node.x}
                   cy={node.y}
-                  r="48"
+                  r="58"
                   fill="var(--mg-white)"
-                  stroke={isActive ? 'var(--mg-accent)' : 'rgba(226, 232, 240, 0.8)'}
                   strokeWidth="3.5"
+                  style={{ stroke: isActive ? activeColor : 'rgba(226, 232, 240, 0.8)' }}
                   className="mg-flow-v__node-circle"
                 />
-                <g
-                  transform={`translate(${node.x - 16}, ${node.y - 16})`}
-                  className={`mg-flow-v__node-icon ${isActive ? 'mg-flow-v__node-icon--active' : ''}`}
+                <motion.g
+                  transform={`translate(${node.x - 19}, ${node.y - 19})`}
+                  style={{ color: isActive ? activeColor : 'var(--mg-muted)' }}
+                  className="mg-flow-v__node-icon"
                 >
                   {FLOW_STEPS[idx].icon}
-                </g>
+                </motion.g>
               </g>
             );
           })}
