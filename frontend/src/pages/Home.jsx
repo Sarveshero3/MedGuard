@@ -269,7 +269,7 @@ export default function Home() {
               size="lg"
               asChild
             >
-              <a href="#how-it-works">See how MedGuard works</a>
+              <a href="/login">Get Started</a>
             </Button>
           </motion.div>
         </section>

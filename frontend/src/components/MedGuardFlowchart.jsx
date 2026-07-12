@@ -10,7 +10,7 @@ const FLOW_STEPS = [
     title: 'Prescription Scan',
     desc: 'Extract handwritten or printed text directly from prescription images.',
     icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
         <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
         <circle cx="12" cy="13" r="4" />
       </svg>
@@ -22,7 +22,7 @@ const FLOW_STEPS = [
     title: 'OCR Extraction',
     desc: 'Parse medicine names, dosages, and frequencies into tabular data.',
     icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
         <rect x="3" y="4" width="18" height="18" rx="2" />
         <path d="M7 8h10M7 12h10M7 16h6" />
       </svg>
@@ -34,7 +34,7 @@ const FLOW_STEPS = [
     title: 'Generic Resolution',
     desc: 'Map brand names to generic molecule equivalents automatically.',
     icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
         <path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z" />
         <path d="m8.5 8.5 7 7" />
       </svg>
@@ -46,7 +46,7 @@ const FLOW_STEPS = [
     title: 'Safety Check',
     desc: 'Verify cross-interactions deterministically using safety logic.',
     icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
         <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
       </svg>
     ),
@@ -57,7 +57,7 @@ const FLOW_STEPS = [
     title: 'Visit Brief',
     desc: 'Generate preparation guides and structured questions for doctor appointments.',
     icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
         <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" />
       </svg>
@@ -90,24 +90,18 @@ export default function MedGuardFlowchart() {
   // State to track current active step
   const [activeStep, setActiveStep] = useState(0);
 
-  // Smoothly transform background gradient between light teal and pure white based on scroll
-  const background = useTransform(
+  // Smoothly transform background color between light teal and pure white based on scroll
+  const backgroundColor = useTransform(
     scrollYProgress,
     [0, 0.25, 0.5, 0.75, 1.0],
-    [
-      'radial-gradient(120% 120% at 50% 10%, #ffffff 0%, #f4fbfb 50%, #e6f2f2 100%)',
-      'radial-gradient(120% 120% at 50% 10%, #e6f2f2 0%, #f4fbfb 50%, #ffffff 100%)',
-      'radial-gradient(120% 120% at 50% 10%, #ffffff 0%, #f0f7f7 50%, #e6f2f2 100%)',
-      'radial-gradient(120% 120% at 50% 10%, #e6f2f2 0%, #ffffff 50%, #f4fbfb 100%)',
-      'radial-gradient(120% 120% at 50% 10%, #f4fbfb 0%, #f0f7f7 50%, #ffffff 100%)'
-    ]
+    ['#ffffff', '#f0f9f9', '#e6f4f4', '#f4fbfb', '#ffffff']
   );
 
   return (
     <div
       ref={containerRef}
       className="mg-flow-v"
-      style={{ background }}
+      style={{ backgroundColor }}
     >
       <div className="mg-flow-v__timeline">
         {FLOW_STEPS.map((step, idx) => (
@@ -133,20 +127,37 @@ function StepSection({ step, index, isLast, activeStep, setActiveStep, isComplet
   const pathRef = useRef(null);
   const [pathLen, setPathLen] = useState(0);
 
+  // Get screen size dynamically to scale path overlay exactly
+  const [dimensions, setDimensions] = useState({ width: 1200, height: 800 });
+
+  useEffect(() => {
+    const handleResize = () => {
+      if (sectionRef.current) {
+        setDimensions({
+          width: sectionRef.current.clientWidth,
+          height: sectionRef.current.clientHeight,
+        });
+      }
+    };
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   // States driven by local scroll to control carousel card and travel marker
   const [cardOpacity, setCardOpacity] = useState(0);
   const [cardTranslateY, setCardTranslateY] = useState(40);
   const [markerPos, setMarkerPos] = useState({ x: 0, y: 0 });
   const [showMarker, setShowMarker] = useState(false);
 
-  // Measure SVG path length on mount
+  // Measure SVG path length on coordinate changes
   useEffect(() => {
     if (pathRef.current) {
       setPathLen(pathRef.current.getTotalLength());
     }
-  }, []);
+  }, [dimensions]);
 
-  // Track scroll of this step section
+  // Track scroll of this step section (Full viewport height 100vh)
   const { scrollYProgress } = useScroll({
     target: sectionRef,
     offset: ['start center', 'end center'],
@@ -193,21 +204,22 @@ function StepSection({ step, index, isLast, activeStep, setActiveStep, isComplet
   });
 
   // Calculate coordinates based on strictly alternating side layout:
-  // Node coordinates inside the 960x500 viewBox
+  // Node coordinates inside the dynamic pixel coordinate space
   const isLeft = index % 2 === 0;
-  const nodeX = isLeft ? 120 : 840;
-  const nodeY = 60;
+  
+  // Large prominent node offsets flush against screen margins
+  const nodeX = isLeft ? 100 : dimensions.width - 100;
+  const nodeY = 160;
 
   // Next node coordinates (opposite side, top of next section / bottom of current section)
-  const nextX = isLeft ? 840 : 120;
-  const nextY = 500;
+  const nextX = isLeft ? dimensions.width - 100 : 100;
+  const nextY = dimensions.height + 160;
 
-  // Large, dramatic sweeping curve: S-curve using cubic bezier control points
+  // Winding curves: Path terminates completely at Step 5 node
   const pathD = isLast
-    ? `M ${nodeX} ${nodeY} L ${nodeX} 200` // Final step path ends shortly
-    : `M ${nodeX} ${nodeY} C ${nodeX} 280, ${nextX} 220, ${nextX} ${nextY}`;
+    ? ''
+    : `M ${nodeX} ${nodeY} C ${nodeX} ${dimensions.height * 0.5 + 160}, ${nextX} ${dimensions.height * 0.4 + 160}, ${nextX} ${nextY}`;
 
-  // active path trace driven by scroll progress
   const dashOffset = isCompleted ? 0 : (1 - scrollYProgress.get()) * pathLen;
 
   return (
@@ -215,43 +227,48 @@ function StepSection({ step, index, isLast, activeStep, setActiveStep, isComplet
       {/* SVG Path & Node Layer */}
       <div className="mg-flow-v__svg-layer">
         <svg
-          viewBox="0 0 960 500"
+          width="100%"
+          height="100%"
           className="mg-flow-v__step-svg"
-          preserveAspectRatio="xMidYMid meet"
+          style={{ overflow: 'visible' }}
         >
           {/* Background winding path (faint) */}
-          <path
-            d={pathD}
-            fill="none"
-            stroke="rgba(226, 232, 240, 0.7)"
-            strokeWidth="3.5"
-            strokeLinecap="round"
-          />
+          {pathD && (
+            <path
+              d={pathD}
+              fill="none"
+              stroke="rgba(226, 232, 240, 0.8)"
+              strokeWidth="6"
+              strokeLinecap="round"
+            />
+          )}
 
           {/* Active path trail (colored, stays filled if completed) */}
-          <path
-            ref={pathRef}
-            d={pathD}
-            fill="none"
-            stroke="var(--mg-accent)"
-            strokeWidth="3.5"
-            strokeLinecap="round"
-            strokeDasharray={pathLen || 1}
-            strokeDashoffset={isCompleted ? 0 : dashOffset}
-            className="mg-flow-v__path-active"
-          />
+          {pathD && (
+            <path
+              ref={pathRef}
+              d={pathD}
+              fill="none"
+              stroke="var(--mg-accent)"
+              strokeWidth="6"
+              strokeLinecap="round"
+              strokeDasharray={pathLen || 1}
+              strokeDashoffset={isCompleted ? 0 : dashOffset}
+              className="mg-flow-v__path-active"
+            />
+          )}
 
-          {/* Node SVG Group (anchored perfectly at start coordinates) */}
+          {/* Node SVG Group (large and prominent node circles) */}
           <g>
-            {/* Glowing ring if active */}
+            {/* Pulsing glow outer ring if active */}
             {activeStep >= index && (
               <circle
                 cx={nodeX}
                 cy={nodeY}
-                r="30"
+                r="64"
                 fill="none"
                 stroke="var(--mg-accent)"
-                strokeWidth="1.5"
+                strokeWidth="2"
                 className="mg-flow-v__node-pulse"
               />
             )}
@@ -259,15 +276,15 @@ function StepSection({ step, index, isLast, activeStep, setActiveStep, isComplet
             <circle
               cx={nodeX}
               cy={nodeY}
-              r="24"
+              r="48"
               fill="var(--mg-white)"
               stroke={activeStep >= index ? 'var(--mg-accent)' : 'rgba(226, 232, 240, 0.8)'}
-              strokeWidth="2.5"
+              strokeWidth="3.5"
               className="mg-flow-v__node-circle"
             />
             {/* Embedded step icon */}
             <g
-              transform={`translate(${nodeX - 10}, ${nodeY - 10})`}
+              transform={`translate(${nodeX - 16}, ${nodeY - 16})`}
               className={`mg-flow-v__node-icon ${activeStep >= index ? 'mg-flow-v__node-icon--active' : ''}`}
             >
               {step.icon}
@@ -280,16 +297,16 @@ function StepSection({ step, index, isLast, activeStep, setActiveStep, isComplet
               <circle
                 cx="0"
                 cy="0"
-                r="10"
+                r="18"
                 fill="var(--mg-accent)"
                 stroke="var(--mg-white)"
-                strokeWidth="2.5"
+                strokeWidth="3"
                 className="mg-flow-v__travel-dot"
               />
               <circle
                 cx="0"
                 cy="0"
-                r="3"
+                r="5"
                 fill="var(--mg-white)"
               />
             </g>
@@ -297,12 +314,12 @@ function StepSection({ step, index, isLast, activeStep, setActiveStep, isComplet
 
           {/* Continuation chevron cue before path exits section */}
           {!isLast && (
-            <g transform={`translate(${nextX}, ${nextY - 40})`} className="mg-flow-v__cue">
+            <g transform={`translate(${nextX}, ${dimensions.height - 40})`} className="mg-flow-v__cue">
               <path
-                d="M -6 -4 L 0 2 L 6 -4"
+                d="M -8 -5 L 0 3 L 8 -5"
                 fill="none"
                 stroke="var(--mg-accent)"
-                strokeWidth="2.5"
+                strokeWidth="3"
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 className="mg-flow-v__cue-chevron"
@@ -312,7 +329,7 @@ function StepSection({ step, index, isLast, activeStep, setActiveStep, isComplet
         </svg>
       </div>
 
-      {/* Description Card Layer (Top-anchored next to node) */}
+      {/* Description Card Layer (Top-anchored, rendered directly on page with no borders/box) */}
       <div
         className={`mg-flow-v__card-wrapper ${isLeft ? 'mg-flow-v__card-wrapper--right' : 'mg-flow-v__card-wrapper--left'}`}
         style={{

@@ -40,6 +40,5 @@ export const COPY_BEATS = [
     end: 1.0,
     headline: 'Designed to help you prepare, not diagnose.',
     body: 'Clearer information for more informed conversations with your clinician.',
-    cta: { label: 'See how MedGuard works', href: '#how-it-works' },
   },
 ];

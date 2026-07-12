@@ -87,36 +87,46 @@ The scroll copy cards fade in, hold, and fade out across the remaining `[0.20, 1
 
 ## 7. Interactive SVG Vertical Flowchart
 
-The "How MedGuard helps" section features a scroll-scrubbed vertical winding path timeline with 5 dedicated step sections:
+The "How MedGuard helps" section features a scroll-scrubbed vertical winding path timeline with 5 full-viewport step sections:
 
-### Layout
-- Each step occupies a fixed-height section (500px). Nodes and text cards are **top-anchored** at the same height, not centered.
-- Sides strictly alternate per step:
-  - **Step 1 (Photograph)**: Node top-left, text top-right
-  - **Step 2 (Structure)**: Node top-right, text top-left
-  - **Step 3 (Translate)**: Node top-left, text top-right
-  - **Step 4 (Analyze)**: Node top-right, text top-left
-  - **Step 5 (Prepare)**: Node top-left, text top-right
+### Full-Screen Isolation
+- Each step occupies `100vh` (full viewport height) as a self-contained section with `overflow: hidden`.
+- No neighboring step's elements (nodes, paths, text) are ever visible while viewing the current step.
+
+### Node & Track Scale
+- Nodes are large (48px radius circle, 64px pulse ring) and sit **flush against their screen edge** with only a small margin, filling their side of the screen as a deliberate, prominent element.
+- The connecting path uses a `strokeWidth` of 6px and the traveling marker uses an 18px radius — proportional to the large nodes.
+- Icons inside nodes are 32×32px.
+
+### Layout (Alternating Sides)
+- **Step 1 (Photograph)**: Node left, text right
+- **Step 2 (Structure)**: Node right, text left
+- **Step 3 (Translate)**: Node left, text right
+- **Step 4 (Analyze)**: Node right, text left
+- **Step 5 (Prepare)**: Node left, text right
 
 ### Connecting Paths
-- Between each step, a large dramatic sweeping S-curve (cubic bezier) fills most of the vertical space, crossing from one side to the other.
-- A continuation chevron cue animates near the bottom of each segment to hint the path continues.
+- Between each step, a large dramatic sweeping S-curve (cubic bezier) fills most of the viewport height, crossing from one side to the other.
+- A continuation chevron cue bounces near the bottom of each segment to hint the path continues.
+- **Step 5 has no path** — the track terminates completely at the final node. No trailing line, no continuation cue.
 
 ### Segment-Based Marker & Trail
-- No continuous marker scrub across the full path length. Each step's segment tracks its own local `scrollYProgress`.
-- A small traveling marker dot flourishes along the active segment only, hidden when near a node (< 5% or > 95% progress).
-- When the marker "arrives" at a node, the node itself switches to its active visual state (filled accent ring, pulse glow) instead of rendering a floating dot on top of the icon.
-- Once a segment's scroll progress crosses 90%, it is permanently marked as "traveled" in React state — the colored trail stays filled even during slight reverse scrolls.
+- Each step's segment tracks its own local `scrollYProgress` with `useScroll`.
+- A visible traveling marker dot (18px radius, accent-filled, white inner dot) flourishes along the active segment, hidden when near a node (< 5% or > 95% progress).
+- When the marker "arrives" at a node, the node itself switches to active state (accent ring, pulse glow) — no dot sits on top of an icon.
+- Once a segment crosses 90% progress, it's permanently marked "traveled" in React state — the colored trail stays filled during reverse scrolls.
 
-### Text Entrance
-- Each step's text card enters with a **fast carousel slide-up** animation (from +40px below) as the user scrolls into the step's range.
-- Scrolling past the step's range exits the card with a quick slide-up-and-out (to -40px above). Only one card is visible at any time.
+### Text Presentation
+- Text (badge, title, description, label) renders **directly on the page** with no bordered card, box, or background.
+- Fast carousel slide-up entrance (+40px below → 0) on scroll-in, slide-up-and-out (0 → -40px above) on scroll-past.
+- Title at 32px/700, description at 18px/1.6, badge as a small pill.
 
-### Background Gradient
-- The parent container's scroll progress drives a smooth radial gradient color shift between light teal (`#e6f2f2`, `#f4fbfb`) and pure white (`#ffffff`), staying within the light medical theme at all points.
+### Background
+- **Layer 1**: Subtle light grid pattern (40×40px squares, `rgba(15, 118, 110, 0.03)` thin lines), like graph paper.
+- **Layer 2**: Background color tint shifts gradually from `#ffffff` → `#f0f9f9` → `#e6f4f4` → `#f4fbfb` → `#ffffff` as the user scrolls from step 1 to step 5. Always light-themed, no dark dips.
 
 ### Mobile Fallback
-- Below `768px` screen widths, the SVG paths and markers are hidden. All five step cards render in a clean vertical list with full opacity and no scroll-driven animations.
+- Below `768px`: SVG layer hidden, all five cards render in a clean vertical list with full opacity and no scroll-driven animations.
 
 ---
 
