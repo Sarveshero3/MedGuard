@@ -111,8 +111,9 @@ The "How MedGuard helps" section features a scroll-scrubbed vertical winding pat
 - The path terminates completely at Step 5's node.
 
 ### Continuous Tracker & Trail
-- A **single active tracker marker** (18px radius dot) is rendered inside the SVG coordinates and moves smoothly and continuously along the entire path length based on the global scroll progress (`scrollYProgress` of the `500vh` container).
+- A **single active tracker marker** (18px radius dot) is rendered inside the SVG coordinates, positioned **on top of the track but underneath the nodes** in SVG render order.
 - The tracker dot glides smoothly up and down the winding curves as the user scrolls, with **zero teleportation, jumps, or masking**.
+- The tracking speed is fully synchronized to the `500vh` scrollable height: the container's scroll progress matches the 0.25 node intervals exactly, ensuring the tracker reaches each node (at progress 0.0, 0.25, 0.50, 0.75, 1.00) at the precise moment it centers in the viewport.
 - The active trail is rendered as a single `motion.path` with `pathLength: scrollYProgress`, revealing the colored path continuously.
 - Nodes change to their active visual state (glow pulse) when the scroll progress reaches their respective positions.
 

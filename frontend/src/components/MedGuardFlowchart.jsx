@@ -94,10 +94,10 @@ export default function MedGuardFlowchart() {
     }
   }, [dimensions]);
 
-  // Track global scroll of the entire 500vh container
+  // Track global scroll of the entire 500vh container (start to end viewport match)
   const { scrollYProgress } = useScroll({
     target: containerRef,
-    offset: ['start center', 'end center'],
+    offset: ['start start', 'end end'],
   });
 
   const [activeStep, setActiveStep] = useState(0);
@@ -111,9 +111,15 @@ export default function MedGuardFlowchart() {
   useMotionValueEvent(scrollYProgress, 'change', (v) => {
     const p = Math.max(0, Math.min(1, v));
 
-    // Determine current active step (0 to 4)
-    const stepInterval = 1 / FLOW_STEPS.length;
-    const stepIdx = Math.min(FLOW_STEPS.length - 1, Math.floor(p / stepInterval));
+    // Determine current active step based on midpoints of 0.25 segment intervals
+    // Node 0 at 0.0, Node 1 at 0.25, Node 2 at 0.50, Node 3 at 0.75, Node 4 at 1.00
+    let stepIdx = 0;
+    if (p < 0.125) stepIdx = 0;
+    else if (p >= 0.125 && p < 0.375) stepIdx = 1;
+    else if (p >= 0.375 && p < 0.625) stepIdx = 2;
+    else if (p >= 0.625 && p < 0.875) stepIdx = 3;
+    else stepIdx = 4;
+    
     setActiveStep(stepIdx);
 
     // Update global tracker position along the single continuous track
@@ -122,32 +128,30 @@ export default function MedGuardFlowchart() {
       setMarkerPos({ x: pt.x, y: pt.y });
     }
 
-    // Update opacity & translations for all text cards based on relative scroll position
+    // Update opacity & translations for all text cards based on symmetric midpoint ranges
     setCardStates(
       FLOW_STEPS.map((_, idx) => {
-        const startP = idx * stepInterval;
-        const endP = startP + stepInterval;
+        const centerP = idx * 0.25;
         
-        if (p < startP) {
+        // Boundaries for fading card in/out (span of 0.25 step, centered at centerP)
+        const startFadeIn = centerP - 0.125;
+        const endFadeIn = centerP - 0.08;
+        const startFadeOut = centerP + 0.08;
+        const endFadeOut = centerP + 0.125;
+        
+        if (p < startFadeIn) {
           return { opacity: 0, translateY: 40 };
-        } else if (p >= startP && p <= endP) {
-          const stepP = (p - startP) / stepInterval; // local step progress (0 to 1)
-          
-          let opacity = 0;
-          let translateY = 40;
-          if (stepP < 0.15) {
-            const t = stepP / 0.15;
-            opacity = t;
-            translateY = 40 * (1 - t);
-          } else if (stepP >= 0.15 && stepP <= 0.8) {
-            opacity = 1;
-            translateY = 0;
-          } else {
-            const t = (stepP - 0.8) / 0.2;
-            opacity = 1 - t;
-            translateY = -40 * t;
-          }
-          return { opacity, translateY };
+        } else if (p >= startFadeIn && p < endFadeIn) {
+          // Slide in from below
+          const t = (p - startFadeIn) / (endFadeIn - startFadeIn);
+          return { opacity: t, translateY: 40 * (1 - t) };
+        } else if (p >= endFadeIn && p <= startFadeOut) {
+          // Fully visible
+          return { opacity: 1, translateY: 0 };
+        } else if (p > startFadeOut && p <= endFadeOut) {
+          // Slide out to above
+          const t = (p - startFadeOut) / (endFadeOut - startFadeOut);
+          return { opacity: 1 - t, translateY: -40 * t };
         } else {
           return { opacity: 0, translateY: -40 };
         }
@@ -225,6 +229,27 @@ export default function MedGuardFlowchart() {
             />
           )}
 
+          {/* Single continuous tracker marker (never teleport, always on the line, rendered under nodes) */}
+          {pathLen > 0 && (
+            <g transform={`translate(${markerPos.x}, ${markerPos.y})`}>
+              <circle
+                cx="0"
+                cy="0"
+                r="18"
+                fill="var(--mg-accent)"
+                stroke="var(--mg-white)"
+                strokeWidth="3"
+                className="mg-flow-v__travel-dot"
+              />
+              <circle
+                cx="0"
+                cy="0"
+                r="5"
+                fill="var(--mg-white)"
+              />
+            </g>
+          )}
+
           {/* Render all 5 large nodes inside the same SVG space */}
           {nodes.map((node, idx) => {
             const isActive = activeStep >= idx;
@@ -259,27 +284,6 @@ export default function MedGuardFlowchart() {
               </g>
             );
           })}
-
-          {/* Single continuous tracker marker (never teleport, always on the line) */}
-          {pathLen > 0 && (
-            <g transform={`translate(${markerPos.x}, ${markerPos.y})`}>
-              <circle
-                cx="0"
-                cy="0"
-                r="18"
-                fill="var(--mg-accent)"
-                stroke="var(--mg-white)"
-                strokeWidth="3"
-                className="mg-flow-v__travel-dot"
-              />
-              <circle
-                cx="0"
-                cy="0"
-                r="5"
-                fill="var(--mg-white)"
-              />
-            </g>
-          )}
         </svg>
       </div>
 
