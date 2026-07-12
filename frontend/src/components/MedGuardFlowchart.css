@@ -7,10 +7,11 @@
   width: 100%;
   transition: background-color 0.4s ease;
   overflow: hidden;
-  /* Double background layer: graph paper grid + dynamic tint transition */
+  /* Dynamic grid driven by --mg-flow-grid CSS variable set via framer-motion */
+  --mg-flow-grid: rgba(15, 118, 110, 0.12);
   background-image: 
-    linear-gradient(rgba(15, 118, 110, 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(15, 118, 110, 0.03) 1px, transparent 1px);
+    linear-gradient(var(--mg-flow-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--mg-flow-grid) 1px, transparent 1px);
   background-size: 40px 40px;
 }
 

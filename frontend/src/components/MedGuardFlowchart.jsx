@@ -123,8 +123,15 @@ export default function MedGuardFlowchart() {
     setActiveStep(stepIdx);
 
     // Update global tracker position along the single continuous track
+    // Warp the progress slightly for steps 3, 4, and 5 to speed up the tracker
+    let p_warped = p;
+    if (p > 0.25) {
+      const factor = (p - 0.25) / 0.75;
+      p_warped = 0.25 + Math.pow(factor, 0.78) * 0.75; // Accelerate the tracker at later steps
+    }
+
     if (pathRef.current && pathLen > 0) {
-      const pt = pathRef.current.getPointAtLength(p * pathLen);
+      const pt = pathRef.current.getPointAtLength(p_warped * pathLen);
       setMarkerPos({ x: pt.x, y: pt.y });
     }
 
@@ -187,15 +194,30 @@ export default function MedGuardFlowchart() {
   const backgroundColor = useTransform(
     scrollYProgress,
     [0, 0.25, 0.5, 0.75, 1.0],
-    ['#ffffff', '#f0f9f9', '#e6f4f4', '#f4fbfb', '#ffffff']
+    ['#ffffff', '#f0f9ff', '#fefce8', '#faf5ff', '#ffffff']
   );
 
+  // Transform grid color gradually as you scroll
+  const gridColor = useTransform(
+    scrollYProgress,
+    [0, 0.25, 0.5, 0.75, 1.0],
+    [
+      'rgba(15, 118, 110, 0.12)', // Default teal grid
+      'rgba(14, 165, 233, 0.16)', // Blue grid
+      'rgba(234, 179, 8, 0.16)',  // Yellow grid
+      'rgba(168, 85, 247, 0.16)', // Purple grid
+      'rgba(15, 118, 110, 0.12)', // Default teal grid
+    ]
+  );
 
   return (
-    <div
+    <motion.div
       ref={containerRef}
       className="mg-flow-v"
-      style={{ backgroundColor }}
+      style={{
+        backgroundColor,
+        '--mg-flow-grid': gridColor
+      }}
     >
       {/* Timeline SVG layer covering full height of timeline */}
       <div className="mg-flow-v__svg-layer">
@@ -316,6 +338,6 @@ export default function MedGuardFlowchart() {
           );
         })}
       </div>
-    </div>
+    </motion.div>
   );
 }

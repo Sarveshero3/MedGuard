@@ -19,7 +19,11 @@
 
   font-family: var(--mg-font);
   color: var(--mg-ink);
-  background: var(--mg-white);
+  background-color: var(--mg-white);
+  background-image: 
+    linear-gradient(rgba(15, 118, 110, 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 118, 110, 0.07) 1px, transparent 1px);
+  background-size: 40px 40px;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -458,16 +462,28 @@
 
 /* Opaque sections to cover the fixed background sequence */
 .mg-section--opaque {
-  background: var(--mg-white) !important;
+  background-color: var(--mg-white) !important;
+  background-image: 
+    linear-gradient(rgba(15, 118, 110, 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 118, 110, 0.07) 1px, transparent 1px) !important;
+  background-size: 40px 40px !important;
   opacity: 1 !important;
 }
 
 .mg-section--surface.mg-section--opaque {
-  background: var(--mg-surface) !important; /* Solid surface grey */
+  background-color: var(--mg-surface) !important; /* Solid surface grey */
+  background-image: 
+    linear-gradient(rgba(15, 118, 110, 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 118, 110, 0.07) 1px, transparent 1px) !important;
+  background-size: 40px 40px !important;
 }
 
 .mg-section--surface {
-  background: var(--mg-surface);
+  background-color: var(--mg-surface);
+  background-image: 
+    linear-gradient(rgba(15, 118, 110, 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 118, 110, 0.07) 1px, transparent 1px);
+  background-size: 40px 40px;
   max-width: 100%;
 }
 
@@ -672,7 +688,11 @@
 .mg-footer {
   position: relative;
   z-index: 10;
-  background: var(--mg-white);
+  background-color: var(--mg-white);
+  background-image: 
+    linear-gradient(rgba(15, 118, 110, 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 118, 110, 0.07) 1px, transparent 1px);
+  background-size: 40px 40px;
   border-top: 1px solid var(--mg-border);
   padding: 48px 24px;
   text-align: center;
