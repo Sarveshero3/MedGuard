@@ -1,0 +1,204 @@
+/* ==========================================================================
+   MedGuardFlowchart — Overhauled Full-Screen Isolated Vertical Stepper
+   ========================================================================== */
+
+.mg-flow-v {
+  position: relative;
+  width: 100%;
+  transition: background-color 0.4s ease;
+  overflow: hidden;
+  /* Dynamic grid driven by --mg-flow-grid CSS variable set via framer-motion */
+  --mg-flow-grid: rgba(15, 118, 110, 0.12);
+  background-image: 
+    linear-gradient(var(--mg-flow-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--mg-flow-grid) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+.mg-flow-v__timeline {
+  width: 100%;
+  position: relative;
+}
+
+.mg-flow-v__step {
+  position: relative;
+  width: 100%;
+  height: 100vh; /* Full screen isolation */
+  min-height: 100vh;
+  overflow: hidden; /* No neighboring step elements bleed into view */
+}
+
+/* Full screen SVG coordinates layer */
+.mg-flow-v__svg-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.mg-flow-v__step-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* Winding S-curve trail animation */
+.mg-flow-v__path-active {
+  transition: stroke-dashoffset 0.05s linear;
+}
+
+/* Node pulse glow animation scaled up */
+.mg-flow-v__node-pulse {
+  animation: mg-pulse-ring-v2 2.2s cubic-bezier(0.25, 0, 0, 1) infinite;
+  transform-origin: center;
+}
+
+@keyframes mg-pulse-ring-v2 {
+  0% {
+    r: 48px;
+    opacity: 0.8;
+  }
+  100% {
+    r: 76px;
+    opacity: 0;
+  }
+}
+
+.mg-flow-v__node-circle {
+  transition: stroke 0.3s, fill 0.3s;
+}
+
+.mg-flow-v__node-icon {
+  color: var(--mg-muted);
+  transition: color 0.3s;
+}
+
+.mg-flow-v__node-icon--active {
+  color: var(--mg-accent);
+}
+
+/* Travel marker dot flourish */
+.mg-flow-v__travel-dot {
+  filter: drop-shadow(0 4px 10px rgba(15, 118, 110, 0.4));
+}
+
+/* Description Card Layer (Top-anchored next to node, rendered directly on page) */
+.mg-flow-v__card-wrapper {
+  position: absolute;
+  top: 100px; /* Aligns vertically with the node center (y=160) */
+  width: 440px; /* Expanded text block width for generous readability */
+  z-index: 10;
+  pointer-events: none;
+  transition: opacity 0.25s linear, transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.25s;
+}
+
+/* Position cards on opposite side of screen edges */
+.mg-flow-v__card-wrapper--right {
+  left: 50%;
+}
+
+.mg-flow-v__card-wrapper--left {
+  right: 50%;
+}
+
+.mg-flow-v__card-inner {
+  /* Rendered directly on page - no borders, box, or backgrounds */
+  background: transparent;
+  border: none;
+  padding: 0;
+  box-shadow: none;
+  pointer-events: auto;
+}
+
+.mg-flow-v__card-badge {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--mg-accent);
+  background: rgba(15, 118, 110, 0.08);
+  padding: 5px 12px;
+  border-radius: 9999px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  margin-bottom: 16px;
+}
+
+.mg-flow-v__card-title {
+  font-size: 32px; /* Prominent headline text */
+  font-weight: 700;
+  color: var(--mg-ink);
+  margin: 0 0 16px;
+  line-height: 1.2;
+}
+
+.mg-flow-v__card-desc {
+  font-size: 18px; /* Prominent body copy */
+  color: var(--mg-muted);
+  line-height: 1.6;
+  margin: 0 0 16px;
+}
+
+.mg-flow-v__card-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--mg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* ==========================================================================
+   Mobile/Tablet responsive overrides
+   ========================================================================== */
+
+@media (max-width: 992px) {
+  .mg-flow-v__card-wrapper {
+    width: 380px;
+  }
+}
+
+@media (max-width: 768px) {
+  .mg-flow-v {
+    padding: 40px 0;
+    background-size: 30px 30px;
+  }
+
+  .mg-flow-v__step {
+    height: auto;
+    min-height: auto;
+    margin-bottom: 40px;
+    padding: 0 24px;
+  }
+
+  .mg-flow-v__step:last-child {
+    margin-bottom: 0;
+  }
+
+  .mg-flow-v__svg-layer {
+    display: none; /* Hide SVG coordinates entirely on mobile */
+  }
+
+  .mg-flow-v__card-wrapper {
+    position: relative;
+    top: auto;
+    left: auto !important;
+    right: auto !important;
+    width: 100%;
+    opacity: 1 !important;
+    transform: none !important;
+    visibility: visible !important;
+    pointer-events: auto;
+  }
+  
+  .mg-flow-v__card-title {
+    font-size: 24px;
+    margin-bottom: 12px;
+  }
+
+  .mg-flow-v__card-desc {
+    font-size: 15px;
+  }
+}

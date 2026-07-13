@@ -1,0 +1,900 @@
+/* ==========================================================================
+   MedGuard Homepage — Cinematic Background & Ambient Blur Design
+   Scoped under .mg-home so it doesn't affect authenticated dashboard pages.
+   ========================================================================== */
+
+/* --- Design Tokens (scoped) --- */
+.mg-home {
+  --mg-ink: #0B1F33;
+  --mg-muted: #5D6B78;
+  --mg-accent: #0F766E;
+  --mg-accent-hover: #0D6660;
+  --mg-surface: #F4F8F8;
+  --mg-white: #FFFFFF;
+  --mg-border: rgba(226, 232, 240, 0.8);
+
+  --mg-font: 'Manrope', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --mg-logo-font: 'Cormorant Garamond', serif; /* Classic, safe, and bold editorial serif */
+  --mg-max-width: 1200px;
+
+  font-family: var(--mg-font);
+  color: var(--mg-ink);
+  background-color: var(--mg-white);
+  background-image: 
+    linear-gradient(rgba(15, 118, 110, 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 118, 110, 0.07) 1px, transparent 1px);
+  background-size: 40px 40px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Override default links globally inside .mg-home to prevent style bleed */
+.mg-home a {
+  text-decoration: none !important;
+  color: inherit;
+}
+
+.mg-home button a,
+.mg-home .btn a,
+.mg-home [role="button"] a {
+  color: inherit !important;
+  text-decoration: none !important;
+}
+
+/* --- Skip Link --- */
+.mg-skip-link {
+  position: absolute;
+  top: -100px;
+  left: 16px;
+  z-index: 1000;
+  padding: 8px 16px;
+  background: var(--mg-ink);
+  color: var(--mg-white);
+  border-radius: 4px;
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 500;
+  transition: top 0.15s;
+}
+.mg-skip-link:focus {
+  top: 16px;
+}
+
+/* --- Scroll Scene --- */
+.mg-scene {
+  height: 650vh; /* Increased to make scroll speed feel slower and more readable */
+  position: relative;
+}
+
+.mg-scene__sticky {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  width: 100%;
+  overflow: hidden;
+}
+
+/* Oversized canvas to push blur edge artifacts off-screen. Overrides Tailwind max-width. */
+.mg-scene__canvas {
+  position: absolute;
+  width: 104vw !important;
+  height: 104vh !important;
+  max-width: none !important;
+  max-height: none !important;
+  top: -2vh;
+  left: -2vw;
+  z-index: 1;
+}
+
+/* Medical Clinical Grid Overlay */
+.mg-grid-overlay {
+  position: absolute;
+  width: 104vw !important;
+  height: 104vh !important;
+  top: -2vh;
+  left: -2vw;
+  pointer-events: none;
+  background-size: 36px 36px;
+  background-image: 
+    linear-gradient(to right, rgba(15, 118, 110, 0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(15, 118, 110, 0.04) 1px, transparent 1px);
+  z-index: 2; /* Renders above canvas, below overlays/lenses */
+}
+
+/* Four-sided Vignette Lens Masking Option 3 (oversized to crop edges) */
+.mg-scene__lens {
+  position: absolute;
+  width: 104vw !important;
+  height: 104vh !important;
+  top: -2vh;
+  left: -2vw;
+  pointer-events: none;
+  background: transparent;
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  z-index: 3;
+  
+  /* Mask to only blur the top and bottom transitions (above and bottom) */
+  mask-image: linear-gradient(to bottom, black 0%, transparent 15%, transparent 85%, black 100%);
+  -webkit-mask-image: linear-gradient(to bottom, black 0%, transparent 15%, transparent 85%, black 100%);
+}
+
+/* Bottom transition blend overlay to merge borders */
+.mg-scene__fade-bottom {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 15vh; /* 15% of viewport height transition zone */
+  background: linear-gradient(to bottom, transparent, var(--mg-white));
+  z-index: 4; /* Sits above lens, below overlays */
+  pointer-events: none;
+}
+
+/* Opaque fade overlay to gradually fade the background to white at the bottom of scroll */
+.mg-scene__opaque-fade {
+  position: absolute;
+  inset: 0;
+  background: var(--mg-white);
+  z-index: 5; /* Sits above lens, below overlays */
+  pointer-events: none;
+  will-change: opacity;
+}
+
+/* --- Custom Medical Reticle Cursor Followers --- */
+.mg-cursor-dot {
+  position: fixed;
+  width: 8px;
+  height: 8px;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  z-index: 9999;
+  will-change: left, top;
+}
+
+.mg-cursor-dot::before,
+.mg-cursor-dot::after {
+  content: '';
+  position: absolute;
+  background: var(--mg-accent);
+}
+
+/* Vertical line of the tiny plus */
+.mg-cursor-dot::before {
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  transform: translateX(-50%);
+}
+
+/* Horizontal line of the tiny plus */
+.mg-cursor-dot::after {
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 2px;
+  transform: translateY(-50%);
+}
+
+.mg-cursor-ring {
+  position: fixed;
+  width: 32px;
+  height: 32px;
+  border: 1.5px solid rgba(15, 118, 110, 0.45);
+  border-radius: 50%;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  z-index: 9998;
+  transition: transform 0.08s ease-out, width 0.2s, height 0.2s, background-color 0.2s, border-color 0.2s;
+  will-change: left, top;
+  color: rgba(15, 118, 110, 0.65);
+}
+
+/* Medical targeting crosshair ticks at 12, 3, 6, and 9 o'clock */
+.mg-cursor-ring::before {
+  content: '';
+  position: absolute;
+  top: -5px;
+  bottom: -5px;
+  left: 50%;
+  width: 1.5px;
+  background: linear-gradient(to bottom, currentColor 4px, transparent 4px, transparent calc(100% - 4px), currentColor calc(100% - 4px));
+  transition: color 0.2s;
+}
+
+.mg-cursor-ring::after {
+  content: '';
+  position: absolute;
+  left: -5px;
+  right: -5px;
+  top: 50%;
+  height: 1.5px;
+  background: linear-gradient(to right, currentColor 4px, transparent 4px, transparent calc(100% - 4px), currentColor calc(100% - 4px));
+  transition: color 0.2s;
+}
+
+.mg-cursor-ring--hover {
+  width: 48px;
+  height: 48px;
+  background-color: rgba(15, 118, 110, 0.08);
+  border-color: rgba(15, 118, 110, 0.85);
+  color: rgba(15, 118, 110, 0.85);
+}
+
+@media (hover: none) {
+  .mg-cursor-dot,
+  .mg-cursor-ring {
+    display: none;
+  }
+}
+
+/* --- Fixed Load Screen --- */
+.mg-loader {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  background: var(--mg-white);
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+}
+
+.mg-loader__label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--mg-muted);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.mg-loader__track {
+  width: 200px;
+  height: 2px;
+  background: var(--mg-border);
+  border-radius: 1px;
+  overflow: hidden;
+}
+
+.mg-loader__fill {
+  height: 100%;
+  background: var(--mg-accent);
+  transition: width 0.15s ease-out;
+}
+
+.mg-loader__pct {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--mg-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.mg-loader__error {
+  text-align: center;
+  color: var(--mg-muted);
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+.mg-loader__error-sub {
+  font-size: 14px;
+  margin-top: 8px;
+}
+
+/* --- Hero Cinematic Center Title Card (Glassmorphic + Readability) --- */
+.mg-hero-center-title {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  pointer-events: none;
+  z-index: 10;
+  width: calc(100% - 48px);
+  max-width: 680px;
+  padding: 48px 32px;
+  
+  /* Glassmorphic card backplate for perfect separation from background text */
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 24px;
+  box-shadow: 
+    0 4px 6px -1px rgba(0, 0, 0, 0.05),
+    0 24px 48px -12px rgba(11, 31, 51, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+.mg-hero-logo {
+  font-family: var(--mg-logo-font);
+  font-size: 76px; /* Optimized sizing for normal-weight Cormorant Garamond / Cinzel */
+  font-weight: 700; /* Bold, but not extra-bold 800 */
+  font-style: normal; /* Not italicized */
+  letter-spacing: -0.5px;
+  line-height: 1.05;
+  color: var(--mg-ink);
+  margin: 0 0 12px;
+  background: linear-gradient(135deg, var(--mg-ink) 20%, #0F766E 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  
+  /* Elevated 3D/Shadow text effect via filter to support gradient clipping */
+  filter: drop-shadow(0 2px 4px rgba(11, 31, 51, 0.15)) drop-shadow(0 12px 24px rgba(11, 31, 51, 0.2));
+}
+
+.mg-hero-tagline {
+  font-size: 19px;
+  font-weight: 600;
+  color: var(--mg-muted);
+  letter-spacing: 0.25px;
+  margin: 0;
+}
+
+/* Scroll indicator */
+.mg-scene__scroll-hint {
+  position: absolute;
+  bottom: 48px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  color: var(--mg-muted);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  pointer-events: none;
+  z-index: 6;
+}
+
+.mg-scene__scroll-hint svg {
+  animation: mg-bounce 2s ease-in-out infinite;
+}
+
+@keyframes mg-bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(6px); }
+}
+
+/* --- Copy Overlays (Absolute inside Sticky wrapper) --- */
+.mg-copy {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  max-width: 440px;
+  pointer-events: auto;
+  will-change: opacity, transform;
+  z-index: 10;
+  background: rgba(255, 255, 255, 0.76);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  box-shadow: 0 0 0 1px rgba(226, 232, 240, 0.8), 0 20px 45px rgba(11, 31, 51, 0.07);
+  border-radius: 16px;
+  padding: 40px;
+}
+
+.mg-copy--top-left {
+  top: 15vh;
+  left: max(24px, calc((100vw - 1200px) / 2 + 48px));
+  transform: none;
+}
+
+.mg-copy--right-center {
+  top: 50vh;
+  right: max(24px, calc((100vw - 1200px) / 2 + 48px));
+  transform: translateY(-50%);
+}
+
+.mg-copy--right-top {
+  top: 15vh;
+  right: max(24px, calc((100vw - 1200px) / 2 + 48px));
+  transform: none;
+}
+
+.mg-copy--left-bottom {
+  bottom: 15vh;
+  left: max(24px, calc((100vw - 1200px) / 2 + 48px));
+  transform: none;
+}
+
+.mg-copy__index {
+  display: inline-block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--mg-accent);
+  margin-bottom: 12px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+}
+
+.mg-copy__headline {
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.5px;
+  color: var(--mg-ink);
+  margin: 0 0 16px;
+}
+
+.mg-copy__body {
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--mg-muted);
+  margin: 0;
+}
+
+.mg-copy__cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 24px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--mg-accent) !important;
+  text-decoration: none !important;
+  transition: color 0.2s;
+}
+
+.mg-copy__cta:hover {
+  color: var(--mg-accent-hover) !important;
+}
+
+.mg-copy__cta:focus-visible {
+  outline: 2px solid var(--mg-accent);
+  outline-offset: 4px;
+  border-radius: 2px;
+}
+
+/* --- Static Content Sections --- */
+.mg-section {
+  position: relative;
+  z-index: 10;
+  padding: 96px 24px;
+  max-width: var(--mg-max-width);
+  margin: 0 auto;
+}
+
+/* Opaque sections to cover the fixed background sequence */
+.mg-section--opaque {
+  background-color: var(--mg-white) !important;
+  background-image: 
+    linear-gradient(rgba(15, 118, 110, 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 118, 110, 0.07) 1px, transparent 1px) !important;
+  background-size: 40px 40px !important;
+  opacity: 1 !important;
+}
+
+.mg-section--surface.mg-section--opaque {
+  background-color: var(--mg-surface) !important; /* Solid surface grey */
+  background-image: 
+    linear-gradient(rgba(15, 118, 110, 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 118, 110, 0.07) 1px, transparent 1px) !important;
+  background-size: 40px 40px !important;
+}
+
+.mg-section--surface {
+  background-color: var(--mg-surface);
+  background-image: 
+    linear-gradient(rgba(15, 118, 110, 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 118, 110, 0.07) 1px, transparent 1px);
+  background-size: 40px 40px;
+  max-width: 100%;
+}
+
+.mg-section--surface .mg-section__inner {
+  max-width: var(--mg-max-width);
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+.mg-section__eyebrow {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--mg-accent);
+  margin: 0 0 16px;
+}
+
+.mg-section__title {
+  font-size: 40px;
+  font-weight: 700;
+  letter-spacing: -1px;
+  line-height: 1.15;
+  color: var(--mg-ink);
+  margin: 0 0 24px;
+}
+
+.mg-section__subtitle {
+  font-size: 18px;
+  line-height: 1.6;
+  color: var(--mg-muted);
+  max-width: 640px;
+  margin: 0 0 48px;
+}
+
+.mg-section__centered {
+  text-align: center;
+}
+
+.mg-section__centered .mg-section__subtitle {
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* Capability cards, Principles, Team - Translucent Glass styling */
+.mg-cards .card,
+.mg-team .card {
+  background: var(--mg-white);
+  border: 1px solid var(--mg-border);
+  box-shadow: 0 10px 30px rgba(11, 31, 51, 0.03);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.mg-cards .card:hover,
+.mg-team .card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 15px 35px rgba(11, 31, 51, 0.06);
+}
+
+.mg-card__icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: rgba(15, 118, 110, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 20px;
+  color: var(--mg-accent);
+}
+
+/* Audience Grid */
+.mg-audience {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 48px;
+  align-items: start;
+}
+
+.mg-audience__block {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--mg-white);
+  padding: 32px;
+  border-radius: 16px;
+  border: 1px solid var(--mg-border);
+}
+
+.mg-audience__title {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--mg-ink);
+  margin: 0;
+}
+
+.mg-audience__text {
+  font-size: 16px;
+  color: var(--mg-muted);
+  line-height: 1.6;
+  margin: 0;
+}
+
+/* Principles Grid */
+.mg-principles {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 32px;
+}
+
+.mg-principle {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--mg-white);
+  padding: 32px;
+  border-radius: 16px;
+  border: 1px solid var(--mg-border);
+  text-align: left;
+}
+
+.mg-principle__title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--mg-ink);
+  margin: 0;
+}
+
+.mg-principle__text {
+  font-size: 15px;
+  color: var(--mg-muted);
+  line-height: 1.6;
+  margin: 0;
+}
+
+/* Team Grid */
+.mg-team {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+}
+
+.mg-team-card__monogram {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: rgba(15, 118, 110, 0.08);
+  color: var(--mg-accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  font-weight: 700;
+  font-family: var(--mg-font);
+  margin-bottom: 16px;
+}
+
+.mg-team-card__name {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--mg-ink);
+  margin: 0;
+}
+
+.mg-team-card__role {
+  font-size: 14px;
+  color: var(--mg-muted);
+  margin: 4px 0 0;
+}
+
+/* Final CTA */
+.mg-final-cta {
+  position: relative;
+  z-index: 10;
+  text-align: center;
+  padding: 120px 24px;
+  max-width: var(--mg-max-width);
+  margin: 0 auto;
+}
+
+.mg-final-cta__title {
+  font-size: 36px;
+  font-weight: 700;
+  color: var(--mg-ink);
+  letter-spacing: -0.5px;
+  margin: 0 0 16px;
+}
+
+.mg-final-cta__text {
+  font-size: 18px;
+  color: var(--mg-muted);
+  margin: 0 0 32px;
+  line-height: 1.6;
+}
+
+.mg-final-cta button a,
+.mg-final-cta .btn a {
+  color: var(--mg-white) !important;
+}
+
+/* Footer */
+.mg-footer {
+  position: relative;
+  z-index: 10;
+  background-color: var(--mg-white);
+  background-image: 
+    linear-gradient(rgba(15, 118, 110, 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 118, 110, 0.07) 1px, transparent 1px);
+  background-size: 40px 40px;
+  border-top: 1px solid var(--mg-border);
+  padding: 48px 24px;
+  text-align: center;
+}
+
+.mg-footer__text {
+  font-size: 13px;
+  color: var(--mg-muted);
+  margin: 0;
+}
+
+.mg-footer__disclaimer {
+  font-size: 12px;
+  color: var(--mg-muted);
+  margin: 12px auto 0;
+  max-width: 600px;
+  opacity: 0.7;
+}
+
+/* --- Reduced Motion Fallback --- */
+.mg-scene-reduced {
+  padding: 96px 24px;
+  max-width: var(--mg-max-width);
+  margin: 0 auto;
+}
+.mg-scene-reduced__content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 48px;
+}
+.mg-scene-reduced__image {
+  width: 100%;
+  max-width: 600px;
+  height: auto;
+  border-radius: 8px;
+}
+.mg-scene-reduced__beat {
+  text-align: center;
+  max-width: 600px;
+}
+.mg-scene-reduced__headline {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--mg-ink);
+  margin: 0 0 12px;
+  letter-spacing: -0.5px;
+}
+.mg-scene-reduced__body {
+  font-size: 18px;
+  color: var(--mg-muted);
+  line-height: 1.6;
+  margin: 0;
+}
+.mg-scene-reduced__cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 16px;
+  color: var(--mg-accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+/* --- Responsive --- */
+@media (max-width: 1023px) {
+  .mg-hero-logo {
+    font-size: 48px;
+  }
+  .mg-hero-center-title {
+    padding: 32px 20px;
+  }
+  .mg-copy {
+    left: 20px;
+    right: 20px;
+    max-width: none;
+    text-align: center;
+    top: auto;
+    bottom: 80px;
+    transform: none;
+  }
+  .mg-copy__headline {
+    font-size: 24px;
+    letter-spacing: -0.5px;
+  }
+  .mg-copy__body {
+    font-size: 16px;
+  }
+  .mg-section__title {
+    font-size: 28px;
+  }
+  .mg-cards {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  .mg-audience {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+  .mg-principles {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+  .mg-team {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  .mg-section {
+    padding: 64px 20px;
+  }
+  .mg-section--surface .mg-section__inner {
+    padding: 0 20px;
+  }
+}
+
+/* --- Action Buttons --- */
+.mg-hero-actions {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.mg-btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--mg-accent) !important;
+  color: var(--mg-white) !important;
+  font-weight: 600;
+  font-size: 15px;
+  padding: 10px 24px;
+  border-radius: 9999px;
+  transition: background-color 0.2s, transform 0.15s;
+  box-shadow: 0 4px 10px rgba(15, 118, 110, 0.15);
+  border: 1.5px solid transparent;
+}
+
+.mg-btn-primary:hover {
+  background-color: var(--mg-accent-hover) !important;
+  transform: translateY(-1px);
+}
+
+.mg-btn-outline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background-color: transparent !important;
+  color: var(--mg-ink) !important;
+  font-weight: 600;
+  font-size: 15px;
+  padding: 10px 24px;
+  border-radius: 9999px;
+  border: 1.5px solid var(--mg-border) !important;
+  transition: all 0.2s;
+}
+
+.mg-btn-outline:hover {
+  background-color: var(--mg-surface) !important;
+  border-color: var(--mg-muted) !important;
+}
+
+.mg-btn-lg {
+  padding: 12px 32px;
+  font-size: 16px;
+}
+
+/* --- CTA Divider between How it works and Patients/Families --- */
+.mg-cta-divider {
+  padding: 64px 24px;
+  text-align: center;
+  background: var(--mg-white);
+  border-top: 1px solid var(--mg-border);
+  border-bottom: 1px solid var(--mg-border);
+  position: relative;
+  z-index: 10;
+}
+
+.mg-cta-divider__inner {
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.mg-cta-divider__title {
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--mg-ink);
+  letter-spacing: -0.5px;
+  margin: 0 0 12px;
+}
+
+.mg-cta-divider__desc {
+  font-size: 16px;
+  color: var(--mg-muted);
+  line-height: 1.6;
+  margin: 0 0 24px;
+}
+
+.mg-cta-divider__actions {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+}
+
