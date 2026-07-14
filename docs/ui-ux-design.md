@@ -89,42 +89,55 @@ The scroll copy cards fade in, hold, and fade out across the remaining `[0.20, 1
 
 The "How MedGuard helps" section features a scroll-scrubbed vertical winding path timeline with 5 full-viewport step sections:
 
-### Full-Screen Isolation
+### Full-Screen Isolation & Header
+- The "How it works" header sits at the top of the flowchart container, sharing the same dynamic background transitions.
 - Each step occupies `100vh` (full viewport height) as a self-contained section with `overflow: hidden`.
-- No neighboring step's elements (nodes, paths, text) are ever visible while viewing the current step.
+- No neighboring step's elements are visible while viewing the current step.
 
 ### Node & Track Scale
-- Nodes are large (48px radius circle, 64px pulse ring) and sit **flush against their screen edge** with only a small margin, filling their side of the screen as a deliberate, prominent element.
-- The connecting path uses a `strokeWidth` of 6px and the traveling marker uses an 18px radius — proportional to the large nodes.
-- Icons inside nodes are 32×32px.
+- Nodes are oversized (**58px radius circle**, 78px pulse ring) with 38×38px icons to make them prominent.
+- Nodes are shifted closer to the center of the screen layout using a responsive offset (`offsetX = Math.max(220, Math.min(300, width * 0.18))`), bringing them closer to the text cards.
+- Connecting path stroke width is 6px; tracker marker is an 18px radius circle.
 
 ### Layout (Alternating Sides)
-- **Step 1 (Photograph)**: Node left, text right
-- **Step 2 (Structure)**: Node right, text left
-- **Step 3 (Translate)**: Node left, text right
-- **Step 4 (Analyze)**: Node right, text left
-- **Step 5 (Prepare)**: Node left, text right
+- **Step 1 (Photograph)**: Node left (offsetX), text right
+- **Step 2 (Structure)**: Node right (width - offsetX), text left
+- **Step 3 (Translate)**: Node left (offsetX), text right
+- **Step 4 (Analyze)**: Node right (width - offsetX), text left
+- **Step 5 (Prepare)**: Node left (offsetX), text right
 
 ### Connecting Paths
-- All nodes are connected sequentially into a **single, unbroken winding path string** (`continuousPathD`) drawn inside a single SVG layer spanning the full `500vh` height.
+- All nodes are connected sequentially into a **single, unbroken winding path string** (`continuousPathD`) drawn inside a single SVG layer spanning the full `450vh` height (the last section is 50vh to close the gap before the CTA).
 - The path is continuous from Step 1 through Step 5's node with no visual breaks, gaps, or chevrons.
-- The path terminates completely at Step 5's node.
+- The path Y coordinates are offset by the header height (`240px`) plus the respective viewport center offsets.
 
-### Continuous Tracker & Trail
+### Continuous Tracker & Trail (Color Morphing)
 - A **single active tracker marker** (18px radius dot) is rendered inside the SVG coordinates, positioned **on top of the track but underneath the nodes** in SVG render order.
-- The tracker dot glides smoothly up and down the winding curves as the user scrolls, with **zero teleportation, jumps, or masking**.
-- The tracking speed is fully synchronized to the `500vh` scrollable height: the container's scroll progress matches the 0.25 node intervals exactly, ensuring the tracker reaches each node (at progress 0.0, 0.25, 0.50, 0.75, 1.00) at the precise moment it centers in the viewport.
-- The active trail is rendered as a single `motion.path` with `pathLength: scrollYProgress`, revealing the colored path continuously.
-- Nodes change to their active visual state (glow pulse) when the scroll progress reaches their respective positions.
+- The tracker dot and active trail path use the **exact same scroll-to-path progress value** so they move in perfect sync.
+- The active trail path, tracker dot, and active node borders/icons morph colors gradually in sync with the background:
+  - **Start (Default)**: Teal (`#0F766E`)
+  - **Step 2 (Blue stage)**: Sky Blue (`#0284C7`)
+  - **Step 3 (Yellow stage)**: Golden Yellow (`#CA8A04`)
+  - **Step 4 (Purple stage)**: Purple (`#9333EA`)
+  - **Step 5 (End / Default)**: Teal (`#0F766E`)
+
+### Piecewise Speed Warps
+- Easing warps are applied to segment scroll progress individually to control speeds:
+  - **Step 2 (Segment 1)** and **Step 5 (Segment 3)** are warped **slower** (`t^1.45`) to give a deliberate visual focus on those steps.
+  - **Step 1 (Segment 0)**, **Step 3 (Segment 2)**, and **Step 4** move at normal, linear speed.
 
 ### Text Presentation
 - Text (badge, title, description, label) renders **directly on the page** with no bordered card, box, or background.
 - Fast carousel slide-up entrance (+40px below → 0) on scroll-in, slide-up-and-out (0 → -40px above) on scroll-past.
-- Title at 32px/700, description at 18px/1.6, badge as a small pill.
+- Card wrappers use a CSS top position of `45%` (steps 1-4) and `25%` (Step 5) with a dynamic inline translate `translateY(calc(-50% + translateY px))` to align **pixel-perfectly** with the node Y centers at all viewport heights.
 
-### Background
-- **Layer 1**: Subtle light grid pattern (40×40px squares, `rgba(15, 118, 110, 0.03)` thin lines), like graph paper.
-- **Layer 2**: Background color tint shifts gradually from `#ffffff` → `#f0f9f9` → `#e6f4f4` → `#f4fbfb` → `#ffffff` as the user scrolls from step 1 to step 5. Always light-themed, no dark dips.
+### Full-Width Background & Complementary Grid
+- The background color uses a `100vw` breakout to cover the **entire width of the viewport** edge-to-edge.
+- The grid lines use **complementary colors** with respect to the background color to give a visual pop:
+  - **Default (White background)**: Teal grid (`rgba(15, 118, 110, 0.12)`)
+  - **Blue background**: Orange grid (`rgba(234, 88, 12, 0.16)`)
+  - **Yellow background**: Purple grid (`rgba(126, 34, 206, 0.14)`)
+  - **Purple background**: Green grid (`rgba(22, 163, 74, 0.16)`)
 
 ### Mobile Fallback
 - Below `768px`: SVG layer hidden, all five cards render in a clean vertical list with full opacity and no scroll-driven animations.

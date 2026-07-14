@@ -3,8 +3,8 @@
 
 ### 10.1 Components
 
-*   **Frontend (React)**: Handles the patient/caregiver upload flow (prescription or report photo upload → follow-up Q&A → medicine list view / alert timeline / visit-brief screen) and a lightweight admin dashboard for clinical review. It communicates exclusively with `ms1`'s public API.
-*   **ms1 — Core API (Express.js)**: Manages authentication with three roles (patient, caregiver, admin), patient-caregiver linking and consent, medicine list and alert lifecycle management, visit scheduling/history, AWS SES email dispatch, and admin dashboard data. It owns the PostgreSQL database schema and runs the deterministic safety logic.
+*   **Frontend (React)**: Handles the patient/caregiver upload flow (prescription or report photo upload → follow-up Q&A → medicine list view / alert timeline / visit-brief screen) and a medicine/appointment calendar view. It communicates exclusively with `ms1`'s public API.
+*   **ms1 — Core API (Express.js)**: Manages authentication with two roles (patient, caregiver), patient-caregiver linking and consent, medicine list and alert lifecycle management, visit scheduling/history and the medicine-course calendar, and AWS SES email dispatch. It owns the PostgreSQL database schema and runs the deterministic safety logic.
 *   **ms2 — Agent Service (FastAPI + LangGraph)**: Responsible for image preprocessing, the prescription assessment graph (including brand-to-generic OCR extraction), the lab report extraction/trend graph, and the visit-brief writer graph. It returns structured data and confidence scores to `ms1`. It is strictly internal and never directly executes side-effects like sending emails or storing final database state.
 *   **PostgreSQL**: Serves as the system of record. Stores users, caregiver links, medicines, brand-to-generic mappings, interaction flags, lab reports, lab values, visits, briefs, and consent records. Keeps historical medicine entries versioned and never overwritten.
 *   **NGINX**: Handles SSL/TLS termination, routing (`/` to the React build, `/api` to `ms1`), large-upload handling, and acts as the secure network boundary keeping `ms2` hidden from external public access.
@@ -21,11 +21,11 @@ Photo upload
   └─► ms2: vision extraction (brand name, dosage, frequency)
         └─► [If ambiguous?] ──► Ask one follow-up question
         └─► [Resolved] ──► ms2: brand-to-generic resolution (mapping table lookup)
-              └─► [If unresolved?] ──► Flag "generic unresolved" ──► Route to Admin Queue
+              └─► [If unresolved?] ──► Flag "generic unresolved" ──► Ask user in Phase 2 follow-up loop
               └─► [Resolved generic name]
                     └─► ms1: deterministic interaction check (new generic vs. active list)
                           ├─► [High confidence interaction match] ──► Show to user + Caregiver Alert (SES)
-                          └─► [Low confidence/borderline match] ──► Queue to Admin Review ──► Show after review
+                          └─► [Low confidence/borderline match] ──► Ask user to confirm in Phase 2 follow-up loop ──► Show once confirmed
 ```
 
 #### Visit-Prep Flow

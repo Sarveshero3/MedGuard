@@ -138,10 +138,7 @@ async function verifyPatientAccess(req, patientId, requiredAccessLevel = 'alerts
     return true;
   }
 
-  // 3. Admin accessing patient data: allowed for clinical queue review
-  if (req.user.role === 'admin') {
-    return true;
-  }
+
 
   logger.warn('IDOR_PREVENTED', `User ${req.user.id} with role ${req.user.role} attempted unauthorized access to patient ${patientId}`, {
     userId: req.user.id,

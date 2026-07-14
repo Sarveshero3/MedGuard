@@ -117,7 +117,7 @@ const schemas = {
       return 'Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, one number, and one special character (@$!%*?&)';
     }
     
-    const allowedRoles = ['patient', 'caregiver', 'admin'];
+    const allowedRoles = ['patient', 'caregiver'];
     if (!role || !allowedRoles.includes(role)) return 'Invalid user role';
     
     if (consentGranted !== true) return 'Consent is required under DPDP compliance regulations';

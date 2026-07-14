@@ -5,7 +5,7 @@ import Upload from './pages/Upload.jsx'
 import MedicineList from './pages/MedicineList.jsx'
 import Alerts from './pages/Alerts.jsx'
 import CaregiverDashboard from './pages/CaregiverDashboard.jsx'
-import AdminReview from './pages/AdminReview.jsx'
+import Calendar from './pages/Calendar.jsx'
 import Home from './pages/Home.jsx'
 import './App.css'
 
@@ -19,7 +19,7 @@ function App() {
       <Route path="/medicines" element={<MedicineList />} />
       <Route path="/alerts" element={<Alerts />} />
       <Route path="/caregiver" element={<CaregiverDashboard />} />
-      <Route path="/admin/review" element={<AdminReview />} />
+      <Route path="/calendar" element={<Calendar />} />
     </Routes>
   )
 }

@@ -63,12 +63,12 @@ graph TB
 
 | Responsibility | Details |
 |:---|:---|
-| Authentication | JWT login/refresh with `patient`, `caregiver`, `admin` roles |
+| Authentication | JWT login/refresh with `patient`, `caregiver` roles |
 | Medicine lifecycle | CRUD on `medicines` table, status management |
 | Interaction engine | Deterministic lookup against `interaction_kb` — pure, tested module |
 | Caregiver flows | Invitation, linking, permission tiers |
 | Email dispatch | AWS SES for alerts, confirmations, weekly summaries |
-| Admin dashboard API | Review queue, versioned KB/brand-map editors |
+| Calendar API | Merged view of medicine course end-dates and user-added appointments |
 | DPDP compliance | Consent logging, data deletion |
 | File storage | Upload handling (multer), photo ID management |
 
@@ -138,15 +138,13 @@ sequenceDiagram
     M2->>M2: Vision LLM extraction
     M2->>M2: Brand-to-generic resolution
 
-    alt Low confidence (<85%)
-        M2-->>M1: needs_follow_up = true
-        M1-->>U: Follow-up question
-        U->>M1: User answer
-    end
-
-    alt Unresolved brand
-        M2-->>M1: resolution_status = generic_unresolved
-        M1->>DB: Insert to admin review queue
+    alt Low confidence (<85%) / Unresolved brand
+        M2-->>M1: needs_follow_up = true / resolution_status = generic_unresolved
+        M1-->>U: Follow-up question / Inline correction prompt
+        U->>M1: User answer / Brand correction
+        alt Brand name corrected
+            M1->>DB: INSERT INTO brand_generic_map (user_confirmed)
+        end
     end
 
     M2-->>M1: Structured extraction result
@@ -223,8 +221,8 @@ erDiagram
 
 | Control | Implementation |
 |:---|:---|
-| **Authentication** | JWT with role claims (`patient`, `caregiver`, `admin`); bcrypt-12 password hashing; 1-hour access token expiry |
-| **Authorization (RBAC)** | `requireRoles()` middleware on every route; role-specific enforcement for admin, patient, and caregiver |
+| **Authentication** | JWT with role claims (`patient`, `caregiver`); bcrypt-12 password hashing; 1-hour access token expiry |
+| **Authorization (RBAC)** | `requireRoles()` middleware on every route; role-specific enforcement for patient and caregiver |
 | **IDOR protection** | `verifyPatientAccess()` + `enforcePatientAccess()` middleware on every data endpoint; ownership verified against DB before read/write/delete |
 | **Email verification** | `is_email_verified` tracked in DB; `enforceEmailVerified` middleware blocks medicine add, update, delete, and AI upload for unverified users |
 | **Password reset** | Crypto-random token with 1-hour expiry; generic response on forgot-password to prevent user enumeration |

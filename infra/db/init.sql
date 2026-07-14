@@ -10,13 +10,14 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- ─────────────────────────────────────────────────────────────
 -- ENUM types
 -- ─────────────────────────────────────────────────────────────
-CREATE TYPE user_role          AS ENUM ('patient', 'caregiver', 'admin');
+CREATE TYPE user_role          AS ENUM ('patient', 'caregiver');
 CREATE TYPE permission_level   AS ENUM ('full_view', 'alerts_only');
 CREATE TYPE link_status        AS ENUM ('pending', 'active', 'revoked');
 CREATE TYPE resolution_status  AS ENUM ('resolved', 'generic_unresolved', 'manually_resolved');
 CREATE TYPE medicine_status    AS ENUM ('active', 'discontinued');
 CREATE TYPE interaction_severity AS ENUM ('avoid_combination', 'monitor_closely', 'minor', 'no_action');
-CREATE TYPE flag_status        AS ENUM ('pending_review', 'shown', 'acknowledged_by_patient', 'acknowledged_by_caregiver');
+CREATE TYPE flag_status        AS ENUM ('shown', 'acknowledged_by_patient', 'acknowledged_by_caregiver');
+CREATE TYPE visit_type_enum    AS ENUM ('user_added', 'system_suggested');
 
 -- ─────────────────────────────────────────────────────────────
 -- 1. users
@@ -95,6 +96,8 @@ CREATE TABLE medicines (
     frequency         VARCHAR(255)      NOT NULL,
     source_photo_id   VARCHAR(255),
     resolution_status resolution_status NOT NULL DEFAULT 'generic_unresolved',
+    duration_text     VARCHAR(255),
+    course_end_date   DATE,
     added_at          TIMESTAMPTZ       NOT NULL DEFAULT NOW(),
     status            medicine_status   NOT NULL DEFAULT 'active'
 );
@@ -139,7 +142,7 @@ CREATE TABLE interaction_flags (
     kb_entry_id         UUID          NOT NULL REFERENCES interaction_kb(id),
     severity            VARCHAR(50)   NOT NULL,
     confidence          DECIMAL(5,4)  NOT NULL DEFAULT 1.0,
-    status              flag_status   NOT NULL DEFAULT 'pending_review',
+    status              flag_status   NOT NULL DEFAULT 'shown',
     created_at          TIMESTAMPTZ   NOT NULL DEFAULT NOW()
 );
 CREATE INDEX idx_flags_patient ON interaction_flags(patient_id);
@@ -179,6 +182,7 @@ CREATE TABLE visits (
     doctor_name    VARCHAR(255),
     specialty      VARCHAR(100),
     scheduled_date TIMESTAMPTZ NOT NULL,
+    visit_type     visit_type_enum NOT NULL DEFAULT 'user_added',
     brief_id       UUID,
     created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

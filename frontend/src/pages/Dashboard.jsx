@@ -14,6 +14,7 @@ export default function Dashboard() {
           <Link to="/upload">Upload</Link>
           <Link to="/medicines">Medicines</Link>
           <Link to="/alerts">Alerts</Link>
+          <Link to="/calendar">Calendar</Link>
           <button onClick={() => { logout(); navigate('/login'); }}>Logout</button>
         </div>
       </nav>
@@ -43,11 +44,11 @@ export default function Dashboard() {
             <p className="card-desc">Scan a new prescription photo</p>
           </div>
 
-          <div className="card">
+          <div className="card" onClick={() => navigate('/calendar')}>
             <div className="card-icon">📅</div>
-            <h3>Upcoming Visits</h3>
+            <h3>Calendar & Visits</h3>
             <p className="card-stat">—</p>
-            <p className="card-desc">Scheduled doctor appointments</p>
+            <p className="card-desc">Medicine schedule & appointments</p>
           </div>
         </div>
       </main>

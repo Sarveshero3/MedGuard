@@ -126,7 +126,7 @@ JWT tokens issued by `ms1-core-api` contain the following payload:
 {
   "userId": "uuid-v4",
   "email": "user@example.com",
-  "role": "patient | caregiver | admin",
+  "role": "patient | caregiver",
   "iat": 1720000000,
   "exp": 1720003600
 }
@@ -146,7 +146,7 @@ JWT tokens issued by `ms1-core-api` contain the following payload:
 
 *   **High Confidence (>= 85%)**: Extracted fields scoring >= 0.85 are processed automatically. Medicine resolution is attempted immediately.
 *   **Low Confidence / Ambiguous (< 85%)**:
-    *   If `brand_name` or `dosage` falls below `0.85`, the extraction is routed to the Admin Review Queue.
+    *   If `brand_name`, `dosage`, or `duration_text` falls below `0.85`, the extraction triggers a follow-up question to the user in Phase 2 — never routed anywhere else.
     *   If the LLM flags ambiguity in OCR, the system prompts the user with one follow-up clarification before completing the upload.
     *   An unresolved brand name or low-confidence dosage must **never** reach the deterministic interaction checker silently.
 
@@ -159,6 +159,6 @@ To guarantee that historical alerts remain explainable and auditable, the `inter
 *   **Rule**: Never run an `UPDATE` or `DELETE` on these tables.
 *   **Structure**: Every row features a composite unique key (e.g., `brand_name` + `version` or `generic_a` + `generic_b` + `version`) along with `effective_date`.
 *   **Resolution Process**:
-    *   When an administrator corrects a brand mapping, a new row is appended (e.g., `version = 'v2'`, `source = 'reviewer_confirmed'`, `effective_date = NOW()`).
+    *   When a patient or caregiver corrects a brand mapping during the Phase 2 follow-up, a new row is appended (e.g., `version = 'v2'`, `source = 'user_confirmed'`, `effective_date = NOW()`).
     *   Active checkers always query the row with the **latest `effective_date`** relative to when the medicine was added.
     *   Historical interaction flags maintain a foreign key reference (`kb_entry_id`) pointing to the exact version of the rule that triggered the flag.
