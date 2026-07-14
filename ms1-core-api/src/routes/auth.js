@@ -79,7 +79,7 @@ router.post('/auth/register', registerLimiter, sanitizeInput, validateBody('regi
 
       // Generate JWT Token (1 hour validity)
       const token = jwt.sign(
-        { userId: newUser.id, email: newUser.email, role: newUser.role },
+        { sub: newUser.id, userId: newUser.id, email: newUser.email, role: newUser.role, name: newUser.name },
         JWT_SECRET,
         { expiresIn: '1h' }
       );
@@ -153,7 +153,7 @@ router.post('/auth/login', authLimiter, sanitizeInput, validateBody('login'), as
 
     // Generate JWT Token (1 hour validity)
     const token = jwt.sign(
-      { userId: user.id, email: user.email, role: user.role },
+      { sub: user.id, userId: user.id, email: user.email, role: user.role, name: user.name },
       JWT_SECRET,
       { expiresIn: '1h' }
     );
@@ -332,6 +332,34 @@ router.post('/api/auth/reset-password', authLimiter, sanitizeInput, validateBody
 
   } catch (err) {
     logger.error('PASSWORD_RESET_ERROR', `Error resetting password: ${err.message}`);
+    next(err);
+  }
+});
+
+/**
+ * DELETE /api/auth/delete-account
+ * Cascading delete of user account and related records.
+ */
+const { authenticateUser } = require('../middleware/auth');
+router.delete('/auth/delete-account', authenticateUser, async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    
+    // Deleting the user will cascade delete records in consent_records, medicines, interaction_flags, etc. due to ON DELETE CASCADE
+    await query('DELETE FROM users WHERE id = $1', [userId]);
+
+    logger.audit('USER_DELETED', `User ${userId} deleted their account and all related records`, {
+      userId,
+    });
+
+    res.json({
+      success: true,
+      data: {
+        message: 'Account and all related records deleted successfully.',
+      },
+    });
+  } catch (err) {
+    logger.error('ACCOUNT_DELETION_ERROR', `Error deleting account for user ${req.user?.id}: ${err.message}`);
     next(err);
   }
 });

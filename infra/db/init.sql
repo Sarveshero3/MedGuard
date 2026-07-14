@@ -227,3 +227,24 @@ CREATE TABLE schema_migrations (
     applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 INSERT INTO schema_migrations (version) VALUES ('v1.0.0');
+
+-- ─────────────────────────────────────────────────────────────
+-- Seed Data Mappings & Interactions
+-- ─────────────────────────────────────────────────────────────
+
+INSERT INTO brand_generic_map (brand_name, generic_name, composition, source, version, effective_date) VALUES
+('Glycomet', 'Metformin', 'Metformin Hydrochloride 500mg', 'kaggle_seed', 'v1', NOW()),
+('Crocin', 'Paracetamol', 'Paracetamol 650mg', 'kaggle_seed', 'v1', NOW()),
+('Amoxil', 'Amoxicillin', 'Amoxicillin Trihydrate 500mg', 'kaggle_seed', 'v1', NOW()),
+('Lipitor', 'Atorvastatin', 'Atorvastatin Calcium 10mg', 'kaggle_seed', 'v1', NOW()),
+('Zantac', 'Ranitidine', 'Ranitidine Hydrochloride 150mg', 'kaggle_seed', 'v1', NOW()),
+('Disprin', 'Aspirin', 'Aspirin 325mg', 'kaggle_seed', 'v1', NOW()),
+('Coumadin', 'Warfarin', 'Warfarin Sodium 5mg', 'kaggle_seed', 'v1', NOW())
+ON CONFLICT (brand_name, version) DO NOTHING;
+
+INSERT INTO interaction_kb (generic_a, generic_b, severity, explanation, source, version, effective_date) VALUES
+('Warfarin', 'Aspirin', 'avoid_combination', 'Combining Warfarin and Aspirin significantly increases the risk of severe bleeding. Avoid combination unless specifically directed by your doctor.', 'DDInter', 'v1', NOW()),
+('Metformin', 'Contrast Media', 'monitor_closely', 'Iodinated contrast media may cause temporary kidney impairment, increasing Metformin accumulation and risk of lactic acidosis.', 'DDInter', 'v1', NOW()),
+('Ibuprofen', 'Aspirin', 'minor', 'Ibuprofen may decrease the cardioprotective effect of low-dose Aspirin. Space doses or monitor.', 'DDInter', 'v1', NOW())
+ON CONFLICT (generic_a, generic_b, version) DO NOTHING;
+

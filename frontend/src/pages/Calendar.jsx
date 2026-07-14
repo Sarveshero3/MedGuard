@@ -2,208 +2,300 @@ import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import api from '../services/api'
+import { Skeleton } from '../components/ui/skeleton'
+import { MgNavbar } from '../components/MgNavbar'
 
 export default function Calendar() {
-  const { user, logout } = useAuth()
+  const { user, loading: authLoading, logout } = useAuth()
   const navigate = useNavigate()
 
-  const [timeline, setTimeline] = useState([])
+  useEffect(() => {
+    if (!authLoading && !user) {
+      navigate('/login')
+    }
+  }, [user, authLoading, navigate])
+  const [timelineItems, setTimelineItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  
+  // Appointment Form State
+  const [showForm, setShowForm] = useState(false)
+  const [formData, setFormData] = useState({
+    doctor_name: '',
+    visit_type: 'general',
+    scheduled_date: '',
+    notes: '',
+  })
 
-  // Add Appointment Form State
-  const [doctorName, setDoctorName] = useState('')
-  const [specialty, setSpecialty] = useState('')
-  const [scheduledDate, setScheduledDate] = useState('')
-  const [submitting, setSubmitting] = useState(false)
-  const [successMsg, setSuccessMsg] = useState('')
+  useEffect(() => {
+    if (!user?.id) return
+    fetchCalendarData()
+  }, [user?.id])
 
   const fetchCalendarData = async () => {
-    if (!user?.id) return
+    setLoading(true)
+    setError('')
     try {
-      setLoading(true)
-      const res = await api.get(`/calendar?patient_id=${user.id}`)
-      setTimeline(res.data.data.timeline || [])
-      setError('')
+      const res = await api.get('/calendar', { params: { patient_id: user.id } })
+      const appointments = (res.data.data?.visits || []).map(v => ({
+        ...v,
+        type: 'appointment',
+        sortDate: new Date(v.scheduled_date),
+      }))
+      const courseEnds = (res.data.data?.course_ends || []).map(c => ({
+        ...c,
+        type: 'course_end',
+        sortDate: new Date(c.course_end_date),
+      }))
+
+      const merged = [...appointments, ...courseEnds].sort((a, b) => a.sortDate - b.sortDate)
+      setTimelineItems(merged)
     } catch (err) {
-      setError(err.response?.data?.error?.message || 'Failed to fetch calendar timeline.')
+      setError(err.response?.data?.error?.message || 'Failed to fetch calendar timeline')
     } finally {
       setLoading(false)
     }
   }
 
-  useEffect(() => {
-    fetchCalendarData()
-  }, [user?.id])
-
-  const handleAddVisit = async (e) => {
+  const handleBookAppointment = async (e) => {
     e.preventDefault()
-    if (!scheduledDate) return
-
-    setSubmitting(true)
     setError('')
-    setSuccessMsg('')
-
     try {
-      await api.post('/calendar/visits', {
+      await api.post('/appointments', {
         patient_id: user.id,
-        doctor_name: doctorName,
-        specialty,
-        scheduled_date: new Date(scheduledDate).toISOString(),
+        doctor_name: formData.doctor_name,
+        visit_type: formData.visit_type,
+        scheduled_date: formData.scheduled_date,
+        notes: formData.notes,
       })
-
-      setSuccessMsg('Appointment added successfully!')
-      setDoctorName('')
-      setSpecialty('')
-      setScheduledDate('')
-      fetchCalendarData() // Refresh timeline
+      
+      setShowForm(false)
+      setFormData({ doctor_name: '', visit_type: 'general', scheduled_date: '', notes: '' })
+      fetchCalendarData()
     } catch (err) {
-      setError(err.response?.data?.error?.message || 'Failed to add appointment.')
-    } finally {
-      setSubmitting(false)
+      setError(err.response?.data?.error?.message || 'Failed to book appointment')
     }
   }
 
+  const getTimelineIcon = (item) => {
+    if (item.type === 'course_end') return 'medication'
+    if (item.visit_type === 'cardiology') return 'stethoscope'
+    if (item.visit_type === 'orthopedics') return 'bone'
+    if (item.visit_type === 'neurology') return 'psychology'
+    return 'medical_services'
+  }
+
   return (
-    <div className="page-container">
-      <nav className="top-nav">
-        <div className="nav-brand">🛡️ MedGuard</div>
-        <div className="nav-links">
-          <Link to="/dashboard">Dashboard</Link>
-          <Link to="/upload">Upload</Link>
-          <Link to="/medicines">Medicines</Link>
-          <Link to="/alerts">Alerts</Link>
-          <Link to="/calendar">Calendar</Link>
-          <button onClick={() => { logout(); navigate('/login'); }}>Logout</button>
-        </div>
-      </nav>
-
-      <main className="dashboard-content">
-        <h1>📅 My Calendar & Visits</h1>
-        <p className="subtitle">Medicine course end dates and doctor appointments</p>
-
-        {error && <div className="error-banner" style={{ margin: '16px 0', padding: '12px', background: '#ffebeb', color: '#c30000', borderRadius: '6px' }}>{error}</div>}
-        {successMsg && <div className="success-banner" style={{ margin: '16px 0', padding: '12px', background: '#e6f7ed', color: '#137333', borderRadius: '6px' }}>{successMsg}</div>}
-
-        <div className="calendar-grid" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '32px', marginTop: '24px' }}>
-          
-          {/* Merged Timeline Section */}
-          <div className="timeline-section">
-            <h2>Chronological Schedule</h2>
-            {loading ? (
-              <p>Loading timeline...</p>
-            ) : timeline.length === 0 ? (
-              <div className="empty-state" style={{ marginTop: '24px' }}>
-                <span className="empty-icon">📅</span>
-                <h3>No upcoming calendar items</h3>
-                <p>Add an appointment or upload a prescription to view your schedule</p>
-              </div>
-            ) : (
-              <div className="timeline-list" style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '20px' }}>
-                {timeline.map((item, idx) => {
-                  const itemDate = new Date(item.date).toLocaleDateString(undefined, {
-                    weekday: 'long',
-                    year: 'numeric',
-                    month: 'long',
-                    day: 'numeric',
-                  })
-                  
-                  const isVisit = item.type === 'doctor_visit'
-
-                  return (
-                    <div 
-                      key={item.id || idx} 
-                      className="card timeline-card" 
-                      style={{ 
-                        display: 'flex', 
-                        flexDirection: 'column', 
-                        gap: '8px', 
-                        borderLeft: `6px solid ${isVisit ? '#0f766e' : '#f59e0b'}`,
-                        padding: '16px',
-                        cursor: 'default'
-                      }}
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ 
-                          fontSize: '12px', 
-                          fontWeight: '600', 
-                          color: isVisit ? '#0f766e' : '#b45309', 
-                          background: isVisit ? '#ccfbf1' : '#fef3c7', 
-                          padding: '2px 8px', 
-                          borderRadius: '12px',
-                          textTransform: 'uppercase'
-                        }}>
-                          {isVisit ? 'Doctor Appointment' : 'Medication End'}
-                        </span>
-                        <span style={{ fontSize: '13px', color: '#666' }}>{itemDate}</span>
-                      </div>
-                      <h4 style={{ margin: '4px 0', fontSize: '18px' }}>{item.title}</h4>
-                      {isVisit ? (
-                        <p style={{ margin: 0, fontSize: '14px', color: '#666' }}>
-                          Doctor: {item.details.doctor_name || 'Unspecified'} | Specialty: {item.details.specialty || 'General'}
-                        </p>
-                      ) : (
-                        <p style={{ margin: 0, fontSize: '14px', color: '#666' }}>
-                          Dosage: {item.details.dosage} | Frequency: {item.details.frequency}
-                        </p>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            )}
+    <>
+      {/* Main Content Area */}
+      <main className="flex-grow px-6 md:px-16 py-12 max-w-[1200px] mx-auto w-full animate-fade-in">
+        
+        {/* Header Section */}
+        <header className="flex flex-col md:flex-row justify-between items-start md:items-end mb-16 text-left">
+          <div>
+            <h1 className="font-sans text-5xl font-bold text-slate-900 mb-2">Health Timeline</h1>
+            <p className="text-sm text-slate-500 max-w-2xl">
+              A chronological record of your upcoming clinical appointments and medication milestones.
+            </p>
           </div>
+          <button 
+            onClick={() => setShowForm(!showForm)}
+            className="mt-6 md:mt-0 bg-[#0F766E] text-white font-semibold text-sm px-6 py-3 rounded-lg hover:bg-accent-hover transition-colors flex items-center shadow-sm cursor-pointer"
+          >
+            <span className="material-symbols-outlined mr-2 text-[20px]">add</span>
+            Add Appointment
+          </button>
+        </header>
 
-          {/* Add Appointment Form */}
-          <div className="add-visit-section">
-            <h2>Add Appointment</h2>
-            <form onSubmit={handleAddVisit} className="card" style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '24px', marginTop: '20px', cursor: 'default' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <label style={{ fontWeight: '500', fontSize: '14px' }}>Doctor Name</label>
-                <input 
-                  type="text" 
-                  value={doctorName}
-                  onChange={(e) => setDoctorName(e.target.value)}
-                  placeholder="e.g. Dr. Sharma" 
-                  style={{ padding: '8px 12px', border: '1px solid #ccc', borderRadius: '6px' }}
-                />
+        {error && (
+          <div className="error-banner mb-8 p-4 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm text-left">
+            {error}
+          </div>
+        )}
+
+        {/* Appointment Booking Form Dropdown */}
+        {showForm && (
+          <div className="mb-12 bg-white border border-slate-200 rounded-xl p-8 text-left shadow-sm max-w-2xl mx-auto">
+            <h3 className="text-xl font-bold text-slate-900 mb-6">Schedule New Appointment</h3>
+            
+            <form onSubmit={handleBookAppointment} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="form-group">
+                  <label htmlFor="doctor_name">Doctor's Name</label>
+                  <input
+                    id="doctor_name"
+                    type="text"
+                    required
+                    placeholder="Dr. Sarah Jenkins"
+                    value={formData.doctor_name}
+                    onChange={(e) => setFormData({ ...formData, doctor_name: e.target.value })}
+                  />
+                </div>
+                <div className="form-group">
+                  <label htmlFor="visit_type">Specialty</label>
+                  <select
+                    id="visit_type"
+                    value={formData.visit_type}
+                    onChange={(e) => setFormData({ ...formData, visit_type: e.target.value })}
+                  >
+                    <option value="general">General Medicine</option>
+                    <option value="cardiology">Cardiology</option>
+                    <option value="neurology">Neurology</option>
+                    <option value="orthopedics">Orthopedics</option>
+                    <option value="pediatrics">Pediatrics</option>
+                  </select>
+                </div>
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <label style={{ fontWeight: '500', fontSize: '14px' }}>Specialty</label>
-                <input 
-                  type="text" 
-                  value={specialty}
-                  onChange={(e) => setSpecialty(e.target.value)}
-                  placeholder="e.g. Cardiology" 
-                  style={{ padding: '8px 12px', border: '1px solid #ccc', borderRadius: '6px' }}
-                />
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <label style={{ fontWeight: '500', fontSize: '14px' }}>Date & Time *</label>
-                <input 
-                  type="datetime-local" 
-                  value={scheduledDate}
-                  onChange={(e) => setScheduledDate(e.target.value)}
+              <div className="form-group">
+                <label htmlFor="scheduled_date">Appointment Date &amp; Time</label>
+                <input
+                  id="scheduled_date"
+                  type="datetime-local"
                   required
-                  style={{ padding: '8px 12px', border: '1px solid #ccc', borderRadius: '6px' }}
+                  value={formData.scheduled_date}
+                  onChange={(e) => setFormData({ ...formData, scheduled_date: e.target.value })}
                 />
               </div>
 
-              <button 
-                type="submit" 
-                className="btn-primary" 
-                disabled={submitting}
-                style={{ width: '100%', padding: '10px', marginTop: '8px', cursor: 'pointer' }}
-              >
-                {submitting ? 'Adding...' : 'Add to Calendar'}
-              </button>
+              <div className="form-group">
+                <label htmlFor="notes">Notes / Instructions</label>
+                <textarea
+                  id="notes"
+                  rows={3}
+                  placeholder="Fasting required 12 hours prior, bring prescription records..."
+                  value={formData.notes}
+                  onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowForm(false)}
+                  className="bg-transparent text-slate-500 hover:text-slate-900 font-semibold text-sm px-6 py-2.5 rounded-lg transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="bg-[#0F766E] hover:bg-accent-hover text-white font-semibold text-sm px-6 py-2.5 rounded-lg transition-colors cursor-pointer"
+                >
+                  Book Appointment
+                </button>
+              </div>
             </form>
           </div>
+        )}
 
+        {/* Timeline Container */}
+        <div className="bg-white border border-slate-200/80 rounded-2xl p-6 md:p-12 relative overflow-hidden text-left shadow-sm">
+          {loading ? (
+            <div className="space-y-6">
+              <Skeleton className="h-28 w-full rounded-xl" />
+              <Skeleton className="h-28 w-full rounded-xl" />
+              <Skeleton className="h-28 w-full rounded-xl" />
+            </div>
+          ) : timelineItems.length === 0 ? (
+            <p className="text-sm text-slate-500">No events or appointments scheduled.</p>
+          ) : (
+            <div className="relative">
+              {timelineItems.map((item, index) => {
+                const isAppt = item.type === 'appointment'
+                return (
+                  <div key={item.id || index} className="relative flex items-start mb-12 last:mb-0 group">
+                    
+                    {/* Vertical connecting line */}
+                    {index < timelineItems.length - 1 && (
+                      <div className="absolute left-[23px] top-[48px] bottom-[-48px] w-0.5 bg-slate-200 z-0"></div>
+                    )}
+
+                    {/* Circle Node icon */}
+                    <div className="flex-shrink-0 flex flex-col items-center mr-8 z-10 w-12">
+                      <div className={`w-12 h-12 rounded-full border bg-white flex items-center justify-center transition-all duration-300 ${
+                        isAppt 
+                          ? 'border-[#0F766E] text-[#0F766E] group-hover:bg-[#f0f9f8]' 
+                          : 'border-slate-300 text-slate-400 group-hover:bg-slate-100'
+                      }`}>
+                        <span className="material-symbols-outlined text-xl">
+                          {getTimelineIcon(item)}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Content Card */}
+                    <div className={`flex-grow border border-slate-200/80 rounded-xl p-6 transition-all duration-300 relative bg-white shadow-sm ${
+                      isAppt ? 'hover:border-[#0F766E]' : 'hover:border-slate-400'
+                    }`}>
+                      {/* Left border indicator cue */}
+                      <div className={`absolute left-0 top-0 bottom-0 w-1 rounded-l-lg opacity-80 ${
+                        isAppt ? 'bg-[#0F766E]' : 'bg-slate-300'
+                      }`}></div>
+
+                      <div className="flex flex-col md:flex-row justify-between md:items-start gap-4">
+                        <div>
+                          <div className="flex items-center gap-3 mb-2">
+                            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                              {new Date(item.sortDate).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                              {isAppt && ` • ${new Date(item.sortDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
+                            </span>
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md uppercase ${
+                              isAppt ? 'bg-teal-50 text-teal-800' : 'bg-slate-100 text-slate-600'
+                            }`}>
+                              {isAppt ? 'Appointment' : 'Medicine Course End'}
+                            </span>
+                          </div>
+                          
+                          <h3 className="text-2xl font-bold text-slate-900 mb-1">
+                            {isAppt 
+                              ? (item.visit_type ? `${item.visit_type.toUpperCase()} Consult` : 'General Consult') 
+                              : `${item.brand_name} Course End`
+                            }
+                          </h3>
+                          <p className="text-sm text-slate-500">
+                            {isAppt 
+                              ? `Dr. ${item.doctor_name || 'Clinician'}${item.notes ? ` • ${item.notes}` : ''}` 
+                              : `Check clinical panel or consult physician before refill.`
+                            }
+                          </p>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <button className="text-slate-400 hover:text-[#0F766E] p-2 transition-colors border border-transparent hover:border-slate-100 rounded-lg cursor-pointer">
+                            <span className="material-symbols-outlined text-lg">edit</span>
+                          </button>
+                          <button className="text-slate-400 hover:text-[#0F766E] p-2 transition-colors border border-transparent hover:border-slate-100 rounded-lg cursor-pointer">
+                            <span className="material-symbols-outlined text-lg">more_vert</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </div>
       </main>
-    </div>
+
+      {/* Footer */}
+      <footer className="bg-[#f6fafa] border-t border-slate-200">
+        <div className="w-full py-12 px-6 md:px-16 flex flex-col md:flex-row justify-between items-center gap-4 max-w-[1200px] mx-auto text-sm text-slate-500">
+          <div className="font-serif text-lg font-bold text-slate-900 mb-4 md:mb-0">
+            MedGuard
+          </div>
+          <div className="flex flex-wrap justify-center gap-6">
+            <Link to="/privacy" className="hover:text-[#0F766E] transition-colors">Privacy Policy</Link>
+            <a className="hover:text-[#0F766E] transition-colors" href="#" onClick={(e) => e.preventDefault()}>Terms of Service</a>
+            <a className="hover:text-[#0F766E] transition-colors" href="#" onClick={(e) => e.preventDefault()}>Clinical Guidelines</a>
+            <a className="hover:text-[#0F766E] transition-colors" href="#" onClick={(e) => e.preventDefault()}>Contact Support</a>
+          </div>
+          <div className="text-xs text-slate-400 mt-4 md:mt-0">
+            © 2026 MedGuard AI. Clinical Excellence in Medication Safety.
+          </div>
+        </div>
+      </footer>
+    </>
   )
 }
