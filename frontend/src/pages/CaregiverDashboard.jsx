@@ -1,16 +1,13 @@
 import { useEffect, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import api from '../services/api'
-
-const SEVERITY_CONFIG = {
-  avoid_combination: { label: 'Avoid Combination', color: '#ef4444', bg: 'rgba(239,68,68,0.1)', icon: '🔴' },
-  monitor_closely: { label: 'Monitor Closely', color: '#f59e0b', bg: 'rgba(245,158,11,0.1)', icon: '🟠' },
-  minor: { label: 'Minor', color: '#eab308', bg: 'rgba(234,179,8,0.1)', icon: '🟡' },
-  no_action: { label: 'No Action', color: '#22c55e', bg: 'rgba(34,197,94,0.1)', icon: '🟢' },
-}
+import { Skeleton } from '../components/ui/skeleton'
+import { MgNavbar } from '../components/MgNavbar'
 
 export default function CaregiverDashboard() {
-  const { user } = useAuth()
+  const { user, loading: authLoading, logout } = useAuth()
+  const navigate = useNavigate()
   const [links, setLinks] = useState([])
   const [selectedPatient, setSelectedPatient] = useState(null)
   const [medicines, setMedicines] = useState([])
@@ -19,178 +16,258 @@ export default function CaregiverDashboard() {
   const [error, setError] = useState('')
 
   useEffect(() => {
+    if (!authLoading && !user) {
+      navigate('/login')
+    }
+  }, [user, authLoading, navigate])
+
+  useEffect(() => {
     if (!user) return
     fetchLinks()
   }, [user])
 
   const fetchLinks = async () => {
     setLoading(true)
+    setError('')
     try {
-      const res = await api.get('/caregivers/links')
-      setLinks(res.data.data.filter(l => l.status === 'active'))
+      const res = await api.get('/caregivers/patients')
+      const patients = res.data.data
+      setLinks(patients)
+      
+      // Auto-select first patient if available
+      if (patients.length > 0) {
+        handlePatientSelect(patients[0].patient_id, patients)
+      } else {
+        setLoading(false)
+      }
     } catch (err) {
-      setError(err.response?.data?.error?.message || 'Failed to load patient links')
+      setError(err.response?.data?.error?.message || 'Failed to fetch patients list')
+      setLoading(false)
     }
-    setLoading(false)
   }
 
-  const selectPatient = async (link) => {
-    setSelectedPatient(link)
+  const handlePatientSelect = async (patientId, patientsList = links) => {
+    const selected = patientsList.find(p => p.patient_id === patientId)
+    setSelectedPatient(selected)
+    if (!selected) return
+
     setLoading(true)
     setError('')
     try {
-      // Always fetch alerts (available for both tiers)
-      const alertsRes = await api.get('/alerts', { params: { patient_id: link.patient_id } })
-      setAlerts(alertsRes.data.data)
+      const [medsRes, alertsRes] = await Promise.allSettled([
+        api.get('/medicines', { params: { patient_id: patientId } }),
+        api.get('/alerts', { params: { patient_id: patientId } }),
+      ])
 
-      // Full view: also fetch medicines
-      if (link.permission_level === 'full_view') {
-        const medsRes = await api.get('/medicines', { params: { patient_id: link.patient_id } })
-        setMedicines(medsRes.data.data)
+      if (medsRes.status === 'fulfilled') {
+        setMedicines(medsRes.value.data.data)
       } else {
         setMedicines([])
       }
-    } catch (err) {
-      setError(err.response?.data?.error?.message || 'Failed to load patient data')
-    }
-    setLoading(false)
-  }
 
-  const handleAcknowledge = async (alertId) => {
-    try {
-      await api.post(`/alerts/${alertId}/acknowledge`)
-      setAlerts(prev => prev.map(a =>
-        a.id === alertId ? { ...a, status: 'acknowledged_by_caregiver' } : a
-      ))
-    } catch (err) {
-      setError(err.response?.data?.error?.message || 'Failed to acknowledge')
+      if (alertsRes.status === 'fulfilled') {
+        setAlerts(alertsRes.value.data.data)
+      } else {
+        setAlerts([])
+      }
+    } catch {
+      setError('Error loading patient data')
+    } finally {
+      setLoading(false)
     }
   }
 
-  const permissionBadge = (level) => {
-    if (level === 'full_view') return <span className="badge badge-active">Full View</span>
-    return <span className="badge badge-warn">Alerts Only</span>
-  }
-
-  const sevConfig = (sev) => SEVERITY_CONFIG[sev] || SEVERITY_CONFIG.no_action
+  const activeMeds = medicines.filter(m => m.status === 'active')
+  const activeAlerts = alerts.filter(a => a.status === 'shown')
+  const hasFullAccess = selectedPatient?.permission_level === 'full_view'
 
   return (
-    <div className="page-container">
-      <h1>👨‍👩‍👧 Caregiver Dashboard</h1>
-      <p className="subtitle">Monitor your linked patient's medication safety</p>
-
-      {error && <div className="error-banner">{error}</div>}
-
-      {!selectedPatient ? (
-        <>
-          {loading ? (
-            <p className="loading-text">Loading linked patients…</p>
-          ) : links.length === 0 ? (
-            <div className="empty-state">
-              <span className="empty-icon">🔗</span>
-              <h3>No linked patients</h3>
-              <p>Ask a patient to send you a caregiver invitation to get started</p>
+    <>
+      {/* Main Content */}
+      <main className="flex-grow w-full max-w-[1200px] mx-auto px-6 md:px-16 py-12 animate-fade-in">
+        
+        {/* Caregiver Context Header */}
+        <header className="mb-12 border-b border-slate-200 pb-8 text-left">
+          <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+            <div>
+              <div className="inline-flex items-center gap-2 px-3 py-1 bg-slate-100 rounded-lg mb-4 border border-slate-200">
+                <span className="material-symbols-outlined text-[16px] text-slate-500">visibility</span>
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Read-Only View</span>
+              </div>
+              <h1 className="font-sans text-5xl font-bold text-slate-900 mb-2">Caregiver Dashboard</h1>
+              <p className="text-sm text-slate-500">
+                Viewing as caregiver for <strong className="text-slate-900 font-semibold">{selectedPatient ? selectedPatient.patient_name : 'No Patient Selected'}</strong>
+              </p>
             </div>
-          ) : (
-            <div className="patient-links-grid" id="patient-links">
-              {links.map(link => (
-                <div key={link.id} className="patient-link-card" onClick={() => selectPatient(link)}>
-                  <div className="patient-name">{link.name || link.email}</div>
-                  <div className="patient-email">{link.email}</div>
-                  <div className="patient-permission">{permissionBadge(link.permission_level)}</div>
+            
+            {/* Patient Switcher Dropdown */}
+            {links.length > 0 && (
+              <div className="relative w-full md:w-64">
+                <select 
+                  id="patient-select"
+                  value={selectedPatient?.patient_id || ''}
+                  onChange={(e) => handlePatientSelect(e.target.value)}
+                  className="block w-full pl-4 pr-10 py-3 text-sm border border-slate-200 focus:outline-none focus:border-[#0F766E] focus:ring-1 focus:ring-[#0F766E] rounded-lg bg-white appearance-none cursor-pointer"
+                >
+                  {links.map((link) => (
+                    <option key={link.patient_id} value={link.patient_id}>
+                      {link.patient_name}
+                    </option>
+                  ))}
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-slate-400">
+                  <span className="material-symbols-outlined">expand_more</span>
                 </div>
-              ))}
-            </div>
-          )}
-        </>
-      ) : (
-        <>
-          <button className="btn-back" onClick={() => setSelectedPatient(null)}>
-            ← Back to Patient List
-          </button>
-
-          <div className="selected-patient-header">
-            <h2>{selectedPatient.name || selectedPatient.email}</h2>
-            {permissionBadge(selectedPatient.permission_level)}
+              </div>
+            )}
           </div>
+        </header>
 
-          {loading ? (
-            <p className="loading-text">Loading patient data…</p>
-          ) : (
-            <>
-              {/* Medicines — only visible for full_view */}
-              {selectedPatient.permission_level === 'full_view' && (
-                <div className="section">
-                  <h3>💊 Active Medicines ({medicines.filter(m => m.status === 'active').length})</h3>
-                  {medicines.filter(m => m.status === 'active').length === 0 ? (
-                    <p className="empty-text">No active medicines</p>
-                  ) : (
-                    <div className="medicine-table-wrapper">
-                      <table className="medicine-table">
-                        <thead>
-                          <tr><th>Brand</th><th>Generic</th><th>Dosage</th><th>Frequency</th></tr>
-                        </thead>
-                        <tbody>
-                          {medicines.filter(m => m.status === 'active').map(m => (
-                            <tr key={m.id}>
-                              <td>{m.brand_name}</td>
-                              <td>{m.generic_name || '—'}</td>
-                              <td>{m.dosage}</td>
-                              <td>{m.frequency}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
+        {error && (
+          <div className="error-banner mb-8 p-4 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm text-left">
+            {error}
+          </div>
+        )}
+
+        {loading ? (
+          <div className="space-y-6">
+            <Skeleton className="h-48 w-full rounded-xl" />
+            <Skeleton className="h-48 w-full rounded-xl" />
+          </div>
+        ) : !selectedPatient ? (
+          <div className="text-left py-12 border border-slate-200 border-dashed rounded-xl bg-white p-8">
+            <p className="text-sm text-slate-500">You are not linked as a caregiver for any patients yet.</p>
+          </div>
+        ) : (
+          <div className="text-left">
+            
+            {/* Bento metrics summary */}
+            <section className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-16">
+              
+              {/* Active Medicines Bento Card */}
+              <div className="bg-white border border-slate-200/80 rounded-xl p-8 flex flex-col justify-between h-48 shadow-sm">
+                <div className="flex justify-between items-start">
+                  <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Active Medicines</h4>
+                  <span className="material-symbols-outlined text-slate-400">medication</span>
                 </div>
-              )}
+                <div className="flex items-baseline gap-2">
+                  <span className="font-sans text-5xl font-bold text-slate-900 leading-none">
+                    {hasFullAccess ? activeMeds.length : '🔒'}
+                  </span>
+                  <span className="text-xs text-slate-500">
+                    {hasFullAccess ? 'Prescriptions' : 'Access Restricted'}
+                  </span>
+                </div>
+              </div>
 
-              {/* Alerts — visible for all tiers */}
-              <div className="section">
-                <h3>⚠️ Interaction Alerts ({alerts.filter(a => a.status === 'shown').length} unacknowledged)</h3>
-                {alerts.length === 0 ? (
-                  <p className="empty-text">No interaction alerts — medicines look safe</p>
-                ) : (
-                  <div className="alerts-grid">
-                    {alerts.map(alert => {
-                      const cfg = sevConfig(alert.severity)
-                      const isAcknowledged = alert.status !== 'shown'
+              {/* Interaction Alerts Bento Card */}
+              <div className={`bg-white border border-slate-200/80 rounded-xl p-8 flex flex-col justify-between h-48 shadow-sm relative overflow-hidden border-l-4 ${
+                activeAlerts.length > 0 ? 'border-l-red-600' : 'border-l-teal-600'
+              }`}>
+                <div className="flex justify-between items-start z-10 relative">
+                  <h4 className={`text-xs font-bold uppercase tracking-wider ${
+                    activeAlerts.length > 0 ? 'text-red-700' : 'text-teal-700'
+                  }`}>
+                    Interaction Alerts
+                  </h4>
+                  <span className={`text-xs font-bold px-2 py-0.5 rounded uppercase ${
+                    activeAlerts.length > 0 ? 'bg-red-50 text-red-800' : 'bg-teal-50 text-teal-800'
+                  }`}>
+                    {activeAlerts.length > 0 ? 'Attention Needed' : 'All Clear'}
+                  </span>
+                </div>
+                <div className="flex items-baseline gap-2 z-10 relative">
+                  <span className="font-sans text-5xl font-bold text-slate-900 leading-none">
+                    {activeAlerts.length}
+                  </span>
+                  <span className="text-xs text-slate-500">
+                    {activeAlerts.length > 0 ? 'Potential Risks Detected' : 'No Risks Detected'}
+                  </span>
+                </div>
+              </div>
 
-                      return (
-                        <div key={alert.id}
-                          className={`alert-card ${isAcknowledged ? 'acknowledged' : ''}`}
-                          style={{ borderLeftColor: cfg.color, backgroundColor: cfg.bg }}
-                        >
-                          <div className="alert-header">
-                            <span>{cfg.icon}</span>
-                            <span style={{ color: cfg.color }}>{cfg.label}</span>
-                            {isAcknowledged && <span className="alert-ack-badge">✓ {alert.status.replace(/_/g, ' ')}</span>}
+            </section>
+
+            {/* Current Regimen Details */}
+            {hasFullAccess ? (
+              <section>
+                <div className="flex justify-between items-end mb-8">
+                  <h2 className="font-sans text-2xl font-bold text-slate-900">Current Regimen</h2>
+                  <span className="text-xs text-slate-400">Adherence monitoring active</span>
+                </div>
+
+                <div className="flex flex-col gap-4">
+                  {medicines.map((med) => {
+                    const isActive = med.status === 'active'
+                    return (
+                      <div 
+                        key={med.id}
+                        className={`bg-white border border-slate-200/80 rounded-xl p-6 flex flex-col md:flex-row gap-6 md:items-center justify-between shadow-sm transition-all duration-200 hover:border-slate-400 ${
+                          isActive ? '' : 'opacity-70 bg-slate-50/50'
+                        }`}
+                      >
+                        <div className="flex items-start gap-4">
+                          <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center shrink-0 border border-slate-200">
+                            <span className="material-symbols-outlined text-slate-500">pill</span>
                           </div>
-                          <div className="alert-drugs">
-                            <span className="drug-pill">{alert.new_medicine_brand} ({alert.new_medicine_generic})</span>
-                            <span className="alert-x">✕</span>
-                            <span className="drug-pill">{alert.existing_medicine_brand} ({alert.existing_medicine_generic})</span>
-                          </div>
-                          <p className="alert-explanation">{alert.explanation}</p>
-                          <div className="alert-footer">
-                            <span className="alert-date">{new Date(alert.created_at).toLocaleDateString()}</span>
-                            {!isAcknowledged && (
-                              <button className="btn-sm btn-ack" onClick={() => handleAcknowledge(alert.id)}>
-                                Acknowledge
-                              </button>
-                            )}
+                          <div>
+                            <div className="flex items-center gap-3 mb-1">
+                              <h3 className={`text-lg font-semibold ${isActive ? 'text-slate-900' : 'text-slate-400 line-through'}`}>
+                                {med.brand_name} {med.dosage}
+                              </h3>
+                              <span className={`text-xs font-bold px-2 py-0.5 rounded uppercase ${
+                                isActive ? 'bg-teal-50 text-teal-800' : 'bg-slate-100 text-slate-500'
+                              }`}>
+                                {isActive ? 'Active' : 'Completed'}
+                              </span>
+                            </div>
+                            <p className="text-xs text-slate-500">Oral Medication regimen</p>
                           </div>
                         </div>
-                      )
-                    })}
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-        </>
-      )}
-    </div>
+
+                        <div className="flex flex-col md:items-end gap-1 border-t md:border-t-0 md:border-l border-slate-100 pt-4 md:pt-0 md:pl-6 mt-2 md:mt-0">
+                          <span className="text-sm font-semibold text-slate-900">{med.frequency}</span>
+                          <span className="text-xs text-slate-500">
+                            {isActive ? `Since: ${new Date(med.created_at).toLocaleDateString()}` : 'Course finished'}
+                          </span>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </section>
+            ) : (
+              <section className="py-12 border border-slate-200 border-dashed rounded-xl bg-white p-8 text-center flex flex-col items-center">
+                <span className="material-symbols-outlined text-5xl text-slate-400 mb-4">lock</span>
+                <h3 className="text-lg font-bold text-slate-900 mb-2">Restricted Access Protocol</h3>
+                <p className="text-sm text-slate-500 max-w-md">
+                  This patient has configured their caregiver permission level to <strong>Alerts Only</strong>. Full regimen details and drug catalogs are locked in compliance with patient consent settings.
+                </p>
+              </section>
+            )}
+
+          </div>
+        )}
+
+      </main>
+
+      {/* Footer */}
+      <footer className="bg-[#f6fafa] border-t border-slate-200 mt-auto">
+        <div className="w-full py-12 px-6 md:px-16 flex flex-col md:flex-row justify-between items-center gap-4 max-w-[1200px] mx-auto text-sm text-slate-500">
+          <div className="font-serif text-lg font-bold text-slate-900 mb-4 md:mb-0">
+            MedGuard
+          </div>
+          <div className="flex flex-wrap justify-center gap-6">
+            <Link to="/privacy" className="hover:text-[#0F766E] transition-colors">Privacy Policy</Link>
+            <a className="hover:text-[#0F766E] transition-colors" href="#" onClick={(e) => e.preventDefault()}>Terms of Service</a>
+            <a className="hover:text-[#0F766E] transition-colors" href="#" onClick={(e) => e.preventDefault()}>Clinical Guidelines</a>
+            <a className="hover:text-[#0F766E] transition-colors" href="#" onClick={(e) => e.preventDefault()}>Contact Support</a>
+          </div>
+          <div className="text-xs text-slate-400 mt-4 md:mt-0">
+            © 2026 MedGuard AI. Clinical Excellence in Medication Safety.
+          </div>
+        </div>
+      </footer>
+    </>
   )
 }

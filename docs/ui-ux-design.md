@@ -57,7 +57,8 @@ Technical, data-forward, structured grids. Risk: alienates non-technical patient
 
 ### Typography
 - **Core Font family**: `'Manrope', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif`
-- **Logo Font family**: `'Cormorant Garamond', serif` (or `'Cinzel', serif` for roman style). Applied as a bold (700 weight), normal (non-italicized) display style with a subtle `-0.5px` letter-spacing.
+- **Heading Font family**: `'Plus Jakarta Sans', sans-serif` (applied globally to all inner page `H1`s, `H2`s, `H3`s for modern curves and soft, curved healthcare readability).
+- **Logo Font family**: `'Cormorant Garamond', serif` (or `'Cinzel', serif` for roman style). Restricted *exclusively* to the literal wordmark "MedGuard" in headers, footers, and card headers. Applied as a bold (700 weight), normal (non-italicized) display style with a subtle `-0.5px` letter-spacing.
 - **Display**: 76px / 1.05 / -0.5px tracking (desktop), 48px / 1.1 / -0.5px (mobile)
 - **Body large**: 20px / 1.6 (desktop), 18px / 1.6 (mobile)
 - **Body**: 16px / 1.6
@@ -167,4 +168,28 @@ The "How MedGuard helps" section features a scroll-scrubbed vertical winding pat
 | `frontend/src/components/MedGuardFlowchart.jsx` | MODIFY | Overhauled to segment-based architecture with per-step scroll tracking, alternating top-anchored layout, SVG-embedded marker flourishes, traveled state array, and background gradient shifts. |
 | `frontend/src/components/MedGuardFlowchart.css` | MODIFY | Redesigned for alternating flex layout, carousel text entrance/exit, chevron cues, and mobile fallback. |
 | `frontend/index.html` | MODIFY | Integrated Google Fonts (Cinzel, Cormorant Garamond, Space Grotesk). |
+
+---
+
+## 10. Inner Pages Design System
+
+Following styling and UX guidance grounded from `ui-ux-pro-max` search outputs, the inner dashboard pages of MedGuard utilize a unified design system.
+
+### A. Style Grounding (Swiss Modernism 2.0)
+- **Mathematical Spacing**: Spacing variables use strict multiples of an 8px base unit (gap 1rem / 16px).
+- **Vibrant Accents**: Use `--mg-accent` (`#0F766E`) for active tab items, radio selection highlight outlines, and main buttons.
+- **Teal Grid Backgrounds**: Backgrounds of empty areas or CTAs use the exact token `linear-gradient(rgba(15, 118, 110, 0.12) 1px, transparent 1px)` with `background-size: 40px 40px` to maintain homepage visual consistency.
+
+### B. High Contrast UX & Accessibility
+- **Input Text Colors**: Typed text uses `#0B1F33` (`--mg-ink`) against a white background, yielding a **16.99:1** contrast ratio, which exceeds the WCAG AAA requirement (7:1).
+- **Placeholder Colors**: Placeholders use `#5D6B78` (`--mg-muted`), which yields a **5.53:1** contrast ratio, exceeding the WCAG AA requirement (4.5:1).
+- **Input Labels**: All interactive form inputs are paired with a visible, clear `<Label>` component instead of relying solely on placeholders.
+- **Motion Gates**: Shimmer animations for the `<Skeleton>` loaders are wrapped inside a `@media (prefers-reduced-motion: no-preference)` CSS query to comply with accessibility preferences.
+
+### C. Custom Components
+1. **`<MgTabs>`**: A single shared tabs layout utilizing a clean border track, active teal underline indicators, and responsive click handlers to eliminate styling drift.
+2. **`<Input>`**: High-contrast, borders-restrained text inputs matching the Clinical Editorial design direction.
+3. **`<Checkbox>`**: Custom SVG-driven indicators styled with teal accents.
+4. **`<Skeleton>`**: Shimmer placeholder bars replacing standard text loading states.
+
 

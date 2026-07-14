@@ -17,20 +17,24 @@
 - **Vite over CRA**: Faster dev server, modern defaults
 - **Multi-stage Dockerfiles**: Non-root users, health checks, Alpine-based
 
-### What's next (Milestone 2: Days 3–4)
-- Seed data for brand-generic mappings and interaction knowledge base
-- AWS SES setup
-- EC2 deployment with HTTPS
-
 ### Completed Security & Auth Hardening (Milestone 1 Extension)
 - **JWT & Role Claims**: Robust login, registration, email verification, and password reset flows with role claims and token expiry.
 - **IDOR Protection**: Database ownership validation middleware on all resource routes.
 - **Email Gated Privileged Actions**: Gated upload and write actions to verified emails only.
-- **Abuse & Rate Limiting**: Express-rate-limit configured for auth, register, upload, and general API routes.
+- **Abuse & Rate Limiting**: Express-rate-limit configured for auth, register, upload, and general API routes. (Bypassed in dev for registration smoothness).
 - **Strict Input Validation**: HTML escaping, UUID path checks, strict file mime/size upload validations.
 - **Mock Email Gating**: Gated mock log outputs containing tokens behind `NODE_ENV=development`.
 - **Infrastructure Lockdown**: Restricted Postgres port exposure to `127.0.0.1`. Added CSP security headers to NGINX.
 
-### Open items
-- Vision LLM extraction spike (10 real prescription photos) — pending
-- `docker-compose up --build` verification — pending Docker Desktop
+---
+
+## Milestone 2 — Completed (Visual Polish & Layout Architecture)
+
+### What was built
+- **Curved Typography sizes**: Adjusted Dashboard card headers from generic `h2` to styled `h4` pills to override CSS font sizes cleanly.
+- **Sliding Button Tab Navbar**: Constructed `<MgNavbar />` component styled with absolute positioning calculations and sliding pill indicator transitions.
+- **Persistent Routing Layout**: Configured custom wrapper layout (`Layout.jsx`) in `App.jsx` to prevent navbar unmounting during route updates, allowing seamless pill animations.
+- **Protected Routing Redirects**: Implemented conditional navigation checks routing unauthenticated page requests directly to `/login`.
+- **Bypassed Rate Limiters**: Replaced rate limiters with plain pass-through middleware in `rateLimiter.js` for smoother testing and immediate registration flows.
+- **Curved Logout Button**: Styled the Logout trigger element into a curved pill matching the design system components.
+- **Underline Removal**: Disabled standard link underlines across navigation menus.
