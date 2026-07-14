@@ -12,26 +12,26 @@
   - [ ] *Proof It Works*: Stack boots with one command (`docker-compose up --build`); vision model extracts medicine names reliably.
 
 - [ ] **Days 3–4: Core Authentication, Deployment Skeleton & Seed Data**
-  - [ ] Implement JWT login/refresh token authentication with `patient`, `caregiver`, and `admin` roles in `ms1`.
+  - [x] Implement JWT login/refresh token authentication with `patient`, `caregiver`, and `admin` roles in `ms1`.
   - [ ] Write deployment shell scripts and configure NGINX reverse-proxy routes with Certbot SSL/TLS.
   - [ ] Configure AWS SES verified domain / sandbox setup.
   - [ ] Seed PostgreSQL with initial subset of 50–150 brand-to-generic mappings and 50–150 interaction pairs.
-  - [ ] Build basic DPDP consent opt-in screen at signup and implement a working "delete my record" route.
+  - [x] Build basic DPDP consent opt-in screen at signup and implement a working "delete my record" route.
   - [ ] *Proof It Works*: Login, registration, consent screen, and photo upload work from a phone on the live domain.
 
 - [ ] **Days 5–7: LangGraph Assessment Graph & Deterministic Engine**
   - [ ] Implement LangGraph Prescription Assessment Graph in `ms2` (Image upload → Vision extraction → Confidence scoring).
   - [ ] Add the single follow-up question logic for ambiguous handwriting or dosages.
   - [ ] Implement brand-to-generic resolution layer in `ms2` matching against seeded DB mapping table.
-  - [ ] Create deterministic interaction-lookup module in `ms1` as a pure, unit-tested module.
-  - [ ] Build plain-language interaction alert panel in React frontend.
+  - [x] Create deterministic interaction-lookup module in `ms1` as a pure, unit-tested module.
+  - [x] Build plain-language interaction alert panel in React frontend.
   - [ ] *Proof It Works*: An uploaded prescription photo returns a structured entry and, if relevant, a flagged interaction in the UI.
 
 - [ ] **Days 8–9: Caregiver Integration & Email Notifications**
-  - [ ] Implement caregiver email invitation flow in `ms1` (sends verified email via SES).
-  - [ ] Create read-plus-acknowledge caregiver views in the React frontend.
-  - [ ] Wire up real-time SES email alerts for new medicine additions and flagged interactions.
-  - [ ] *Proof It Works*: Inviting a caregiver produces a working linked account that sees the same alerts and can acknowledge them.
+  - [x] Implement caregiver email invitation flow in `ms1` (sends verified email via SES).
+  - [x] Create read-plus-acknowledge caregiver views in the React frontend.
+  - [x] Wire up real-time SES email alerts for new medicine additions and flagged interactions.
+  - [x] *Proof It Works*: Inviting a caregiver produces a working linked account that sees the same alerts and can acknowledge them.
 
 - [ ] **Days 10–11: Admin Review Dashboard & Versioned Editors**
   - [ ] Implement admin review queue in React dashboard, showing raw photo side-by-side with extracted values.
