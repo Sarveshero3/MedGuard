@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import MedGuardScrollScene from '@/components/MedGuardScrollScene';
-import MedGuardFlowchart from '@/components/MedGuardFlowchart';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
+import MedGuardScrollScene from '@/components/MedGuardScrollScene.jsx';
+import MedGuardFlowchart from '@/components/MedGuardFlowchart.jsx';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card.jsx';
+import { Badge } from '@/components/ui/badge.jsx';
+import { Button } from '@/components/ui/button.jsx';
+import { Separator } from '@/components/ui/separator.jsx';
 import './Home.css';
 
 const sectionReveal = {
