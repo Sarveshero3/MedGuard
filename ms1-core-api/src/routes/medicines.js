@@ -5,6 +5,7 @@ const { query } = require('../config/db');
 const logger = require('../utils/logger');
 const { authenticateUser, enforcePatientAccess, verifyPatientAccess, enforceEmailVerified } = require('../middleware/auth');
 const { sanitizeInput, validateBody, validateUUID, upload } = require('../middleware/security');
+const { enforceConsent } = require('../middleware/consent');
 const { uploadLimiter } = require('../middleware/rateLimiter');
 
 const router = express.Router();
@@ -45,7 +46,7 @@ const MS2_BASE_URL = process.env.MS2_BASE_URL || 'http://ms2-agent-service:8000'
  * Retrieve medicines list for a patient.
  * Secured against IDOR via enforcePatientAccess('full_view').
  */
-router.get('/medicines', authenticateUser, enforcePatientAccess('full_view'), async (req, res, next) => {
+router.get('/medicines', authenticateUser, enforcePatientAccess('full_view'), enforceConsent('health_data_processing'), async (req, res, next) => {
   const patientId = req.query.patient_id;
 
   try {
@@ -69,7 +70,7 @@ router.get('/medicines', authenticateUser, enforcePatientAccess('full_view'), as
  * Retrieve details for a specific medicine.
  * Secured against IDOR: checks medicine ownership.
  */
-router.get('/medicines/:id', authenticateUser, validateUUID('id'), async (req, res, next) => {
+router.get('/medicines/:id', authenticateUser, validateUUID('id'), enforceConsent('health_data_processing'), async (req, res, next) => {
   const medicineId = req.params.id;
 
   try {
@@ -105,8 +106,8 @@ router.get('/medicines/:id', authenticateUser, validateUUID('id'), async (req, r
  * Manually add a medicine record.
  * Secured: enforce patient access and validate payload.
  */
-router.post('/medicines', authenticateUser, enforcePatientAccess('full_view'), enforceEmailVerified, sanitizeInput, validateBody('medicine'), async (req, res, next) => {
-  const { patient_id, brand_name, generic_name, dosage, frequency, duration_text, brand_mapping_correction } = req.body;
+router.post('/medicines', authenticateUser, enforcePatientAccess('full_view'), enforceConsent('health_data_processing'), enforceEmailVerified, sanitizeInput, validateBody('medicine'), async (req, res, next) => {
+  const { patient_id, brand_name, generic_name, dosage, frequency, duration_text, brand_mapping_correction, resolution_status } = req.body;
 
   try {
     const client = await require('../config/db').pool.connect();
@@ -140,19 +141,93 @@ router.post('/medicines', authenticateUser, enforcePatientAccess('full_view'), e
         courseEndDate = computeCourseEndDate(new Date(), duration_text);
       }
 
-      const resolutionStatus = (generic_name || (brand_mapping_correction && brand_mapping_correction.generic_name)) ? 'resolved' : 'generic_unresolved';
       const resolvedGeneric = generic_name || (brand_mapping_correction && brand_mapping_correction.generic_name) || null;
+      let finalResolutionStatus = resolvedGeneric ? 'resolved' : 'generic_unresolved';
+      if (resolution_status) {
+        finalResolutionStatus = resolution_status;
+      }
 
+      // Find existing active medicines for this patient to check interactions
+      const existingMedsRes = await client.query(
+        "SELECT id, generic_name FROM medicines WHERE patient_id = $1 AND status = 'active'",
+        [patient_id]
+      );
+      const existingMeds = existingMedsRes.rows;
+      const existingGenerics = existingMeds.map(m => m.generic_name).filter(Boolean);
+
+      // Save the medicine
       const result = await client.query(
         `INSERT INTO medicines (patient_id, brand_name, generic_name, dosage, frequency, duration_text, course_end_date, resolution_status, status)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active')
          RETURNING *`,
-        [patient_id, brand_name, resolvedGeneric, dosage, frequency, duration_text || null, courseEndDate, resolutionStatus]
+        [patient_id, brand_name, resolvedGeneric, dosage, frequency, duration_text || null, courseEndDate, finalResolutionStatus]
       );
+      const newMed = result.rows[0];
+
+      // Perform interaction check
+      let flaggedInteractions = [];
+      if (resolvedGeneric && existingGenerics.length > 0) {
+        const { checkInteractions } = require('../utils/interactionEngine');
+        flaggedInteractions = await checkInteractions(resolvedGeneric, existingGenerics);
+      }
+
+      // Save flagged interactions and send emails
+      if (flaggedInteractions.length > 0) {
+        const { sendEmail } = require('../utils/email');
+
+        for (const interaction of flaggedInteractions) {
+          // Identify which generic name is the existing one
+          const existingGenName = [interaction.generic_a.toLowerCase(), interaction.generic_b.toLowerCase()]
+            .find(g => g !== resolvedGeneric.toLowerCase());
+
+          const conflictingMed = existingMeds.find(m => m.generic_name && m.generic_name.toLowerCase() === existingGenName);
+          if (conflictingMed) {
+            await client.query(
+              `INSERT INTO interaction_flags (patient_id, new_medicine_id, existing_medicine_id, kb_entry_id, severity, confidence, status)
+               VALUES ($1, $2, $3, $4, $5, 1.0, 'shown')`,
+              [patient_id, newMed.id, conflictingMed.id, interaction.id, interaction.severity]
+            );
+          }
+        }
+
+        // Fetch patient and caregiver emails for notification
+        const patientEmailRes = await client.query("SELECT email, name FROM users WHERE id = $1", [patient_id]);
+        const patient = patientEmailRes.rows[0];
+
+        const caregiversRes = await client.query(
+          `SELECT u.email, u.name FROM caregiver_links cl
+           JOIN users u ON cl.caregiver_id = u.id
+           WHERE cl.patient_id = $1 AND cl.status = 'active'`,
+          [patient_id]
+        );
+        const caregivers = caregiversRes.rows;
+
+        // Send alert emails
+        const alertSubject = `🛡️ MedGuard Safety Alert: Drug Interaction Flagged`;
+        const alertBody = `Hello,
+
+A drug interaction has been flagged in your MedGuard profile.
+
+Details:
+- New Medicine: ${newMed.brand_name} (${resolvedGeneric})
+- Flagged Interactions:
+${flaggedInteractions.map(i => `  * Conflicting drugs: ${i.generic_a} & ${i.generic_b} (Severity: ${i.severity.replace('_', ' ').toUpperCase()})\n    Explanation: ${i.explanation}`).join('\n')}
+
+Please review your dashboard and discuss these details with your doctor.
+
+Best,
+The MedGuard Team`;
+
+        if (patient) {
+          await sendEmail({ to: patient.email, subject: alertSubject, body: alertBody });
+        }
+        for (const cg of caregivers) {
+          await sendEmail({ to: cg.email, subject: alertSubject, body: alertBody });
+        }
+      }
 
       await client.query('COMMIT');
 
-      const newMed = result.rows[0];
       logger.audit('MEDICINE_CREATED', `User ${req.user.id} manually created medicine ${newMed.id} for patient ${patient_id}`, {
         userId: req.user.id,
         patientId: patient_id,
@@ -180,7 +255,7 @@ router.post('/medicines', authenticateUser, enforcePatientAccess('full_view'), e
  * Modify / update medicine details (e.g. status discontinued).
  * Secured: verify ownership of the medicine before updating.
  */
-router.put('/medicines/:id', authenticateUser, validateUUID('id'), enforceEmailVerified, sanitizeInput, async (req, res, next) => {
+router.put('/medicines/:id', authenticateUser, validateUUID('id'), enforceConsent('health_data_processing'), enforceEmailVerified, sanitizeInput, async (req, res, next) => {
   const medicineId = req.params.id;
   const { dosage, frequency, status, duration_text } = req.body;
 
@@ -275,7 +350,7 @@ router.put('/medicines/:id', authenticateUser, validateUUID('id'), enforceEmailV
  * Delete medicine record.
  * Secured: verify ownership of the medicine before deleting.
  */
-router.delete('/medicines/:id', authenticateUser, validateUUID('id'), enforceEmailVerified, async (req, res, next) => {
+router.delete('/medicines/:id', authenticateUser, validateUUID('id'), enforceConsent('health_data_processing'), enforceEmailVerified, async (req, res, next) => {
   const medicineId = req.params.id;
 
   try {
@@ -321,7 +396,8 @@ router.delete('/medicines/:id', authenticateUser, validateUUID('id'), enforceEma
  * POST /api/medicines/upload
  * Secure prescription upload endpoint. Checks file properties and sends request internally to ms2.
  */
-router.post('/medicines/upload', authenticateUser, enforceEmailVerified, uploadLimiter, upload.single('photo'), async (req, res, next) => {
+const { extractPrescription } = require('../services/visionService');
+router.post('/medicines/upload', authenticateUser, enforceConsent('health_data_processing'), enforceEmailVerified, uploadLimiter, upload.single('photo'), async (req, res, next) => {
   // Multer runs first and populates req.file and req.body.patient_id.
   // Validate file exists.
   if (!req.file) {
@@ -352,34 +428,23 @@ router.post('/medicines/upload', authenticateUser, enforceEmailVerified, uploadL
       });
     }
 
-    // Call ms2-agent-service internal service endpoint via HTTP
-    logger.info('INTERNAL_SERVICE_CALL', `Forwarding prescription extraction to ms2 for patient ${patientId}`, {
+    // Call internal visionService for prescription extraction
+    logger.info('INTERNAL_SERVICE_CALL', `Forwarding prescription extraction to visionService for patient ${patientId}`, {
       filename: req.file.filename,
     });
 
-    // Create a mock call to ms2 or forward using FormData. Since we want an end-to-end integration, we make the request
-    // to ms2 at MS2_BASE_URL/api/extract/prescription
-    const formData = new FormData();
-    const fileStream = fs.createReadStream(req.file.path);
-    formData.append('photo', fileStream, req.file.filename);
+    const extractionResult = await extractPrescription(req.file.path, req.file.originalname || req.file.filename);
 
-    const ms2Response = await axios.post(`${MS2_BASE_URL}/api/extract/prescription`, formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    });
+    logger.info('INTERNAL_SERVICE_RESPONSE', `visionService returned response for prescription extraction`);
 
-    logger.info('INTERNAL_SERVICE_RESPONSE', `ms2 returned response for prescription extraction`, {
-      status: ms2Response.status,
-    });
+    // Clean up physical file after extraction
+    if (fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
 
     res.json({
       success: true,
-      data: {
-        filename: req.file.filename,
-        message: 'File uploaded and analysis completed.',
-        extraction: ms2Response.data,
-      },
+      data: extractionResult,
     });
 
   } catch (err) {

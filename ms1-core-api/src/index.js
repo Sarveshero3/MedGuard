@@ -11,6 +11,7 @@ const medicineRoutes = require('./routes/medicines');
 const caregiverRoutes = require('./routes/caregivers');
 const alertRoutes = require('./routes/alerts');
 const calendarRoutes = require('./routes/calendar');
+const consentRoutes = require('./routes/consent');
 const { apiLimiter } = require('./middleware/rateLimiter');
 const logger = require('./utils/logger');
 
@@ -34,6 +35,7 @@ app.use('/api', medicineRoutes);
 app.use('/api', caregiverRoutes);
 app.use('/api', alertRoutes);
 app.use('/api', calendarRoutes);
+app.use('/api', consentRoutes);
 
 // Fallback path to log unusual traffic patterns (unknown endpoints)
 app.use((req, res, next) => {
