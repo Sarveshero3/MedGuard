@@ -18,12 +18,37 @@ const ADJUSTED_COPY_BEATS = COPY_BEATS.map((beat) => {
 });
 
 /**
- * Scroll-driven canvas with clinical overlay grid, cover-fit,
+ * Detect if canvas 2D drawing works properly in this browser.
+ * Some Firefox configurations or privacy modes restrict canvas.
+ */
+function isCanvasSupported() {
+  try {
+    const c = document.createElement('canvas');
+    c.width = 1;
+    c.height = 1;
+    const ctx = c.getContext('2d');
+    if (!ctx) return false;
+    ctx.fillStyle = '#ff0000';
+    ctx.fillRect(0, 0, 1, 1);
+    const data = ctx.getImageData(0, 0, 1, 1).data;
+    return data[0] === 255; // Red channel should be 255
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Scroll-driven image sequence with clinical overlay grid, cover-fit,
  * delayed scroll sequence start, and cinematic title card.
+ * 
+ * Uses canvas for high-performance rendering where supported,
+ * falls back to an <img> tag approach for Firefox and other browsers
+ * where canvas may be restricted or reduced motion is preferred.
  */
 export default function MedGuardScrollScene() {
   const wrapperRef = useRef(null);
   const canvasRef = useRef(null);
+  const imgRef = useRef(null);
   const imagesRef = useRef(new Array(FRAME_COUNT).fill(null));
   const currentFrameRef = useRef(0);
   const rafRef = useRef(null);
@@ -32,17 +57,12 @@ export default function MedGuardScrollScene() {
   const [isReady, setIsReady] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [scrollProgress, setScrollProgress] = useState(0);
-  const [prefersReducedMotion, setPrefersReducedMotion] = useState(
-    () => typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  );
+  const [useCanvasMode, setUseCanvasMode] = useState(true);
+  const [currentImgSrc, setCurrentImgSrc] = useState(() => getFramePath(1));
 
-  // Check reduced motion preference
+  // Detect canvas support on mount — fallback to img tag if not supported
   useEffect(() => {
-    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
-    setPrefersReducedMotion(mq.matches);
-    const handler = (e) => setPrefersReducedMotion(e.matches);
-    mq.addEventListener('change', handler);
-    return () => mq.removeEventListener('change', handler);
+    setUseCanvasMode(isCanvasSupported());
   }, []);
 
   // Scroll tracking within the container
@@ -62,10 +82,8 @@ export default function MedGuardScrollScene() {
     setScrollProgress(v);
   });
 
-  // --- Frame preloader ---
+  // --- Frame preloader (always runs, no reduced-motion gate) ---
   useEffect(() => {
-    if (prefersReducedMotion) return;
-
     let cancelled = false;
     let loaded = 0;
 
@@ -110,9 +128,9 @@ export default function MedGuardScrollScene() {
 
     preloadAll();
     return () => { cancelled = true; };
-  }, [prefersReducedMotion]);
+  }, []);
 
-  // --- Canvas drawing ---
+  // --- Canvas drawing (only used in canvas mode) ---
   const drawFrame = useCallback((frameIndex) => {
     const canvas = canvasRef.current;
     const img = imagesRef.current[frameIndex];
@@ -158,17 +176,19 @@ export default function MedGuardScrollScene() {
     ctx.drawImage(img, drawX, drawY, drawW, drawH);
   }, []);
 
-  // --- RAF draw loop ---
+  // --- Compute target frame from progress ---
+  const getTargetFrame = useCallback((v) => {
+    if (v <= START_SCROLL_THRESHOLD) return 0;
+    const mappedProgress = (v - START_SCROLL_THRESHOLD) / (1 - START_SCROLL_THRESHOLD);
+    return Math.min(FRAME_COUNT - 1, Math.round(mappedProgress * (FRAME_COUNT - 1)));
+  }, []);
+
+  // --- RAF draw loop for CANVAS mode ---
   useEffect(() => {
-    if (!isReady || prefersReducedMotion) return;
+    if (!isReady || !useCanvasMode) return;
 
     const unsubscribe = smoothProgress.on('change', (v) => {
-      // Map progress to frames with a threshold dead-zone
-      let targetFrame = 0;
-      if (v > START_SCROLL_THRESHOLD) {
-        const mappedProgress = (v - START_SCROLL_THRESHOLD) / (1 - START_SCROLL_THRESHOLD);
-        targetFrame = Math.min(FRAME_COUNT - 1, Math.round(mappedProgress * (FRAME_COUNT - 1)));
-      }
+      const targetFrame = getTargetFrame(v);
 
       if (targetFrame !== currentFrameRef.current) {
         currentFrameRef.current = targetFrame;
@@ -193,45 +213,49 @@ export default function MedGuardScrollScene() {
       unsubscribe();
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
-  }, [isReady, smoothProgress, drawFrame, prefersReducedMotion]);
+  }, [isReady, smoothProgress, drawFrame, useCanvasMode, getTargetFrame]);
 
-  // --- Resize observer ---
+  // --- IMG src swap loop for FALLBACK mode (Firefox / reduced motion) ---
   useEffect(() => {
-    if (!canvasRef.current || prefersReducedMotion) return;
+    if (!isReady || useCanvasMode) return;
+
+    const unsubscribe = smoothProgress.on('change', (v) => {
+      const targetFrame = getTargetFrame(v);
+
+      if (targetFrame !== currentFrameRef.current) {
+        currentFrameRef.current = targetFrame;
+
+        if (rafRef.current) cancelAnimationFrame(rafRef.current);
+        rafRef.current = requestAnimationFrame(() => {
+          let frameToShow = targetFrame;
+          // Find nearest loaded frame if this one hasn't loaded yet
+          if (!imagesRef.current[frameToShow]) {
+            for (let d = 1; d < FRAME_COUNT; d++) {
+              if (imagesRef.current[targetFrame - d]) { frameToShow = targetFrame - d; break; }
+              if (imagesRef.current[targetFrame + d]) { frameToShow = targetFrame + d; break; }
+            }
+          }
+          setCurrentImgSrc(getFramePath(frameToShow + 1));
+        });
+      }
+    });
+
+    return () => {
+      unsubscribe();
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+  }, [isReady, smoothProgress, useCanvasMode, getTargetFrame]);
+
+  // --- Resize observer for canvas mode ---
+  useEffect(() => {
+    if (!canvasRef.current || !useCanvasMode) return;
 
     const observer = new ResizeObserver(() => {
       drawFrame(currentFrameRef.current);
     });
     observer.observe(canvasRef.current);
     return () => observer.disconnect();
-  }, [drawFrame, prefersReducedMotion]);
-
-  // Reduced motion: static overview inline
-  if (prefersReducedMotion) {
-    return (
-      <section className="mg-scene-reduced" aria-label="MedGuard overview">
-        <div className="mg-scene-reduced__content">
-          <img
-            src={getFramePath(FRAME_COUNT)}
-            alt=""
-            className="mg-scene-reduced__image"
-            loading="eager"
-          />
-          {ADJUSTED_COPY_BEATS.map((beat, i) => (
-            <div key={i} className="mg-scene-reduced__beat">
-              <h2 className="mg-scene-reduced__headline">{beat.headline}</h2>
-              <p className="mg-scene-reduced__body">{beat.body}</p>
-              {beat.cta && (
-                <a href={beat.cta.href} className="mg-scene-reduced__cta">
-                  {beat.cta.label}
-                </a>
-              )}
-            </div>
-          ))}
-        </div>
-      </section>
-    );
-  }
+  }, [drawFrame, useCanvasMode]);
 
   // Cinematic title animation parameters (persists through threshold)
   let titleOpacity = 1;
@@ -274,12 +298,26 @@ export default function MedGuardScrollScene() {
           </div>
         ) : (
           <>
-            {/* Canvas backdrop */}
-            <canvas
-              ref={canvasRef}
-              className="mg-scene__canvas"
-              aria-hidden="true"
-            />
+            {/* Canvas backdrop (primary mode) */}
+            {useCanvasMode && (
+              <canvas
+                ref={canvasRef}
+                className="mg-scene__canvas"
+                aria-hidden="true"
+              />
+            )}
+
+            {/* IMG fallback backdrop (Firefox / restricted canvas) */}
+            {!useCanvasMode && (
+              <img
+                ref={imgRef}
+                src={currentImgSrc}
+                alt=""
+                className="mg-scene__img-fallback"
+                aria-hidden="true"
+                draggable={false}
+              />
+            )}
 
             {/* Medical clinical grid overlay */}
             <div className="mg-grid-overlay" aria-hidden="true" />

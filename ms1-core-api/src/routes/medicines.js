@@ -8,6 +8,36 @@ const { sanitizeInput, validateBody, validateUUID, upload } = require('../middle
 const { uploadLimiter } = require('../middleware/rateLimiter');
 
 const router = express.Router();
+
+/**
+ * Parses duration_text and computes course_end_date.
+ * E.g., "5 days" -> added_at + 5 days
+ */
+function computeCourseEndDate(addedAt, durationText) {
+  if (!durationText) return null;
+  const cleaned = durationText.trim().toLowerCase();
+  if (cleaned === 'ongoing' || cleaned === 'unresolved' || cleaned === '') return null;
+
+  const match = cleaned.match(/^(\d+)\s+(day|days|week|weeks|month|months|year|years)$/);
+  if (!match) return null;
+
+  const quantity = parseInt(match[1], 10);
+  const unit = match[2];
+
+  const date = new Date(addedAt);
+  if (unit.startsWith('day')) {
+    date.setDate(date.getDate() + quantity);
+  } else if (unit.startsWith('week')) {
+    date.setDate(date.getDate() + quantity * 7);
+  } else if (unit.startsWith('month')) {
+    date.setMonth(date.getMonth() + quantity);
+  } else if (unit.startsWith('year')) {
+    date.setFullYear(date.getFullYear() + quantity);
+  } else {
+    return null;
+  }
+  return date;
+}
 const MS2_BASE_URL = process.env.MS2_BASE_URL || 'http://ms2-agent-service:8000';
 
 /**
@@ -76,27 +106,69 @@ router.get('/medicines/:id', authenticateUser, validateUUID('id'), async (req, r
  * Secured: enforce patient access and validate payload.
  */
 router.post('/medicines', authenticateUser, enforcePatientAccess('full_view'), enforceEmailVerified, sanitizeInput, validateBody('medicine'), async (req, res, next) => {
-  const { patient_id, brand_name, generic_name, dosage, frequency } = req.body;
+  const { patient_id, brand_name, generic_name, dosage, frequency, duration_text, brand_mapping_correction } = req.body;
 
   try {
-    const result = await query(
-      `INSERT INTO medicines (patient_id, brand_name, generic_name, dosage, frequency, resolution_status, status)
-       VALUES ($1, $2, $3, $4, $5, $6, 'active')
-       RETURNING *`,
-      [patient_id, brand_name, generic_name || null, dosage, frequency, generic_name ? 'resolved' : 'generic_unresolved']
-    );
+    const client = await require('../config/db').pool.connect();
+    try {
+      await client.query('BEGIN');
 
-    const newMed = result.rows[0];
-    logger.audit('MEDICINE_CREATED', `User ${req.user.id} manually created medicine ${newMed.id} for patient ${patient_id}`, {
-      userId: req.user.id,
-      patientId: patient_id,
-      medicineId: newMed.id,
-    });
+      // If user submitted a correction to brand generic map during follow-up, write it append-only
+      if (brand_mapping_correction) {
+        const { brand_name: correctedBrand, generic_name: correctedGeneric } = brand_mapping_correction;
+        const versionResult = await client.query(
+          'SELECT version FROM brand_generic_map WHERE brand_name = $1 ORDER BY effective_date DESC LIMIT 1',
+          [correctedBrand]
+        );
+        let nextVersion = 'v1';
+        if (versionResult.rows.length > 0) {
+          const currentVersion = versionResult.rows[0].version;
+          const currentNum = parseInt(currentVersion.replace('v', ''), 10) || 1;
+          nextVersion = `v${currentNum + 1}`;
+        }
+        await client.query(
+          `INSERT INTO brand_generic_map (brand_name, generic_name, source, version, effective_date)
+           VALUES ($1, $2, 'user_confirmed', $3, NOW())
+           ON CONFLICT (brand_name, version) DO NOTHING`,
+          [correctedBrand, correctedGeneric, nextVersion]
+        );
+      }
 
-    res.status(201).json({
-      success: true,
-      data: newMed,
-    });
+      // Compute course_end_date if duration_text is provided
+      let courseEndDate = null;
+      if (duration_text) {
+        courseEndDate = computeCourseEndDate(new Date(), duration_text);
+      }
+
+      const resolutionStatus = (generic_name || (brand_mapping_correction && brand_mapping_correction.generic_name)) ? 'resolved' : 'generic_unresolved';
+      const resolvedGeneric = generic_name || (brand_mapping_correction && brand_mapping_correction.generic_name) || null;
+
+      const result = await client.query(
+        `INSERT INTO medicines (patient_id, brand_name, generic_name, dosage, frequency, duration_text, course_end_date, resolution_status, status)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active')
+         RETURNING *`,
+        [patient_id, brand_name, resolvedGeneric, dosage, frequency, duration_text || null, courseEndDate, resolutionStatus]
+      );
+
+      await client.query('COMMIT');
+
+      const newMed = result.rows[0];
+      logger.audit('MEDICINE_CREATED', `User ${req.user.id} manually created medicine ${newMed.id} for patient ${patient_id}`, {
+        userId: req.user.id,
+        patientId: patient_id,
+        medicineId: newMed.id,
+      });
+
+      res.status(201).json({
+        success: true,
+        data: newMed,
+      });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
   } catch (err) {
     logger.error('MEDICINE_CREATE_ERROR', `Error creating medicine: ${err.message}`);
     next(err);
@@ -110,10 +182,10 @@ router.post('/medicines', authenticateUser, enforcePatientAccess('full_view'), e
  */
 router.put('/medicines/:id', authenticateUser, validateUUID('id'), enforceEmailVerified, sanitizeInput, async (req, res, next) => {
   const medicineId = req.params.id;
-  const { dosage, frequency, status } = req.body;
+  const { dosage, frequency, status, duration_text } = req.body;
 
   try {
-    const medResult = await query('SELECT patient_id FROM medicines WHERE id = $1', [medicineId]);
+    const medResult = await query('SELECT patient_id, added_at FROM medicines WHERE id = $1', [medicineId]);
     if (medResult.rows.length === 0) {
       return res.status(404).json({
         success: false,
@@ -121,7 +193,7 @@ router.put('/medicines/:id', authenticateUser, validateUUID('id'), enforceEmailV
       });
     }
 
-    const patientId = medResult.rows[0].patient_id;
+    const { patient_id: patientId, added_at: addedAt } = medResult.rows[0];
     const isAuthorized = await verifyPatientAccess(req, patientId, 'full_view');
     if (!isAuthorized) {
       return res.status(403).json({
@@ -153,6 +225,15 @@ router.put('/medicines/:id', authenticateUser, validateUUID('id'), enforceEmailV
       }
       updates.push(`status = $${paramIndex++}`);
       params.push(status);
+    }
+    if (duration_text !== undefined) {
+      updates.push(`duration_text = $${paramIndex++}`);
+      params.push(duration_text || null);
+
+      // Recompute course_end_date
+      const courseEndDate = duration_text ? computeCourseEndDate(addedAt, duration_text) : null;
+      updates.push(`course_end_date = $${paramIndex++}`);
+      params.push(courseEndDate);
     }
 
     if (updates.length === 0) {

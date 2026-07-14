@@ -404,7 +404,7 @@ export default function MedGuardFlowchart() {
                 className={`mg-flow-v__card-wrapper ${isLeft ? 'mg-flow-v__card-wrapper--right' : 'mg-flow-v__card-wrapper--left'}`}
                 style={{
                   opacity,
-                  top: idx === 4 ? '25%' : '45%',
+                  top: '45%',
                   transform: `translateY(calc(-50% + ${translateY}px))`,
                   visibility: opacity > 0.01 ? 'visible' : 'hidden'
                 }}

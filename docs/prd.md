@@ -19,7 +19,6 @@ As a student project, this is a production-grade build on the mandated stack: tw
 
 *   **Patients** managing chronic conditions (diabetes, hypertension, thyroid, heart disease) who see 2 or more independent doctors and take 4+ medicines regularly — a population that is large and growing, with India's elderly population alone projected to reach over 220 million by 2036.
 *   **Family caregivers**, often living in a different city, who are responsible for the patient's wellbeing but have no visibility into day-to-day medicine safety.
-*   **Platform operators / Clinical content reviewers** (e.g., Dr. Sana), who keep the interaction knowledge base accurate and review low-confidence flags before they reach a user.
 
 #### 2.2 Pain Points
 
@@ -36,9 +35,10 @@ As a student project, this is a production-grade build on the mandated stack: tw
 
 > "Photograph every prescription and every report — get warned before a dangerous combination reaches you and walk into every appointment already knowing what's changed."
 
-The product combines two connected capabilities:
+The product combines three connected capabilities:
 1.  **Medication Safety**: Photo upload → structured medicine entry → brand-to-generic resolution → interaction check against a versioned clinical knowledge base → plain-language alert, shared live with a caregiver.
 2.  **Longitudinal Visit Preparation**: Report upload → trend detection over time → a one-page, non-diagnostic brief with questions for the next visit.
+3.  **Medicine Course & Appointment Calendar**: Merged timeline of active medicine course end-dates (computed from duration text) and user-scheduled doctor appointments.
 
 Together, they turn a set of disconnected, one-off medical encounters into a single, continuously updating health record.
 
@@ -68,7 +68,4 @@ Together, they turn a set of disconnected, one-off medical encounters into a sin
 *   **Goal**: A live view of her father's medicines and any flagged risks, without depending on him to remember and report everything correctly.
 *   **Frustration**: Currently has zero visibility until something goes wrong.
 
-#### 5.3 Persona C — "The Clinical Content Reviewer" (Admin)
-*   **Profile**: Dr. Sana, part-time clinical reviewer for the platform. Reviews prescription extractions the system flagged as low-confidence, checks interaction alerts the system wasn't fully sure about, and maintains the versioned drug-interaction database and brand-to-generic mapping table as new data becomes available.
-*   **Goal**: Keep false alarms low enough that users trust the alerts and keep the knowledge base and brand mappings current.
-*   **Frustration**: Needs the system to show its extraction and reasoning clearly, not just a bare verdict, so she can trust or correct it quickly.
+

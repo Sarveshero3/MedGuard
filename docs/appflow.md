@@ -4,6 +4,16 @@ This document combines the user-facing journey (Section 7) with the system-level
 
 ---
 
+### Phase 0: Account Creation & Login (OTP via SES)
+
+*   **User Action**: Ramesh signs up with his email and phone, and later logs in.
+*   **System Action**:
+    1.  On signup, `ms1` generates a one-time code and triggers **AWS SES** to email it — the same SES setup used for alerts later in this flow, not a separate service.
+    2.  Ramesh enters the code in the React app; `ms1` verifies it, marks the account `is_email_verified = true`, and issues a JWT.
+    3.  Login can optionally re-use this OTP flow as a second factor (new device, or password reset), always via SES rather than SMS, keeping infra to one email provider.
+
+---
+
 ### Phase 1: Prescription Upload & Extraction
 
 *   **User Action**: Ramesh photographs his new prescription from his cardiologist and uploads it via the React app.
@@ -16,17 +26,18 @@ This document combines the user-facing journey (Section 7) with the system-level
         *   Calculates a confidence score per field.
     4.  `ms2` maps the extracted brand name against `brand_generic_map`.
         *   *If resolved successfully*: returns the generic name with confidence scores.
-        *   *If unresolved / low confidence (<85%)*: flags the record with `resolution_status = 'generic_unresolved'` and sends it to the admin review queue.
+        *   *If unresolved / low confidence (<85%)*: flags the record with `resolution_status = 'generic_unresolved'` and triggers the user inline correction loop in Phase 2.
 
 ---
 
-### Phase 2: Ambiguity Follow-up Loop
+### Phase 2: Ambiguity Follow-up Loop & Inline Correction
 
-*   **User Action**: Ramesh sees a follow-up question on his screen: *"Is the dosage clearly 5mg?"* and clicks **Yes**.
+*   **User Action**: Ramesh sees a follow-up question on his screen: *"Is the dosage clearly 5mg?"* and clicks **Yes**. If the brand name itself was extracted with low confidence, he's shown the raw photo next to the guessed name and can correct it directly, right here — there is no separate review step later.
 *   **System Action**:
-    1.  If the vision-LLM in `ms2` finds handwriting ambiguous (e.g. 5mg vs. 50mg), it sets the confidence low and drafts a structured follow-up question.
+    1.  If the vision-LLM in `ms2` finds handwriting ambiguous (dosage, frequency, brand name, or duration), it sets the confidence low and drafts a structured follow-up question for the specific field in question.
     2.  `ms1` serves this question to the React `frontend` before confirming the entry.
-    3.  When the user submits the answer, `ms1` saves the medicine to the `medicines` table with `status = 'active'` and updates `resolution_status` to `'resolved'`.
+    3.  If the low-confidence field is the brand name, the user's correction is written directly to `brand_generic_map` as a new row with `source = 'user_confirmed'`, a bumped `version`, and a new `effective_date` — in the same request, no separate queue.
+    4.  When the user submits all answers, `ms1` saves the medicine to the `medicines` table with `status = 'active'`, sets `resolution_status = 'resolved'`, and computes `course_end_date` from the (now-confirmed) `duration_text` if resolvable.
 
 ---
 
@@ -46,7 +57,7 @@ This document combines the user-facing journey (Section 7) with the system-level
 *   **User Action**: Priya (Ramesh's linked caregiver) receives the alert via email. She calls her father to discuss it before his next doctor visit.
 *   **System Action**:
     1.  Upon writing a new flag to `interaction_flags`, `ms1` checks the `caregiver_links` table for active links.
-    2.  `ms1` triggers AWS SES to send alert emails to the patient (Ramesh) and the caregiver (Priya).
+    2.  `ms1` triggers AWS SES to send alert emails to the patient (Ramesh) and the caregiver (Priya) — the same SES sender identity used for OTP in Phase 0.
     3.  Priya logs into her React dashboard, which queries `ms1` using her caregiver JWT claims. She sees Ramesh's active medicine list and active alerts in a read-only timeline.
 
 ---
@@ -71,18 +82,17 @@ This document combines the user-facing journey (Section 7) with the system-level
     2.  `ms1` aggregates the patient's active medicines, active interaction flags, and recent lab value trends, and passes them to `ms2`.
     3.  `ms2` runs the **Visit-Brief Writer Graph**:
         *   Organizes the medication list and highlighted trends.
-        *   Drafts 3-4 specific questions for the patient to ask (e.g., *"My HbA1c increased from 6.8 to 7.2 over the last 3 months, should we adjust my dosage?"*).
+        *   Drafts 3-4 questions for the patient to ask, framed around *concern and cause*, never around a specific treatment or dosage action (e.g., *"My HbA1c increased from 6.8 to 7.2 over the last 3 months — is this something to be concerned about, and what could be causing it?"*, not *"should we adjust my dosage?"*). The graph is constrained by a dedicated system prompt (see `docs/prompts/visit-brief-writer.md`) that hard-blocks any medication-change suggestion.
         *   Appends the mandatory disclaimer: *"Discuss this with your doctor — this is not a diagnosis."*
     4.  `ms1` saves the output in `briefs` and returns it to the client for rendering, printing, or email delivery.
 
 ---
 
-### Phase 7: Clinical Review (Admin Dashboard)
+### Phase 7: Medicine Course & Appointment Calendar
 
-*   **User Action**: Dr. Sana logs into the admin panel and corrects a low-confidence brand extraction.
+*   **User Action**: Ramesh opens his calendar view and sees his current medicine courses laid out with end dates, plus an upcoming cardiology appointment he added himself.
 *   **System Action**:
-    1.  Dr. Sana's client requests pending reviews from `ms1` at `/api/admin/review-queue` (requires admin JWT role).
-    2.  The dashboard displays the raw uploaded photo side-by-side with the LLM-extracted values.
-    3.  Dr. Sana edits a misspelling and clicks **Confirm**.
-    4.  `ms1` writes a new row to `brand_generic_map` with `source = 'reviewer_confirmed'`, `version = 'v2'`, and a new `effective_date`.
-    5.  The system re-runs the resolution logic for that patient's medicine in the background, updating the medicines and active flags without modifying historical logs.
+    1.  During Phase 1 extraction, `ms2` also extracts a `duration_text` field from the prescription (e.g., "for 5 days," "ongoing"). If it's ambiguous, this is asked as a follow-up question in the same Phase 2 loop as dosage/frequency — not a new mechanism.
+    2.  Once resolved, `ms1` computes `course_end_date` from `added_at` + `duration_text` and stores it on the `medicines` row.
+    3.  The user can independently add a doctor appointment (date, note) directly through the app, stored in `visits` with `visit_type = 'user_added'`.
+    4.  The frontend calendar view (`GET /api/calendar`) merges active medicine course end dates with the user's `visits` entries into one timeline — no separate table, just a combined read.

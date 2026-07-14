@@ -9,7 +9,7 @@ Stores user profile information and login credentials.
 - `name` (String)
 - `email` (String, Unique)
 - `password_hash` (String)
-- `role` (Enum: `patient`, `caregiver`, `admin`)
+- `role` (Enum: `patient`, `caregiver`)
 - `is_email_verified` (Boolean)
 - `email_verification_token` (String, Nullable)
 - `password_reset_token` (String, Nullable)
@@ -31,7 +31,7 @@ Versioned resolution lookup from Indian brand names to generic names.
 - `brand_name` (String, Indexed)
 - `generic_name` (String)
 - `composition` (Text)
-- `source` (String, e.g., `kaggle_seed`, `reviewer_confirmed`)
+- `source` (String, e.g., `kaggle_seed`, `user_confirmed`)
 - `version` (String)
 - `effective_date` (Timestamp)
 - *Note*: Versioned and append-only; never edited in place.
@@ -46,6 +46,8 @@ Active and historical prescription medicine list per patient.
 - `frequency` (String)
 - `source_photo_id` (String, Reference to disk/S3 storage)
 - `resolution_status` (Enum: `resolved`, `generic_unresolved`, `manually_resolved`)
+- `duration_text` (String, Nullable — raw extracted duration, e.g. "5 days", "2 weeks", "ongoing")
+- `course_end_date` (Date, Nullable — computed from `added_at` + `duration_text` when unambiguous; null if duration is "ongoing" or still unresolved)
 - `added_at` (Timestamp)
 - `status` (Enum: `active`, `discontinued`)
 
@@ -70,7 +72,7 @@ Incident alerts generated when an active medicine matches an interaction pair.
 - `kb_entry_id` (Foreign Key -> `interaction_kb.id`)
 - `severity` (String)
 - `confidence` (Decimal)
-- `status` (Enum: `pending_review`, `shown`, `acknowledged_by_patient`, `acknowledged_by_caregiver`)
+- `status` (Enum: `shown`, `acknowledged_by_patient`, `acknowledged_by_caregiver`)
 - `created_at` (Timestamp)
 
 ### 7. `lab_reports`
@@ -94,6 +96,7 @@ Scheduled doctor appointments.
 - `id` (Primary Key)
 - `patient_id` (Foreign Key -> `users.id`)
 - `scheduled_date` (Timestamp)
+- `visit_type` (Enum: `user_added`, `system_suggested`, default `user_added`)
 - `brief_id` (Foreign Key -> `briefs.id`, Nullable)
 
 ### 10. `briefs`
@@ -120,4 +123,5 @@ Opt-in and deletion consent audits (DPDP compliance logging).
 *   Adding a medicine generates **interaction_flags** checked against the **interaction_kb**.
 *   A **patient** has many **lab_reports**, each containing multiple extracted **lab_values**.
 *   These **lab_values** are trended over time and compiled into **briefs** linked to upcoming **visits**.
+*   A patient's **medicines** each carry a `course_end_date` (when resolvable), and together with their own **visits** (appointments they've added), form the basis of the medicine/appointment calendar.
 *   **caregiver_links** grant designated caregivers read-plus-acknowledge access to the patient's medicines, flags, and trends.

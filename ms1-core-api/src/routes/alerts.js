@@ -70,7 +70,10 @@ router.post('/alerts/:id/acknowledge', authenticateUser, validateUUID('id'), asy
     } else if (req.user.role === 'caregiver') {
       statusUpdate = 'acknowledged_by_caregiver';
     } else {
-      statusUpdate = 'shown'; // Admins or other roles
+      return res.status(403).json({
+        success: false,
+        error: { code: 'FORBIDDEN', message: 'Access denied.' },
+      });
     }
 
     const result = await query(

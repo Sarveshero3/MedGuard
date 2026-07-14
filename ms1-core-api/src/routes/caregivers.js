@@ -171,13 +171,10 @@ router.get('/caregivers/links', authenticateUser, async (req, res, next) => {
         [req.user.id]
       );
     } else {
-      // Admins see all active links
-      result = await query(
-        `SELECT cl.id, cl.permission_level, cl.status, cl.created_at, p.name as patient_name, cg.name as caregiver_name 
-         FROM caregiver_links cl 
-         JOIN users p ON cl.patient_id = p.id 
-         JOIN users cg ON cl.caregiver_id = cg.id`
-      );
+      return res.status(403).json({
+        success: false,
+        error: { code: 'FORBIDDEN', message: 'Access denied.' },
+      });
     }
 
     res.json({

@@ -87,6 +87,22 @@
   z-index: 1;
 }
 
+/* IMG fallback for browsers where canvas is restricted (Firefox fingerprinting protection, etc.) */
+.mg-scene__img-fallback {
+  position: absolute;
+  width: 104vw !important;
+  height: 104vh !important;
+  max-width: none !important;
+  max-height: none !important;
+  top: -2vh;
+  left: -2vw;
+  z-index: 1;
+  object-fit: cover;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
 /* Medical Clinical Grid Overlay */
 .mg-grid-overlay {
   position: absolute;
