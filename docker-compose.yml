@@ -74,6 +74,7 @@ services:
       - jaeger
     networks:
       - backend
+      - frontend-net
 
   # ── Redis (Queue & Cache) ──────────────────────────────────
   redis:
