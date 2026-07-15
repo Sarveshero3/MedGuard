@@ -1,0 +1,74 @@
+- generic [ref=e3]:
+  - link "Skip animation" [ref=e4] [cursor=pointer]:
+    - /url: "#how-it-works"
+  - region "MedGuard scroll animation" [ref=e5]:
+    - status "Loading animation" [ref=e7]:
+      - generic [ref=e8]: Loading experience
+      - generic [ref=e10]: 0%
+  - main [ref=e11]:
+    - generic [ref=e12]:
+      - generic [ref=e13]:
+        - paragraph [ref=e14]: How it works
+        - heading "How MedGuard helps" [level=1] [ref=e15]
+        - paragraph [ref=e16]: A clearer path from prescription to informed conversation.
+      - generic [ref=e17]:
+        - generic [ref=e19]:
+          - generic [ref=e20]: Capture the prescription
+          - paragraph [ref=e28]: Photograph a prescription and let MedGuard extract the medicine name, dosage, and frequency — resolving Indian brand names to their generic equivalents.
+        - generic [ref=e30]:
+          - generic [ref=e31]: Bring medication information together
+          - paragraph [ref=e38]: All your medicines in one running list — checked against a versioned safety knowledge base so potential interactions surface in plain language.
+        - generic [ref=e40]:
+          - generic [ref=e41]: Prepare for the next clinician visit
+          - paragraph [ref=e48]: Walk into every appointment knowing what has changed — with a brief and questions to discuss, always framed as preparation, never diagnosis.
+    - generic [ref=e50]:
+      - paragraph [ref=e51]: For patients & families
+      - heading "Built for patients and families" [level=2] [ref=e52]
+      - paragraph [ref=e53]: Whether you manage your own prescriptions or keep watch from across the country, MedGuard keeps medication context visible and connected.
+      - generic [ref=e54]:
+        - generic [ref=e55]:
+          - generic [ref=e56]: For patients
+          - heading "Managing multiple prescribers" [level=3] [ref=e57]
+          - paragraph [ref=e58]: Each doctor prescribes with confidence in their own medicine but no visibility into what the others have already prescribed. MedGuard brings the full picture together so you can ask better questions at every visit.
+        - generic [ref=e59]:
+          - generic [ref=e60]: For caregivers
+          - heading "Visibility from a distance" [level=3] [ref=e61]
+          - paragraph [ref=e62]: An adult child living elsewhere has no reliable way to know whether a parent's new prescription conflicts with an existing one. MedGuard gives linked caregivers visibility into flagged risks — without depending on memory alone.
+    - generic [ref=e63]:
+      - generic [ref=e64]:
+        - paragraph [ref=e65]: Principles
+        - heading "Safety needs context" [level=2] [ref=e66]
+        - paragraph [ref=e67]: How MedGuard approaches medication safety — with discipline, not shortcuts.
+      - generic [ref=e68]:
+        - generic [ref=e69]:
+          - heading "Deterministic safety checks" [level=3] [ref=e70]
+          - paragraph [ref=e71]: Every critical medical determination — whether a drug combination is flagged or a lab value has changed — runs as deterministic, versioned code. Never an LLM judgment call.
+        - generic [ref=e72]:
+          - heading "Plain-language clarity" [level=3] [ref=e73]
+          - paragraph [ref=e74]: Alerts and interaction flags are surfaced in language a patient and caregiver can understand — not medical codes or probability scores.
+        - generic [ref=e75]:
+          - heading "Discuss with your clinician" [level=3] [ref=e76]
+          - paragraph [ref=e77]: MedGuard is a preparation tool, not a diagnostic tool. Every output is framed as context for a clinician conversation, never as a medical verdict.
+    - generic [ref=e79]:
+      - paragraph [ref=e80]: Team
+      - heading "Built with care" [level=2] [ref=e81]
+      - paragraph [ref=e82]: A small team building a safer medication experience.
+      - generic [ref=e83]:
+        - generic [ref=e85]:
+          - generic [ref=e86]: SC
+          - paragraph [ref=e87]: Sarvesh Chandran
+          - paragraph [ref=e88]: Lead
+        - generic [ref=e90]:
+          - generic [ref=e91]: S
+          - paragraph [ref=e92]: Sahil
+        - generic [ref=e94]:
+          - generic [ref=e95]: ND
+          - paragraph [ref=e96]: Nyasha Das
+    - generic [ref=e98]:
+      - heading "Clearer medication information starts here." [level=2] [ref=e99]
+      - paragraph [ref=e100]: Prepare for your next clinician conversation with confidence.
+      - link "See how MedGuard works" [ref=e102] [cursor=pointer]:
+        - /url: "#how-it-works"
+  - contentinfo [ref=e103]:
+    - paragraph [ref=e104]: MedGuard — Medication safety and visit preparation.
+    - paragraph [ref=e105]: MedGuard is a preparation tool. It does not provide medical diagnoses. Always discuss medication decisions with your clinician.

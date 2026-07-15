@@ -1,0 +1,23 @@
+- main [ref=f5e4]:
+  - generic [ref=f5e5]:
+    - heading "MedGuard" [level=1] [ref=f5e6]
+    - paragraph [ref=f5e7]: Clinical Excellence in Medication Safety.
+  - tablist [ref=f5e8]:
+    - tab "Sign In" [selected] [ref=f5e9] [cursor=pointer]
+    - tab "Create Account" [ref=f5e10] [cursor=pointer]
+  - generic [ref=f5e11]:
+    - generic [ref=f5e12]:
+      - text: Email Address
+      - textbox "Email Address" [ref=f5e13]:
+        - /placeholder: Enter your email
+    - generic [ref=f5e14]:
+      - text: Password
+      - textbox "Password" [ref=f5e15]:
+        - /placeholder: Enter your password
+    - generic [ref=f5e16]:
+      - generic [ref=f5e17] [cursor=pointer]:
+        - checkbox "Remember me" [ref=f5e19]
+        - generic [ref=f5e20]: Remember me
+      - link "Forgot password?" [ref=f5e21] [cursor=pointer]:
+        - /url: "#"
+    - button "Sign In" [ref=f5e22] [cursor=pointer]
