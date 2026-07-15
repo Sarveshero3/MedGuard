@@ -186,10 +186,14 @@ Following styling and UX guidance grounded from `ui-ux-pro-max` search outputs, 
 - **Input Labels**: All interactive form inputs are paired with a visible, clear `<Label>` component instead of relying solely on placeholders.
 - **Motion Gates**: Shimmer animations for the `<Skeleton>` loaders are wrapped inside a `@media (prefers-reduced-motion: no-preference)` CSS query to comply with accessibility preferences.
 
-### C. Custom Components
+### C. Custom Components & Page Layouts
 1. **`<MgTabs>`**: A single shared tabs layout utilizing a clean border track, active teal underline indicators, and responsive click handlers to eliminate styling drift.
 2. **`<Input>`**: High-contrast, borders-restrained text inputs matching the Clinical Editorial design direction.
-3. **`<Checkbox>`**: Custom SVG-driven indicators styled with teal accents.
+3. **`<Checkbox>`**: Custom implementation utilizing a hidden native checkbox input coupled with a customized, clean inline SVG `<label>` element styled with direct CSS. Prevents all browser/Tailwind pseudo-selector conflicts and guarantees a vibrant teal fill `#0F766E` and white tick mark upon selection.
 4. **`<Skeleton>`**: Shimmer placeholder bars replacing standard text loading states.
+5. **Dashboard Stat Cards**: Stat cards display clear, high-contrast text labels ('Medicines', 'Alerts', 'Visits') next to their respective icons instead of relying solely on symbols, preventing user confusion.
+6. **Unified Upload Center**: Streamlined to a single, unified "Upload Medical Documents" dropzone accepting multiple images or PDFs in a single selection batch. Doc types ('Prescription' / 'Lab Report') are configured dynamically per file inside the interactive enqueued file list rather than forcing a global state choice before upload.
+7. **Compact Auth Card**: Auth forms are highly compact (`max-width: 400px`, padding `p-6 md:p-8`, spacing `space-y-4`) ensuring they fit entirely within the vertical viewport without scrolling. Role selectors (Patient/Caregiver) are styled as compact horizontal pills (height `40px` with icons placed next to the text label) to minimize vertical height.
+
 
 
