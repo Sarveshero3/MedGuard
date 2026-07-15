@@ -2,6 +2,7 @@ from typing import TypedDict, List, Dict, Any
 from langgraph.graph import StateGraph, END
 import datetime
 
+
 class PrescriptionState(TypedDict):
     photo_path: str
     filename: str
@@ -16,11 +17,12 @@ class PrescriptionState(TypedDict):
     needs_visit_link_resolution: bool
     candidate_visits: List[Dict[str, Any]]
 
+
 def ocr_vlm_extraction_node(state: PrescriptionState) -> Dict[str, Any]:
     # Simulate VLM extraction (or use ChatOpenAI if configured)
     filename = state.get("filename", "").lower()
     is_low = "low" in filename or "unresolved" in filename or "crocin" in filename
-    
+
     if is_low:
         return {
             "raw_extraction": {
@@ -66,6 +68,7 @@ def ocr_vlm_extraction_node(state: PrescriptionState) -> Dict[str, Any]:
             "follow_up_question": None,
         }
 
+
 def proximity_auto_link_node(state: PrescriptionState) -> Dict[str, Any]:
     existing_visits = state.get("existing_visits", [])
     if not existing_visits:
@@ -78,20 +81,21 @@ def proximity_auto_link_node(state: PrescriptionState) -> Dict[str, Any]:
 
     today = datetime.datetime.now()
     three_days_delta = datetime.timedelta(days=3)
-    
+
     close_visit = None
     for visit in existing_visits:
         visit_date_str = visit.get("scheduled_date")
         if not visit_date_str:
             continue
-        
+
         try:
             # Parse ISO date string
             clean_date_str = visit_date_str.replace("Z", "+00:00")
-            visit_date = datetime.datetime.fromisoformat(clean_date_str).replace(tzinfo=None)
+            visit_date = datetime.datetime.fromisoformat(
+                clean_date_str).replace(tzinfo=None)
         except ValueError:
             continue
-            
+
         if abs(today - visit_date) <= three_days_delta:
             close_visit = visit
             break
@@ -110,6 +114,7 @@ def proximity_auto_link_node(state: PrescriptionState) -> Dict[str, Any]:
         "needs_visit_link_resolution": True,
         "candidate_visits": existing_visits
     }
+
 
 # Build workflow graph
 workflow = StateGraph(PrescriptionState)

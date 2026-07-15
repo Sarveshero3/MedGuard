@@ -16,15 +16,18 @@ router = APIRouter()
 
 # ── Pydantic Request Models ───────────────────────────────────
 
+
 class ChatRequest(BaseModel):
     question: str
     active_medicines: List[Dict[str, Any]] = []
     interaction_flags: List[Dict[str, Any]] = []
 
+
 class TrendRequest(BaseModel):
     test_type: str
     values: List[float]
     dates: List[str] = []
+
 
 class BriefRequest(BaseModel):
     active_medicines: List[Dict[str, Any]]
@@ -32,11 +35,13 @@ class BriefRequest(BaseModel):
     lab_trends: List[Dict[str, Any]]
     reason_for_visit: str | None = None
 
+
 class InteractionRequest(BaseModel):
     generic_a: str
     generic_b: str
 
 # ── Endpoints ─────────────────────────────────────────────────
+
 
 @router.post("/extract/prescription")
 async def extract_prescription(
@@ -64,6 +69,7 @@ async def extract_prescription(
         "data": result,
     }
 
+
 @router.post("/extract/lab-report")
 async def extract_lab_report(
     photo: UploadFile = File(...),
@@ -90,6 +96,7 @@ async def extract_lab_report(
         "data": result,
     }
 
+
 @router.post("/chat")
 async def chat_qa(req: ChatRequest):
     """
@@ -105,6 +112,7 @@ async def chat_qa(req: ChatRequest):
         "success": True,
         "data": result,
     }
+
 
 @router.post("/explain-trends")
 async def explain_trends_route(req: TrendRequest):
@@ -122,6 +130,7 @@ async def explain_trends_route(req: TrendRequest):
         "data": result,
     }
 
+
 @router.post("/visit-brief")
 async def visit_brief_route(req: BriefRequest):
     """
@@ -138,6 +147,7 @@ async def visit_brief_route(req: BriefRequest):
         "success": True,
         "data": result["brief_output"],
     }
+
 
 @router.post("/research-interaction")
 async def research_interaction_route(req: InteractionRequest):

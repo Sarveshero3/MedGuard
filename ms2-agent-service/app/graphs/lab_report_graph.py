@@ -2,6 +2,7 @@ from typing import TypedDict, List, Dict, Any
 from langgraph.graph import StateGraph, END
 import datetime
 
+
 class LabReportState(TypedDict):
     photo_path: str
     filename: str
@@ -14,6 +15,7 @@ class LabReportState(TypedDict):
     visit_link_confidence: float
     needs_visit_link_resolution: bool
     candidate_visits: List[Dict[str, Any]]
+
 
 def ocr_vlm_lab_extraction_node(state: LabReportState) -> Dict[str, Any]:
     filename = state.get("filename", "").lower()
@@ -52,6 +54,7 @@ def ocr_vlm_lab_extraction_node(state: LabReportState) -> Dict[str, Any]:
             "follow_up_question": None,
         }
 
+
 def proximity_auto_link_node(state: LabReportState) -> Dict[str, Any]:
     existing_visits = state.get("existing_visits", [])
     if not existing_visits:
@@ -64,19 +67,20 @@ def proximity_auto_link_node(state: LabReportState) -> Dict[str, Any]:
 
     today = datetime.datetime.now()
     three_days_delta = datetime.timedelta(days=3)
-    
+
     close_visit = None
     for visit in existing_visits:
         visit_date_str = visit.get("scheduled_date")
         if not visit_date_str:
             continue
-        
+
         try:
             clean_date_str = visit_date_str.replace("Z", "+00:00")
-            visit_date = datetime.datetime.fromisoformat(clean_date_str).replace(tzinfo=None)
+            visit_date = datetime.datetime.fromisoformat(
+                clean_date_str).replace(tzinfo=None)
         except ValueError:
             continue
-            
+
         if abs(today - visit_date) <= three_days_delta:
             close_visit = visit
             break
@@ -95,6 +99,7 @@ def proximity_auto_link_node(state: LabReportState) -> Dict[str, Any]:
         "needs_visit_link_resolution": True,
         "candidate_visits": existing_visits
     }
+
 
 # Build workflow graph
 workflow = StateGraph(LabReportState)
