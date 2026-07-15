@@ -59,6 +59,7 @@ services:
     environment:
       MS2_PORT: 8000
       OPENAI_API_KEY: ${OPENAI_API_KEY:-sk-placeholder}
+      NVIDIA_API_KEY: ${NVIDIA_API_KEY:-}
       MS1_BASE_URL: http://ms1-core-api:4000
       LOG_LEVEL: ${LOG_LEVEL:-info}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
