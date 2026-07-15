@@ -110,7 +110,7 @@ async function verifyPatientAccess(req, patientId, requiredAccessLevel = 'alerts
   // 2. Caregiver accessing linked patient data: verify caregiver link and status
   if (req.user.role === 'caregiver') {
     const linkResult = await query(
-      `SELECT permission_level, status 
+      `SELECT status 
        FROM caregiver_links 
        WHERE patient_id = $1 AND caregiver_id = $2 AND status = 'active'`,
       [patientId, req.user.id]
@@ -118,17 +118,6 @@ async function verifyPatientAccess(req, patientId, requiredAccessLevel = 'alerts
 
     if (linkResult.rows.length === 0) {
       logger.warn('IDOR_PREVENTED', `Caregiver ${req.user.id} attempted unauthorized access to patient ${patientId}`, {
-        caregiverId: req.user.id,
-        patientId,
-      });
-      return false;
-    }
-
-    const { permission_level } = linkResult.rows[0];
-
-    // If required access level is full_view, alerts_only caregiver cannot access
-    if (requiredAccessLevel === 'full_view' && permission_level === 'alerts_only') {
-      logger.warn('IDOR_PREVENTED', `Caregiver ${req.user.id} with alerts_only permission attempted full_view access to patient ${patientId}`, {
         caregiverId: req.user.id,
         patientId,
       });

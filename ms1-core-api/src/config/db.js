@@ -1,4 +1,14 @@
+const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
+
+const DATABASE_URL = process.env.DATABASE_URL;
+
+let pool;
+if (DATABASE_URL) {
+  pool = new Pool({
+    connectionString: DATABASE_URL,
+  });
+}
 
 // Simple In-memory Database Store
 const users = [];
@@ -16,33 +26,60 @@ const seedUser = {
   password_hash: bcrypt.hashSync('password123', 8),
   role: 'patient',
   verified: true,
-  is_email_verified: true
+  is_email_verified: true,
+  consent_given_at: new Date()
 };
 users.push(seedUser);
 
 const mockClient = {
   query: async (text, params = []) => {
-    return query(text, params);
+    return mockQuery(text, params);
   },
   release: () => {}
 };
 
-const pool = {
+const mockPool = {
   connect: async () => {
     return mockClient;
   },
   query: async (text, params = []) => {
-    return query(text, params);
+    return mockQuery(text, params);
   },
   end: async () => {},
   on: () => {}
 };
 
+const logger = require('../utils/logger');
+
 async function testConnection() {
-  return true; // Succeeds immediately
+  if (pool) {
+    try {
+      const client = await pool.connect();
+      try {
+        await client.query('SELECT NOW()');
+        logger.info('DB_CONNECTED', 'Successfully connected to PostgreSQL database');
+        return true;
+      } finally {
+        client.release();
+      }
+    } catch (err) {
+      logger.warn('DB_CONNECTION_FAILED', `Failed to connect to PostgreSQL database: ${err.message}. Falling back to in-memory mock store.`);
+      pool = null; // Disable pool so all future queries use mockQuery
+      module.exports.pool = mockPool; // Update exported pool reference dynamically
+      return true;
+    }
+  }
+  return true; // Succeeds immediately for mock
 }
 
 async function query(text, params = []) {
+  if (pool) {
+    return pool.query(text, params);
+  }
+  return mockQuery(text, params);
+}
+
+async function mockQuery(text, params = []) {
   const sql = text.trim().replace(/\s+/g, ' ');
 
   // Auth: Match any query retrieving a user by email
@@ -78,7 +115,8 @@ async function query(text, params = []) {
       role: params[3],
       verification_token: params[4],
       verified: true,
-      is_email_verified: true
+      is_email_verified: true,
+      consent_given_at: new Date()
     };
     users.push(newUser);
     return { rows: [newUser] };
@@ -114,11 +152,15 @@ async function query(text, params = []) {
     const newMed = {
       id: String(medicines.length + 1),
       patient_id: params[0],
-      name: params[1],
-      dosage: params[2],
-      frequency: params[3],
-      specialty: params[4],
-      status: params[5] || 'active',
+      brand_name: params[1],
+      generic_name: params[2],
+      dosage: params[3],
+      frequency: params[4],
+      duration_text: params[5],
+      course_end_date: params[6],
+      resolution_status: params[7],
+      status: 'active',
+      visit_id: params[8],
       added_at: new Date()
     };
     medicines.push(newMed);
@@ -147,4 +189,8 @@ async function query(text, params = []) {
   return { rows: [] };
 }
 
-module.exports = { pool, query, testConnection };
+module.exports = { 
+  pool: pool || mockPool, 
+  query, 
+  testConnection 
+};

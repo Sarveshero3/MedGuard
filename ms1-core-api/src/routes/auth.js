@@ -15,7 +15,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'change-me-to-a-random-64-char-stri
  * Registers a new user (patient or caregiver) and records DPDP consent.
  */
 router.post('/auth/register', registerLimiter, sanitizeInput, validateBody('register'), async (req, res, next) => {
-  const { name, email, password, role } = req.body;
+  const { name, email, password, role, linking_otp } = req.body;
 
   try {
     // Check if email already registered
@@ -38,26 +38,67 @@ router.post('/auth/register', registerLimiter, sanitizeInput, validateBody('regi
     // Generate secure email verification token
     const verificationToken = crypto.randomBytes(16).toString('hex');
 
-    // Create user and consent record in a transaction
-    // (Manual transaction handling for pg client)
+    // Create user and caregiver link (if caregiver) in a transaction
     const client = await require('../config/db').pool.connect();
     try {
       await client.query('BEGIN');
       
+      let linkedPatientId = null;
+      if (role === 'caregiver') {
+        if (!linking_otp) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({
+            success: false,
+            error: {
+              code: 'BAD_REQUEST',
+              message: 'linking_otp is required for caregiver registration.',
+            },
+          });
+        }
+
+        // Verify patient OTP (check validity and expiry)
+        const patientResult = await client.query(
+          "SELECT id FROM users WHERE linking_otp = $1 AND linking_otp_expires_at > NOW() AND role = 'patient'",
+          [linking_otp]
+        );
+
+        if (patientResult.rows.length === 0) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({
+            success: false,
+            error: {
+              code: 'INVALID_OTP',
+              message: 'The linking code is invalid or has expired.',
+            },
+          });
+        }
+
+        linkedPatientId = patientResult.rows[0].id;
+
+        // Clear patient's OTP (single-use guarantee)
+        await client.query(
+          'UPDATE users SET linking_otp = NULL, linking_otp_expires_at = NULL WHERE id = $1',
+          [linkedPatientId]
+        );
+      }
+
+      // Create user and write consent_given_at directly (Step 3)
       const userInsertQuery = `
-        INSERT INTO users (name, email, password_hash, role, email_verification_token)
-        VALUES ($1, $2, $3, $4, $5)
+        INSERT INTO users (name, email, password_hash, role, email_verification_token, consent_given_at)
+        VALUES ($1, $2, $3, $4, $5, NOW())
         RETURNING id, name, email, role, is_email_verified
       `;
       const userRes = await client.query(userInsertQuery, [name, email, passwordHash, role, verificationToken]);
       const newUser = userRes.rows[0];
 
-      // Insert DPDP Consent Record
-      const consentInsertQuery = `
-        INSERT INTO consent_records (user_id, consent_type, granted_at)
-        VALUES ($1, $2, NOW())
-      `;
-      await client.query(consentInsertQuery, [newUser.id, 'health_data_processing']);
+      // If caregiver, create the caregiver link
+      if (role === 'caregiver' && linkedPatientId) {
+        const linkInsertQuery = `
+          INSERT INTO caregiver_links (patient_id, caregiver_id, status)
+          VALUES ($1, $2, 'active')
+        `;
+        await client.query(linkInsertQuery, [linkedPatientId, newUser.id]);
+      }
 
       await client.query('COMMIT');
 
@@ -113,7 +154,7 @@ router.post('/auth/register', registerLimiter, sanitizeInput, validateBody('regi
 
 /**
  * POST /api/auth/login
- * Standard user login with credential verification.
+ * Standard user credentials verification, issuing temporary MFA token.
  */
 router.post('/auth/login', authLimiter, sanitizeInput, validateBody('login'), async (req, res, next) => {
   const { email, password } = req.body;
@@ -149,9 +190,97 @@ router.post('/auth/login', authLimiter, sanitizeInput, validateBody('login'), as
       });
     }
 
-    logger.audit('LOGIN_SUCCESS', `User ${user.id} logged in successfully`, { userId: user.id, role: user.role });
+    // Generate 6-digit MFA OTP
+    const mfaCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const mfaExpiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5-minute expiry
 
-    // Generate JWT Token (1 hour validity)
+    await query(
+      'UPDATE users SET mfa_code = $1, mfa_expires_at = $2 WHERE id = $3',
+      [mfaCode, mfaExpiresAt, user.id]
+    );
+
+    // Mock Send Email Verification Code
+    logger.info('MFA_DISPATCHED', `[MOCK MFA EMAIL] To: ${user.email} | Security Code: ${mfaCode}`, {
+      email: user.email,
+    });
+
+    // Generate temporary 5-minute pending token
+    const mfaToken = jwt.sign(
+      { sub: user.id, userId: user.id, isMfaPending: true },
+      JWT_SECRET,
+      { expiresIn: '5m' }
+    );
+
+    res.json({
+      success: true,
+      data: {
+        requiresMfa: true,
+        mfaToken,
+      },
+    });
+
+  } catch (err) {
+    logger.error('LOGIN_ERROR', `Error during user login: ${err.message}`);
+    next(err);
+  }
+});
+
+/**
+ * POST /api/auth/verify-mfa
+ * Verify 2-step verification security code.
+ */
+router.post('/auth/verify-mfa', sanitizeInput, async (req, res, next) => {
+  const { mfaToken, otp } = req.body;
+
+  if (!mfaToken || !otp) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'BAD_REQUEST', message: 'mfaToken and security code (otp) are required.' },
+    });
+  }
+
+  try {
+    let decoded;
+    try {
+      decoded = jwt.verify(mfaToken, JWT_SECRET);
+    } catch (err) {
+      return res.status(401).json({
+        success: false,
+        error: { code: 'UNAUTHORIZED', message: 'MFA session has expired or is invalid.' },
+      });
+    }
+
+    const userResult = await query(
+      'SELECT id, name, email, role, is_email_verified, mfa_code, mfa_expires_at FROM users WHERE id = $1',
+      [decoded.userId]
+    );
+
+    if (userResult.rows.length === 0) {
+      return res.status(401).json({
+        success: false,
+        error: { code: 'UNAUTHORIZED', message: 'User not found.' },
+      });
+    }
+
+    const user = userResult.rows[0];
+
+    if (!user.mfa_code || user.mfa_code !== otp || new Date() > new Date(user.mfa_expires_at)) {
+      logger.warn('MFA_VERIFY_FAILED', `Invalid MFA code entered for user ${user.id}`, { userId: user.id });
+      return res.status(401).json({
+        success: false,
+        error: { code: 'UNAUTHORIZED', message: 'The security code is invalid or has expired.' },
+      });
+    }
+
+    // Clear MFA columns upon successful verification
+    await query(
+      'UPDATE users SET mfa_code = NULL, mfa_expires_at = NULL WHERE id = $1',
+      [user.id]
+    );
+
+    logger.audit('LOGIN_SUCCESS', `User ${user.id} logged in successfully via MFA`, { userId: user.id, role: user.role });
+
+    // Generate permanent JWT Token (1 hour validity)
     const token = jwt.sign(
       { sub: user.id, userId: user.id, email: user.email, role: user.role, name: user.name },
       JWT_SECRET,
@@ -173,7 +302,7 @@ router.post('/auth/login', authLimiter, sanitizeInput, validateBody('login'), as
     });
 
   } catch (err) {
-    logger.error('LOGIN_ERROR', `Error during user login: ${err.message}`);
+    logger.error('MFA_VERIFICATION_ERROR', `Error during MFA verification: ${err.message}`);
     next(err);
   }
 });

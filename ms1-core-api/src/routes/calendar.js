@@ -23,7 +23,7 @@ router.get('/calendar', authenticateUser, enforcePatientAccess('full_view'), asy
     );
 
     const visitsResult = await query(
-      `SELECT id, doctor_name, specialty, scheduled_date, visit_type, brief_id
+      `SELECT id, doctor_name, specialty, disease_type, scheduled_date, visit_type, brief_id
        FROM visits
        WHERE patient_id = $1 AND visit_type = 'user_added'
        ORDER BY scheduled_date ASC`,
@@ -81,7 +81,7 @@ router.get('/calendar', authenticateUser, enforcePatientAccess('full_view'), asy
  * Add a new user doctor appointment manually.
  */
 router.post('/calendar/visits', authenticateUser, enforcePatientAccess('full_view'), enforceEmailVerified, sanitizeInput, async (req, res, next) => {
-  const { patient_id, doctor_name, specialty, scheduled_date } = req.body;
+  const { patient_id, doctor_name, specialty, scheduled_date, disease_type } = req.body;
 
   if (!scheduled_date) {
     return res.status(400).json({
@@ -92,10 +92,10 @@ router.post('/calendar/visits', authenticateUser, enforcePatientAccess('full_vie
 
   try {
     const result = await query(
-      `INSERT INTO visits (patient_id, doctor_name, specialty, scheduled_date, visit_type)
-       VALUES ($1, $2, $3, $4, 'user_added')
+      `INSERT INTO visits (patient_id, doctor_name, specialty, scheduled_date, disease_type, visit_type)
+       VALUES ($1, $2, $3, $4, $5, 'user_added')
        RETURNING *`,
-      [patient_id, doctor_name || null, specialty || null, scheduled_date]
+      [patient_id, doctor_name || null, specialty || null, scheduled_date, disease_type || null]
     );
 
     logger.audit('VISIT_CREATED', `User ${req.user.id} manually created doctor visit ${result.rows[0].id} for patient ${patient_id}`, {

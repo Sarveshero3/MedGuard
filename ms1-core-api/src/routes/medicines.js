@@ -7,6 +7,7 @@ const { authenticateUser, enforcePatientAccess, verifyPatientAccess, enforceEmai
 const { sanitizeInput, validateBody, validateUUID, upload } = require('../middleware/security');
 const { enforceConsent } = require('../middleware/consent');
 const { uploadLimiter } = require('../middleware/rateLimiter');
+const { extractionQueue } = require('../services/queueService');
 
 const router = express.Router();
 
@@ -107,7 +108,7 @@ router.get('/medicines/:id', authenticateUser, validateUUID('id'), enforceConsen
  * Secured: enforce patient access and validate payload.
  */
 router.post('/medicines', authenticateUser, enforcePatientAccess('full_view'), enforceConsent('health_data_processing'), enforceEmailVerified, sanitizeInput, validateBody('medicine'), async (req, res, next) => {
-  const { patient_id, brand_name, generic_name, dosage, frequency, duration_text, brand_mapping_correction, resolution_status } = req.body;
+  const { patient_id, brand_name, generic_name, dosage, frequency, duration_text, brand_mapping_correction, resolution_status, visit_id } = req.body;
 
   try {
     const client = await require('../config/db').pool.connect();
@@ -157,10 +158,10 @@ router.post('/medicines', authenticateUser, enforcePatientAccess('full_view'), e
 
       // Save the medicine
       const result = await client.query(
-        `INSERT INTO medicines (patient_id, brand_name, generic_name, dosage, frequency, duration_text, course_end_date, resolution_status, status)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active')
+        `INSERT INTO medicines (patient_id, brand_name, generic_name, dosage, frequency, duration_text, course_end_date, resolution_status, status, visit_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active', $9)
          RETURNING *`,
-        [patient_id, brand_name, resolvedGeneric, dosage, frequency, duration_text || null, courseEndDate, finalResolutionStatus]
+        [patient_id, brand_name, resolvedGeneric, dosage, frequency, duration_text || null, courseEndDate, finalResolutionStatus, visit_id || null]
       );
       const newMed = result.rows[0];
 
@@ -428,37 +429,78 @@ router.post('/medicines/upload', authenticateUser, enforceConsent('health_data_p
       });
     }
 
-    // Call internal visionService for prescription extraction
-    logger.info('INTERNAL_SERVICE_CALL', `Forwarding prescription extraction to visionService for patient ${patientId}`, {
-      filename: req.file.filename,
-    });
+    // Retrieve patient's existing visits to pass to auto-linker context
+    const visitsResult = await query(
+      'SELECT id, scheduled_date, doctor_name, specialty, disease_type FROM visits WHERE patient_id = $1',
+      [patientId]
+    );
 
-    const extractionResult = await extractPrescription(req.file.path, req.file.originalname || req.file.filename);
+    // Compute SHA-256 hash of file content for idempotency check (Step 10)
+    const crypto = require('crypto');
+    const fileBuffer = fs.readFileSync(req.file.path);
+    const fileHash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
+    const idempotencyKey = `idempotency:file:${fileHash}`;
 
-    logger.info('INTERNAL_SERVICE_RESPONSE', `visionService returned response for prescription extraction`);
-
-    // Clean up physical file after extraction
-    if (fs.existsSync(req.file.path)) {
-      fs.unlinkSync(req.file.path);
+    const redisConnection = require('../config/redis');
+    try {
+      const cachedJobId = await redisConnection.get(idempotencyKey);
+      if (cachedJobId) {
+        logger.info('IDEMPOTENT_UPLOAD_HIT', `Duplicate upload detected. Mapping to existing job ${cachedJobId}`);
+        fs.unlinkSync(req.file.path);
+        return res.status(202).json({
+          success: true,
+          data: {
+            jobId: cachedJobId,
+            message: 'Prescription analysis job already queued.',
+          },
+        });
+      }
+    } catch (err) {
+      logger.warn('IDEMPOTENCY_CHECK_FAILED', `Failed to check idempotency key in Redis: ${err.message}`);
     }
 
-    res.json({
+    logger.info('QUEUE_EXTRACTION_JOB', `Enqueuing prescription extraction job for patient ${patientId}`);
+
+    // Generate traceparent context (Step 11)
+    const traceId = crypto.randomBytes(16).toString('hex');
+    const spanId = crypto.randomBytes(8).toString('hex');
+    const traceparent = `00-${traceId}-${spanId}-01`;
+
+    // Push extraction job to BullMQ
+    const job = await extractionQueue.add('extract', {
+      type: 'prescription',
+      filePath: req.file.path,
+      fileName: req.file.originalname || req.file.filename,
+      patientId,
+      visitsContext: visitsResult.rows,
+      _traceparent: traceparent,
+    });
+
+    try {
+      await redisConnection.setex(idempotencyKey, 3600, job.id); // Cache idempotency for 1 hour
+    } catch (err) {
+      logger.warn('IDEMPOTENCY_SET_FAILED', `Failed to set idempotency key in Redis: ${err.message}`);
+    }
+
+    res.status(202).json({
       success: true,
-      data: extractionResult,
+      data: {
+        jobId: job.id,
+        message: 'Prescription analysis job queued.',
+      },
     });
 
   } catch (err) {
-    // Ensure uploaded file is cleaned up on error
     if (req.file && fs.existsSync(req.file.path)) {
       fs.unlinkSync(req.file.path);
     }
-    logger.error('MEDICINE_UPLOAD_ERROR', `Error processing prescription upload: ${err.message}`, { details: err.stack });
+    logger.error('MEDICINE_UPLOAD_ERROR', `Error enqueuing prescription upload: ${err.message}`);
     
-    res.status(502).json({
+    res.status(500).json({
       success: false,
       error: {
-        code: 'BAD_GATEWAY',
-        message: 'Agent service extraction failure.',
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Failed to enqueue extraction job.',
         details: [err.message],
       },
     });

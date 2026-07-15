@@ -37,11 +37,15 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-medguard}:${POSTGRES_PASSWORD:-medguard_dev}@postgres:5432/${POSTGRES_DB:-medguard}
       JWT_SECRET: ${JWT_SECRET:-change-me-to-a-random-64-char-string}
       MS2_BASE_URL: http://ms2-agent-service:8000
+      REDIS_URL: redis://redis:6379
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
     ports:
       - "4000:4000"
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_started
     networks:
       - backend
       - frontend-net
@@ -57,10 +61,33 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-sk-placeholder}
       MS1_BASE_URL: http://ms1-core-api:4000
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
     ports:
       - "8000:8000"
+    depends_on:
+      - jaeger
     networks:
       - backend
+
+  # ── Redis (Queue & Cache) ──────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"
+    networks:
+      - backend
+
+  # ── Jaeger (OTel Tracing UI) ───────────────────────────────
+  jaeger:
+    image: jaegertracing/all-in-one:1.57
+    restart: unless-stopped
+    ports:
+      - "16686:16686"
+      - "4317:4317"
+    networks:
+      - backend
+      - frontend-net
 
   # ── Frontend (React + Vite dev server) ─────────────────────
   frontend:

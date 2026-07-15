@@ -20,7 +20,17 @@ Upon successful login or registration, the backend signs a JWT with the followin
 - An Axios interceptor automatically appends this token in the `Authorization: Bearer <token>` header of every outgoing `/api` call.
 - On the server, `ms1-core-api/src/middleware/auth.js` intercepts, validates the signature, decodes the claims, queries the database to confirm user existence, and populates `req.user`.
 
-### 3. Role-Based Access Control (RBAC)
+### 3. Two-Step MFA Login (Gmail-Style 2FA)
+- Logging in triggers a verification flow where the user must supply a 6-digit one-time passcode (OTP).
+- The code is dispatched via AWS SES (or logged to the backend console in development mock mode) with a 5-minute expiry.
+- A "Resend Code" utility allows the user to re-trigger OTP dispatch directly from the login screen without losing form states.
+- 401 Unauthorized responses on MFA routes are bypassed by Axios interceptors to prevent page-reload resets.
+
+### 4. Caregiver-Patient OTP Linking (Single-Use Guarantee)
+- Caregivers link to patients by inputting a patient's unique `linking_otp` code during registration.
+- Once registered, the caregiver-patient association is written to `caregiver_links` with status `active` and the patient's `linking_otp` is immediately cleared (invalidated) to guarantee single-use.
+
+### 5. Role-Based Access Control (RBAC)
 Routes are gated depending on user roles:
 - **Caregivers** are allowed to switch contexts, view linked patient statistics, and read regimen entries in a clinical, read-only mode.
 - **Patients** have access to upload prescriptions, edit metadata, and modify calendar visits.

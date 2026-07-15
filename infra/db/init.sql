@@ -1,7 +1,6 @@
 -- ============================================================
--- MedGuard — PostgreSQL Schema v1
--- Matches docs/schema.md exactly
--- Run once on fresh database via docker-compose init
+-- MedGuard — PostgreSQL Schema v2
+-- Matches implementation_plan.md exactly
 -- ============================================================
 
 -- Enable UUID generation
@@ -11,8 +10,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- ENUM types
 -- ─────────────────────────────────────────────────────────────
 CREATE TYPE user_role          AS ENUM ('patient', 'caregiver');
-CREATE TYPE permission_level   AS ENUM ('full_view', 'alerts_only');
-CREATE TYPE link_status        AS ENUM ('pending', 'active', 'revoked');
+CREATE TYPE link_status        AS ENUM ('active', 'revoked');
 CREATE TYPE resolution_status  AS ENUM ('resolved', 'generic_unresolved', 'manually_resolved');
 CREATE TYPE medicine_status    AS ENUM ('active', 'discontinued');
 CREATE TYPE interaction_severity AS ENUM ('avoid_combination', 'monitor_closely', 'minor', 'no_action');
@@ -32,6 +30,11 @@ CREATE TABLE users (
     email_verification_token VARCHAR(255),
     password_reset_token     VARCHAR(255),
     password_reset_expires   TIMESTAMPTZ,
+    consent_given_at         TIMESTAMPTZ,
+    linking_otp              VARCHAR(6),
+    linking_otp_expires_at   TIMESTAMPTZ,
+    mfa_code                 VARCHAR(6),
+    mfa_expires_at           TIMESTAMPTZ,
     created_at               TIMESTAMPTZ    NOT NULL DEFAULT NOW()
 );
 CREATE INDEX idx_users_email ON users(email);
@@ -44,8 +47,7 @@ CREATE TABLE caregiver_links (
     id               UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     patient_id       UUID             NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     caregiver_id     UUID             NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    permission_level permission_level NOT NULL DEFAULT 'alerts_only',
-    status           link_status      NOT NULL DEFAULT 'pending',
+    status           link_status      NOT NULL DEFAULT 'active',
     created_at       TIMESTAMPTZ      NOT NULL DEFAULT NOW(),
     CONSTRAINT uq_caregiver_link UNIQUE (patient_id, caregiver_id)
 );
@@ -85,11 +87,29 @@ CREATE TRIGGER trg_brand_generic_no_delete
     EXECUTE FUNCTION prevent_mutation();
 
 -- ─────────────────────────────────────────────────────────────
--- 4. medicines
+-- 4. visits
+-- ─────────────────────────────────────────────────────────────
+CREATE TABLE visits (
+    id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    patient_id     UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    doctor_name    VARCHAR(255),
+    specialty      VARCHAR(100),
+    disease_type   VARCHAR(255),
+    scheduled_date TIMESTAMPTZ NOT NULL,
+    visit_type     visit_type_enum NOT NULL DEFAULT 'user_added',
+    brief_id       UUID,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_visits_patient ON visits(patient_id);
+CREATE INDEX idx_visits_date    ON visits(scheduled_date);
+
+-- ─────────────────────────────────────────────────────────────
+-- 5. medicines
 -- ─────────────────────────────────────────────────────────────
 CREATE TABLE medicines (
     id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     patient_id        UUID              NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    visit_id          UUID              REFERENCES visits(id) ON DELETE SET NULL,
     brand_name        VARCHAR(255)      NOT NULL,
     generic_name      VARCHAR(255),
     dosage            VARCHAR(100)      NOT NULL,
@@ -106,7 +126,7 @@ CREATE INDEX idx_medicines_status  ON medicines(patient_id, status);
 CREATE INDEX idx_medicines_generic ON medicines(generic_name);
 
 -- ─────────────────────────────────────────────────────────────
--- 5. interaction_kb  (append-only, versioned)
+-- 6. interaction_kb  (append-only, versioned)
 -- ─────────────────────────────────────────────────────────────
 CREATE TABLE interaction_kb (
     id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -132,7 +152,7 @@ CREATE TRIGGER trg_interaction_kb_no_delete
     EXECUTE FUNCTION prevent_mutation();
 
 -- ─────────────────────────────────────────────────────────────
--- 6. interaction_flags
+-- 7. interaction_flags
 -- ─────────────────────────────────────────────────────────────
 CREATE TABLE interaction_flags (
     id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -149,45 +169,34 @@ CREATE INDEX idx_flags_patient ON interaction_flags(patient_id);
 CREATE INDEX idx_flags_status  ON interaction_flags(status);
 
 -- ─────────────────────────────────────────────────────────────
--- 7. lab_reports
+-- 8. lab_reports
 -- ─────────────────────────────────────────────────────────────
 CREATE TABLE lab_reports (
-    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    patient_id      UUID          NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    source_photo_id VARCHAR(255),
-    uploaded_at     TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+    id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    patient_id          UUID          NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    visit_id            UUID          REFERENCES visits(id) ON DELETE SET NULL,
+    source_photo_id     VARCHAR(255),
+    raw_docling_output  JSONB,
+    uploaded_at         TIMESTAMPTZ   NOT NULL DEFAULT NOW()
 );
 CREATE INDEX idx_lab_reports_patient ON lab_reports(patient_id);
 
 -- ─────────────────────────────────────────────────────────────
--- 8. lab_values
+-- 9. lab_values
 -- ─────────────────────────────────────────────────────────────
 CREATE TABLE lab_values (
-    id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    report_id   UUID          NOT NULL REFERENCES lab_reports(id) ON DELETE CASCADE,
-    test_type   VARCHAR(50)   NOT NULL,
-    value       DECIMAL(10,4) NOT NULL,
-    unit        VARCHAR(30)   NOT NULL,
-    recorded_at TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+    id                 UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    report_id          UUID          NOT NULL REFERENCES lab_reports(id) ON DELETE CASCADE,
+    test_type          VARCHAR(50)   NOT NULL,
+    panel_name         VARCHAR(255),
+    value              DECIMAL(10,4) NOT NULL,
+    unit               VARCHAR(30)   NOT NULL,
+    resolution_status  resolution_status NOT NULL DEFAULT 'generic_unresolved',
+    confidence         DECIMAL(5,4)  NOT NULL DEFAULT 1.0,
+    recorded_at        TIMESTAMPTZ   NOT NULL DEFAULT NOW()
 );
 CREATE INDEX idx_lab_values_report ON lab_values(report_id);
 CREATE INDEX idx_lab_values_type   ON lab_values(test_type);
-
--- ─────────────────────────────────────────────────────────────
--- 9. visits
--- ─────────────────────────────────────────────────────────────
-CREATE TABLE visits (
-    id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    patient_id     UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    doctor_name    VARCHAR(255),
-    specialty      VARCHAR(100),
-    scheduled_date TIMESTAMPTZ NOT NULL,
-    visit_type     visit_type_enum NOT NULL DEFAULT 'user_added',
-    brief_id       UUID,
-    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-CREATE INDEX idx_visits_patient ON visits(patient_id);
-CREATE INDEX idx_visits_date    ON visits(scheduled_date);
 
 -- ─────────────────────────────────────────────────────────────
 -- 10. briefs
@@ -207,17 +216,26 @@ ALTER TABLE visits ADD CONSTRAINT fk_visits_brief
     FOREIGN KEY (brief_id) REFERENCES briefs(id) ON DELETE SET NULL;
 
 -- ─────────────────────────────────────────────────────────────
--- 11. consent_records
+-- 11. test_type_normalization (append-only, versioned)
 -- ─────────────────────────────────────────────────────────────
-CREATE TABLE consent_records (
-    id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id      UUID         NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    consent_type VARCHAR(100) NOT NULL,
-    granted_at   TIMESTAMPTZ,
-    revoked_at   TIMESTAMPTZ
+CREATE TABLE test_type_normalization (
+    id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    test_variant   VARCHAR(255) NOT NULL,
+    canonical_type VARCHAR(100) NOT NULL,
+    source         VARCHAR(100) NOT NULL DEFAULT 'system_seed',
+    version        VARCHAR(20)  NOT NULL DEFAULT 'v1',
+    effective_date TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_test_variant_version UNIQUE (test_variant, version)
 );
-CREATE INDEX idx_consent_user ON consent_records(user_id);
-CREATE INDEX idx_consent_type ON consent_records(consent_type);
+CREATE INDEX idx_test_normalization_variant ON test_type_normalization(test_variant);
+
+CREATE TRIGGER trg_test_normalization_no_update
+    BEFORE UPDATE ON test_type_normalization FOR EACH ROW
+    EXECUTE FUNCTION prevent_mutation();
+
+CREATE TRIGGER trg_test_normalization_no_delete
+    BEFORE DELETE ON test_type_normalization FOR EACH ROW
+    EXECUTE FUNCTION prevent_mutation();
 
 -- ─────────────────────────────────────────────────────────────
 -- Schema version tracking
@@ -226,10 +244,10 @@ CREATE TABLE schema_migrations (
     version    VARCHAR(20) PRIMARY KEY,
     applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-INSERT INTO schema_migrations (version) VALUES ('v1.0.0');
+INSERT INTO schema_migrations (version) VALUES ('v2.0.0');
 
 -- ─────────────────────────────────────────────────────────────
--- Seed Data Mappings & Interactions
+-- Seed Data Mappings & Interactions & Normalization
 -- ─────────────────────────────────────────────────────────────
 
 INSERT INTO brand_generic_map (brand_name, generic_name, composition, source, version, effective_date) VALUES
@@ -248,3 +266,21 @@ INSERT INTO interaction_kb (generic_a, generic_b, severity, explanation, source,
 ('Ibuprofen', 'Aspirin', 'minor', 'Ibuprofen may decrease the cardioprotective effect of low-dose Aspirin. Space doses or monitor.', 'DDInter', 'v1', NOW())
 ON CONFLICT (generic_a, generic_b, version) DO NOTHING;
 
+INSERT INTO test_type_normalization (test_variant, canonical_type, source, version, effective_date) VALUES
+('HbA1c', 'HbA1c', 'system_seed', 'v1', NOW()),
+('Hb A1c', 'HbA1c', 'system_seed', 'v1', NOW()),
+('Glycated Hemoglobin', 'HbA1c', 'system_seed', 'v1', NOW()),
+('A1c', 'HbA1c', 'system_seed', 'v1', NOW()),
+('Thyroid Stimulating Hormone', 'TSH', 'system_seed', 'v1', NOW()),
+('TSH', 'TSH', 'system_seed', 'v1', NOW()),
+('S.TSH', 'TSH', 'system_seed', 'v1', NOW()),
+('LDL', 'LDL', 'system_seed', 'v1', NOW()),
+('LDL Cholesterol', 'LDL', 'system_seed', 'v1', NOW()),
+('Low Density Lipoprotein', 'LDL', 'system_seed', 'v1', NOW()),
+('HDL', 'HDL', 'system_seed', 'v1', NOW()),
+('HDL Cholesterol', 'HDL', 'system_seed', 'v1', NOW()),
+('High Density Lipoprotein', 'HDL', 'system_seed', 'v1', NOW()),
+('Fasting Blood Sugar', 'FBS', 'system_seed', 'v1', NOW()),
+('FBS', 'FBS', 'system_seed', 'v1', NOW()),
+('Fasting Glucose', 'FBS', 'system_seed', 'v1', NOW())
+ON CONFLICT (test_variant, version) DO NOTHING;

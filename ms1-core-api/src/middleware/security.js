@@ -64,8 +64,12 @@ const validateUUID = (paramName) => (req, res, next) => {
 // Restrict storage to a safe sub-directory in workspace, generate random secure UUID filenames to prevent path traversal
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    // Save inside the project workspace directory
-    cb(null, path.join(__dirname, '../../uploads/'));
+    const uploadPath = path.join(__dirname, '../../uploads/');
+    const fs = require('fs');
+    if (!fs.existsSync(uploadPath)) {
+      fs.mkdirSync(uploadPath, { recursive: true });
+    }
+    cb(null, uploadPath);
   },
   filename: (req, file, cb) => {
     const uniqueSuffix = crypto.randomUUID();
