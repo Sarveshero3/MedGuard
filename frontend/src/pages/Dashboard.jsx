@@ -146,7 +146,7 @@ export default function Dashboard() {
         {/* Dashboard Header */}
         <div className="mb-12 flex flex-col md:flex-row md:items-end justify-between gap-6">
           <div>
-            <h1 className="font-sans text-4xl font-bold text-slate-900 mb-2">
+            <h1 className="font-sans text-4xl font-bold text-slate-900 mb-2 capitalize">
               Welcome, {user.name}
             </h1>
             <p className="text-sm text-slate-500">
@@ -198,7 +198,10 @@ export default function Dashboard() {
                 className="bg-white border border-slate-200/80 rounded-xl p-8 flex flex-col justify-between h-48 shadow-sm hover:shadow-md hover:border-[#0F766E]/30 transition-all duration-200 cursor-pointer"
               >
                 <div className="flex justify-between items-start">
-                  <span className="material-symbols-outlined text-slate-400 text-3xl">pill</span>
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-[#0F766E] text-2xl">pill</span>
+                    <span className="text-sm font-semibold text-slate-600">Medicines</span>
+                  </div>
                   {loading ? (
                     <Skeleton className="h-10 w-12" />
                   ) : (
@@ -207,6 +210,7 @@ export default function Dashboard() {
                     </span>
                   )}
                 </div>
+
                 <div>
                   <h4 className="text-xs font-bold text-slate-800 uppercase tracking-widest">Active Medicines</h4>
                   <p className="text-xs text-slate-500 mt-1">Current regimen adherence optimal.</p>
@@ -220,9 +224,12 @@ export default function Dashboard() {
               >
                 <div className="absolute inset-0 bg-amber-500 opacity-0 group-hover:opacity-[0.02] transition-opacity duration-300"></div>
                 <div className="flex justify-between items-start relative z-10">
-                  <span className={`material-symbols-outlined text-3xl ${stats.alerts > 0 ? 'text-amber-500' : 'text-slate-400'}`}>
-                    warning
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className={`material-symbols-outlined text-2xl ${stats.alerts > 0 ? 'text-amber-500' : 'text-[#0F766E]'}`}>
+                      warning
+                    </span>
+                    <span className="text-sm font-semibold text-slate-600">Alerts</span>
+                  </div>
                   {loading ? (
                     <Skeleton className="h-10 w-12" />
                   ) : (
@@ -245,7 +252,10 @@ export default function Dashboard() {
                 className="bg-white border border-slate-200/80 rounded-xl p-8 flex flex-col justify-between h-48 shadow-sm hover:shadow-md hover:border-[#0F766E]/30 transition-all duration-200 cursor-pointer"
               >
                 <div className="flex justify-between items-start">
-                  <span className="material-symbols-outlined text-slate-400 text-3xl">calendar_month</span>
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-[#0F766E] text-2xl">calendar_month</span>
+                    <span className="text-sm font-semibold text-slate-600">Visits</span>
+                  </div>
                   {loading ? (
                     <Skeleton className="h-10 w-12" />
                   ) : (

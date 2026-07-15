@@ -1,4 +1,7 @@
 import json
+import shutil
+import tempfile
+import os
 from fastapi import APIRouter, UploadFile, File, Form
 from pydantic import BaseModel
 from typing import List, Dict, Any
@@ -56,13 +59,22 @@ async def extract_prescription(
     except Exception:
         visits_list = []
 
-    state_input = {
-        "photo_path": photo.filename,
-        "filename": photo.filename,
-        "existing_visits": visits_list,
-    }
+    # Write upload to temporary file to allow local file reads by graph nodes
+    suffix = os.path.splitext(photo.filename)[1]
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        shutil.copyfileobj(photo.file, tmp)
+        tmp_path = tmp.name
 
-    result = await prescription_graph.ainvoke(state_input)
+    try:
+        state_input = {
+            "photo_path": tmp_path,
+            "filename": photo.filename,
+            "existing_visits": visits_list,
+        }
+        result = await prescription_graph.ainvoke(state_input)
+    finally:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
 
     return {
         "success": True,
@@ -83,13 +95,22 @@ async def extract_lab_report(
     except Exception:
         visits_list = []
 
-    state_input = {
-        "photo_path": photo.filename,
-        "filename": photo.filename,
-        "existing_visits": visits_list,
-    }
+    # Write upload to temporary file to allow local file reads by graph nodes
+    suffix = os.path.splitext(photo.filename)[1]
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        shutil.copyfileobj(photo.file, tmp)
+        tmp_path = tmp.name
 
-    result = await lab_report_graph.ainvoke(state_input)
+    try:
+        state_input = {
+            "photo_path": tmp_path,
+            "filename": photo.filename,
+            "existing_visits": visits_list,
+        }
+        result = await lab_report_graph.ainvoke(state_input)
+    finally:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
 
     return {
         "success": True,

@@ -16,6 +16,7 @@ langchain-openai==0.2.5
 # ── Image processing ─────────────────────────────────────────
 Pillow==11.0.0
 python-multipart==0.0.12
+pypdf==4.2.0
 
 # ── Linting / Testing ────────────────────────────────────────
 flake8==7.1.1

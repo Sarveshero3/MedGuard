@@ -78,10 +78,10 @@ const storage = multer.diskStorage({
   },
 });
 
-// Multer File Filter: Accept only JPEG/PNG
+// Multer File Filter: Accept JPEG, PNG, and PDF
 const fileFilter = (req, file, cb) => {
-  const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/jpg'];
-  const allowedExtensions = ['.jpg', '.jpeg', '.png'];
+  const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf'];
+  const allowedExtensions = ['.jpg', '.jpeg', '.png', '.pdf'];
   
   const ext = path.extname(file.originalname).toLowerCase();
   const isMimeTypeValid = allowedMimeTypes.includes(file.mimetype);
@@ -91,7 +91,7 @@ const fileFilter = (req, file, cb) => {
     cb(null, true);
   } else {
     logger.warn('FILE_UPLOAD_REJECTED', `Rejected upload of file type ${file.mimetype} with ext ${ext}`, { ip: req.ip });
-    cb(new Error('Invalid file type. Only JPEG and PNG are allowed.'), false);
+    cb(new Error('Invalid file type. Only JPEG, PNG, and PDF are allowed.'), false);
   }
 };
 

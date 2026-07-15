@@ -1,52 +1,59 @@
 import * as React from "react"
-import { cn } from "@/lib/utils"
 
 const Checkbox = React.forwardRef(({ className, checked, onCheckedChange, id, ...props }, ref) => {
-  const [isChecked, setIsChecked] = React.useState(checked || false)
-
-  React.useEffect(() => {
-    if (checked !== undefined) {
-      setIsChecked(checked)
-    }
-  }, [checked])
+  const [internalChecked, setInternalChecked] = React.useState(false)
+  const isControlled = checked !== undefined
+  const isChecked = isControlled ? checked : internalChecked
 
   const handleChange = (e) => {
-    const newChecked = e.target.checked
-    if (checked === undefined) {
-      setIsChecked(newChecked)
-    }
-    if (onCheckedChange) {
-      onCheckedChange(newChecked)
-    }
+    const newVal = e.target.checked
+    if (!isControlled) setInternalChecked(newVal)
+    if (onCheckedChange) onCheckedChange(newVal)
   }
 
   return (
-    <div className="relative flex items-center justify-center">
+    <span className="inline-flex items-center justify-center shrink-0">
+      {/* Hidden native input for form submission + a11y */}
       <input
         type="checkbox"
         id={id}
         checked={isChecked}
         onChange={handleChange}
-        className={cn(
-          "peer h-4 w-4 shrink-0 rounded border border-slate-300 bg-white focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#0F766E] disabled:cursor-not-allowed disabled:opacity-50 appearance-none checked:bg-[#0F766E] checked:border-[#0F766E]",
-          className
-        )}
         ref={ref}
+        className="sr-only"
         {...props}
       />
-      <span className="absolute text-white pointer-events-none opacity-0 peer-checked:opacity-100 transition-opacity duration-150">
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          fill="none"
-          viewBox="0 0 24 24"
-          strokeWidth="3.5"
-          stroke="currentColor"
-          className="w-2.5 h-2.5"
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-        </svg>
-      </span>
-    </div>
+      {/* Visual checkbox — a plain div, no appearance-none tricks */}
+      <label
+        htmlFor={id}
+        className="cursor-pointer"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          width: '16px',
+          height: '16px',
+          borderRadius: '4px',
+          border: isChecked ? '2px solid #0F766E' : '2px solid #cbd5e1',
+          backgroundColor: isChecked ? '#0F766E' : '#ffffff',
+          transition: 'background-color 0.15s, border-color 0.15s',
+          flexShrink: 0,
+        }}
+      >
+        {/* White tick — only rendered when checked so it's never invisible */}
+        {isChecked && (
+          <svg viewBox="0 0 12 10" fill="none" style={{ width: '10px', height: '10px' }}>
+            <path
+              d="M1.5 5l3.5 3.5 5.5-8"
+              stroke="white"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        )}
+      </label>
+    </span>
   )
 })
 Checkbox.displayName = "Checkbox"

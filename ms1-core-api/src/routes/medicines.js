@@ -404,7 +404,7 @@ router.post('/medicines/upload', authenticateUser, enforceConsent('health_data_p
   if (!req.file) {
     return res.status(400).json({
       success: false,
-      error: { code: 'BAD_REQUEST', message: 'photo field containing JPG/PNG is required.' },
+      error: { code: 'BAD_REQUEST', message: 'photo field containing JPG/PNG/PDF is required.' },
     });
   }
 

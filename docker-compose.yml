@@ -41,6 +41,9 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
     ports:
       - "4000:4000"
+    volumes:
+      - ./ms1-core-api:/app
+      - /app/node_modules
     depends_on:
       postgres:
         condition: service_healthy
@@ -65,6 +68,8 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
     ports:
       - "8000:8000"
+    volumes:
+      - ./ms2-agent-service:/app
     depends_on:
       - jaeger
     networks:
@@ -98,6 +103,9 @@ services:
     restart: unless-stopped
     ports:
       - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
     environment:
       VITE_API_BASE_URL: /api
     networks:

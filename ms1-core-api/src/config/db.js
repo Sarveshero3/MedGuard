@@ -52,31 +52,24 @@ const mockPool = {
 const logger = require('../utils/logger');
 
 async function testConnection() {
-  if (pool) {
-    try {
-      const client = await pool.connect();
-      try {
-        await client.query('SELECT NOW()');
-        logger.info('DB_CONNECTED', 'Successfully connected to PostgreSQL database');
-        return true;
-      } finally {
-        client.release();
-      }
-    } catch (err) {
-      logger.warn('DB_CONNECTION_FAILED', `Failed to connect to PostgreSQL database: ${err.message}. Falling back to in-memory mock store.`);
-      pool = null; // Disable pool so all future queries use mockQuery
-      module.exports.pool = mockPool; // Update exported pool reference dynamically
-      return true;
-    }
+  if (!pool) {
+    throw new Error('DATABASE_URL environment variable is missing. PostgreSQL is required.');
   }
-  return true; // Succeeds immediately for mock
+  const client = await pool.connect();
+  try {
+    await client.query('SELECT NOW()');
+    logger.info('DB_CONNECTED', 'Successfully connected to PostgreSQL database');
+    return true;
+  } finally {
+    client.release();
+  }
 }
 
 async function query(text, params = []) {
-  if (pool) {
-    return pool.query(text, params);
+  if (!pool) {
+    throw new Error('PostgreSQL pool not initialized. Run testConnection() first or set DATABASE_URL.');
   }
-  return mockQuery(text, params);
+  return pool.query(text, params);
 }
 
 async function mockQuery(text, params = []) {
