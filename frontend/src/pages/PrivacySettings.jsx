@@ -3,26 +3,25 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import api from '../services/api'
 import { Skeleton } from '../components/ui/skeleton'
-import { MgNavbar } from '../components/MgNavbar'
 
 export default function PrivacySettings() {
   const { user, loading: authLoading, logout } = useAuth()
   const navigate = useNavigate()
-  const [consent, setConsent] = useState(true)
+  const [consentGranted, setConsentGranted] = useState(true)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+
+  // Deletion Modal / Confirm State
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [deleteInput, setDeleteInput] = useState('')
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     if (!authLoading && !user) {
       navigate('/login')
     }
   }, [user, authLoading, navigate])
-  
-  // Deletion Modal / Confirm State
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
-  const [deleteInput, setDeleteInput] = useState('')
-  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     if (!user) return
@@ -32,24 +31,11 @@ export default function PrivacySettings() {
   const fetchConsent = async () => {
     try {
       const res = await api.get('/consent')
-      setConsent(res.data.data.consentGranted)
+      setConsentGranted(res.data.data.consentGranted)
     } catch {
       setError('Failed to fetch consent settings')
     } finally {
       setLoading(false)
-    }
-  }
-
-  const handleConsentToggle = async () => {
-    setError('')
-    setSuccess('')
-    const newConsent = !consent
-    try {
-      await api.put('/consent', { consentGranted: newConsent })
-      setConsent(newConsent)
-      setSuccess(`Consent updated: data processing is now ${newConsent ? 'granted' : 'revoked'}.`)
-    } catch {
-      setError('Failed to update consent settings')
     }
   }
 
@@ -60,7 +46,7 @@ export default function PrivacySettings() {
     setDeleting(true)
     setError('')
     try {
-      await api.delete('/users/me')
+      await api.delete('/auth/delete-account')
       logout()
       navigate('/login')
     } catch (err) {
@@ -72,31 +58,31 @@ export default function PrivacySettings() {
   return (
     <>
       {/* Main Content Area */}
-      <main className="max-w-[1200px] mx-auto px-6 md:px-16 py-16 flex-grow flex flex-col gap-12 w-full animate-fade-in">
+      <main className="max-w-[1200px] mx-auto px-6 md:px-16 py-16 flex-grow flex flex-col gap-12 w-full animate-fade-in text-left">
         
         {/* Page Title */}
-        <section className="max-w-2xl text-left">
-          <h1 className="font-sans text-5xl font-bold text-slate-900 mb-4 animate-[fade_0.3s]">Privacy &amp; Data Management</h1>
+        <section className="max-w-2xl">
+          <h1 className="font-sans text-5xl font-bold text-slate-900 mb-4">Privacy &amp; Data Management</h1>
           <p className="text-sm text-slate-500">
             Manage your consents and control your personal health information with clinical precision.
           </p>
         </section>
 
         {error && (
-          <div className="error-banner p-4 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm text-left">
+          <div className="error-banner p-4 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
             {error}
           </div>
         )}
 
         {success && (
-          <div className="success-banner p-4 rounded-lg bg-green-50 border border-green-200 text-green-700 text-sm text-left">
+          <div className="success-banner p-4 rounded-lg bg-green-50 border border-green-200 text-green-700 text-sm">
             {success}
           </div>
         )}
 
         {/* Bento Grid Layout */}
         {loading ? (
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-6 text-left">
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
             <div className="md:col-span-8 bg-white border border-slate-200 rounded-xl p-8 md:p-10 shadow-sm">
               <Skeleton className="h-10 w-48 mb-6" />
               <Skeleton className="h-40 w-full" />
@@ -106,7 +92,7 @@ export default function PrivacySettings() {
             </div>
           </div>
         ) : (
-          <section className="grid grid-cols-1 md:grid-cols-12 gap-6 text-left">
+          <section className="grid grid-cols-1 md:grid-cols-12 gap-6">
             
             {/* DPDP Consent Card */}
             <div className="md:col-span-8 bg-white border border-slate-200 rounded-xl p-8 md:p-10 shadow-sm">
@@ -118,27 +104,10 @@ export default function PrivacySettings() {
                   </span>
                 </div>
                 
-                {/* Toggle Switch */}
-                <div className="relative inline-block w-12 mr-2 align-middle select-none transition duration-200 ease-in mt-2">
-                  <input 
-                    type="checkbox" 
-                    id="consent-toggle"
-                    checked={consent}
-                    onChange={handleConsentToggle}
-                    className="sr-only"
-                  />
-                  <label 
-                    htmlFor="consent-toggle"
-                    className={`block overflow-hidden h-6 rounded-full cursor-pointer transition-all duration-300 ${
-                      consent ? 'bg-[#0f766e]' : 'bg-slate-300'
-                    }`}
-                  >
-                    <span 
-                      className={`block h-4 w-4 rounded-full bg-white transition-all duration-300 mt-1 ${
-                        consent ? 'translate-x-7' : 'translate-x-1'
-                      }`}
-                    ></span>
-                  </label>
+                {/* Read-only status badge */}
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-lg text-xs font-bold uppercase tracking-wider">
+                  <span className="material-symbols-outlined text-[16px]">check_circle</span>
+                  Consent Active
                 </div>
               </div>
 
@@ -154,7 +123,7 @@ export default function PrivacySettings() {
                   <ul className="list-disc pl-5 space-y-2 text-xs text-slate-600">
                     <li>Continuous drug-drug interaction monitoring.</li>
                     <li>Personalized risk assessments based on your medical history.</li>
-                    <li>You can revoke this consent at any time without losing access to basic features.</li>
+                    <li>Consent is recorded at signup and remains active to protect your treatment profiles. To withdraw consent, you must delete your account.</li>
                   </ul>
                 </div>
               </div>
@@ -249,10 +218,10 @@ export default function PrivacySettings() {
             MedGuard
           </div>
           <div className="flex flex-wrap justify-center gap-6">
-            <Link to="/privacy" className="hover:text-[#0F766E] transition-colors">Privacy Policy</Link>
-            <a className="hover:text-[#0F766E] transition-colors" href="#" onClick={(e) => e.preventDefault()}>Terms of Service</a>
-            <a className="hover:text-[#0F766E] transition-colors" href="#" onClick={(e) => e.preventDefault()}>Clinical Guidelines</a>
-            <a className="hover:text-[#0F766E] transition-colors" href="#" onClick={(e) => e.preventDefault()}>Contact Support</a>
+            <Link to="/privacy-policy" className="hover:text-[#0F766E] transition-colors">Privacy Policy</Link>
+            <Link to="/terms" className="hover:text-[#0F766E] transition-colors">Terms of Service</Link>
+            <Link to="/clinical-guidelines" className="hover:text-[#0F766E] transition-colors">Clinical Guidelines</Link>
+            <Link to="/support" className="hover:text-[#0F766E] transition-colors">Contact Support</Link>
           </div>
           <div className="text-xs text-slate-400 mt-4 md:mt-0">
             © 2026 MedGuard AI. Clinical Excellence in Medication Safety.

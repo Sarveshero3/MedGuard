@@ -15,9 +15,6 @@ export function MgNavbar() {
     { name: 'Calendar', path: '/calendar' },
   ]
   
-  if (user?.role === 'caregiver') {
-    tabs.push({ name: 'Patients', path: '/caregiver' })
-  }
   tabs.push({ name: 'Privacy', path: '/privacy' })
 
   // Find active index

@@ -1,30 +1,44 @@
 # 🛡️ MedGuard
 
-> AI-powered medication safety and visit-preparation platform for chronic-condition patients and their long-distance family caregivers.
+> **MedGuard** is an AI-powered medication safety and visit-preparation platform for chronic-condition patients and their family caregivers. Photograph prescriptions, get automatically warned of dangerous drug interactions, and keep caregivers synchronized in real-time.
 
-Photograph every prescription — get warned before a dangerous drug combination reaches you.
+---
+
+## 🖼️ Application Showcase
+
+Here is a visual walk-through of MedGuard's premium clinical interface:
+
+| 🔐 1. 2-Step Verification (MFA) | 🔍 2. AI Clinical Extraction Review |
+|:---:|:---:|
+| ![MFA Login](docs/screenshots/mfa_screen.png) | ![Extraction Preview](docs/screenshots/extraction_preview.png) |
+| Secure login requiring a 6-digit OTP with a resend utility and input contrast corrections. | Vision LLM extracts brand/generic mapping and dosage instructions with confidence metrics. |
+
+| 📊 3. Unified Patient Dashboard | 💊 4. Active Prescription List |
+|:---:|:---:|
+| ![Dashboard](docs/screenshots/dashboard.png) | ![Medicines List](docs/screenshots/medicines_list.png) |
+| Dynamic overview containing medications, drug interactions, lab reports, and calendar events. | Mapped medication regimen displaying brand names, generic names, and dosage rules. |
 
 ---
 
 ## 🎯 What It Does
 
-1. **Medication Safety**: Upload a prescription photo → AI extracts medicine details → resolves Indian brand names to generics → checks interactions against a curated knowledge base → alerts patient + caregiver in plain language.
-
-2. **Visit Preparation** *(Phase 2)*: Upload lab reports → track trends over time → generate a one-page brief with questions to bring to your next doctor visit.
+1. **AI Prescription Extraction & Safety**: Upload a prescription photo ➜ AI extracts medicine details ➜ resolves Indian brand names to generics ➜ checks interactions against a curated knowledge base ➜ alerts patient + caregiver in plain language.
+2. **Real-Time Asynchronous Pipeline**: Uploads are processed asynchronously via a BullMQ worker queue with real-time progress updates streamed to the frontend via Server-Sent Events (SSE).
+3. **MFA Login & Security**: Multi-factor authentication is enforced at login. Invalid codes can be re-sent directly without resetting forms.
+4. **Caregiver OTP Linking**: Single-use caregiver link codes bind caregivers and patients securely.
+5. **Visit Preparation**: Upload lab reports ➜ track trends over time (elevation check on HbA1c/TSH) ➜ generate briefs with doctor questions.
 
 ---
 
-## 🏗️ Architecture
+## 🏗️ Architecture & Ports
 
-| Service | Tech | Port | Role |
-|---------|------|------|------|
-| **ms1-core-api** | Express.js | 4000 | Auth, DB, deterministic logic, email |
-| **ms2-agent-service** | FastAPI + LangGraph | 8000 | AI extraction, brand resolution, brief generation |
-| **frontend** | React + Vite | 3000 | Patient/caregiver/admin UI |
-| **PostgreSQL** | PostgreSQL 16 | 5432 | System of record |
-| **NGINX** | nginx:alpine | 80 | Reverse proxy, SSL termination |
-
-See [`docs/architecture.md`](docs/architecture.md) for full system diagrams.
+| Service | Technology Stack | Default Port | Role |
+|:---|:---|:---|:---|
+| **ms1-core-api** | Express.js + pg + BullMQ | `4000` | Auth, DB connection, deterministic logic, async queues |
+| **ms2-agent-service** | FastAPI + LangGraph | `8000` | Vision LLM extraction, brand resolution, brief generation |
+| **frontend** | React + Vite + Vanilla CSS | `5173` | Patient & Caregiver web portal |
+| **PostgreSQL** | PostgreSQL 16 | `5432` | System of record |
+| **NGINX** | nginx:alpine | `80` | Reverse proxy and SSL termination |
 
 ---
 
@@ -33,12 +47,10 @@ See [`docs/architecture.md`](docs/architecture.md) for full system diagrams.
 ### Prerequisites
 - [Docker](https://docs.docker.com/get-docker/) & [Docker Compose](https://docs.docker.com/compose/install/)
 - [Node.js 20+](https://nodejs.org/) (for local development)
-- [Python 3.12+](https://python.org/) (for local development)
 
-### Run with Docker (Recommended)
-
+### Boot Services with Docker
 ```bash
-# 1. Clone the repo
+# 1. Clone the repository
 git clone https://github.com/Sarveshero3/MedGuard.git
 cd MedGuard
 
@@ -47,34 +59,24 @@ cp .env.example .env
 
 # 3. Boot all services
 docker-compose up --build
-
-# 4. Open in browser
-# Frontend:  http://localhost:3000
-# API:       http://localhost:4000/api/health
-# Agent:     http://localhost:8000/health
-# NGINX:     http://localhost (routes to frontend + API)
 ```
+Once booted, the reverse proxy exposes the app at `http://localhost`.
 
-### Run Services Individually
+### Run Services Locally for Development
+1. **ms1 — Express Backend**:
+   ```bash
+   cd ms1-core-api
+   npm install
+   npm start
+   ```
+   *Note: If no local PostgreSQL or Redis is running, the backend automatically falls back to an in-memory database store and queue simulation, keeping the SSE streams fully functional.*
 
-```bash
-# ms1 — Express.js
-cd ms1-core-api
-cp .env.example .env
-npm install
-npm run dev
-
-# ms2 — FastAPI
-cd ms2-agent-service
-cp .env.example .env
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
-
-# Frontend — React
-cd frontend
-npm install
-npm run dev
-```
+2. **Frontend — React Client**:
+   ```bash
+   cd frontend
+   npm install
+   npm run dev
+   ```
 
 ---
 
@@ -82,57 +84,36 @@ npm run dev
 
 ```
 MedGuard/
-├── ms1-core-api/          # Express.js backend
-├── ms2-agent-service/     # FastAPI + LangGraph backend
-├── frontend/              # React + Vite SPA
+├── ms1-core-api/          # Express.js backend & BullMQ worker
+├── ms2-agent-service/     # FastAPI + LangGraph assessment graphs
+├── frontend/              # React + Vite client (high-contrast inputs)
 ├── infra/
-│   ├── nginx/             # Reverse proxy config
-│   └── db/                # PostgreSQL schema
-├── docs/                  # Project documentation
-├── skills/                # AI agent skills
-├── docker-compose.yml     # Full stack orchestration
-└── .github/workflows/     # CI pipeline
+│   ├── nginx/             # NGINX reverse proxy configs
+│   └── db/                # PostgreSQL schemas
+├── docs/                  # Project specifications & screenshots
+└── docker-compose.yml     # Container orchestration
 ```
 
 ---
 
-## 📚 Documentation
+## 📚 Technical Documentation
 
-| Document | Description |
-|----------|-------------|
-| [`docs/prd.md`](docs/prd.md) | Product Requirements Document |
-| [`docs/techspec.md`](docs/techspec.md) | Technical Specification |
-| [`docs/architecture.md`](docs/architecture.md) | System Architecture & Diagrams |
-| [`docs/schema.md`](docs/schema.md) | Database Schema |
-| [`docs/design.md`](docs/design.md) | API Contracts & Error Conventions |
-| [`docs/appflow.md`](docs/appflow.md) | End-to-End Application Flow |
-| [`docs/implementation.md`](docs/implementation.md) | MVP Scope & Timeline |
-| [`docs/tracker.md`](docs/tracker.md) | Milestone Tracker |
-| [`docs/rules.md`](docs/rules.md) | Coding Standards |
+- [`docs/prd.md`](docs/prd.md) — Product Requirements Document
+- [`docs/techspec.md`](docs/techspec.md) — Architecture & API specs
+- [`docs/auth.md`](docs/auth.md) — Security & MFA definitions
+- [`docs/schema.md`](docs/schema.md) — Database design & structures
+- [`docs/lessons.md`](docs/lessons.md) — Key design learnings & reviews
 
 ---
 
-## 🔐 Security
-
-- **JWT auth** with role-based access (patient/caregiver/admin)
-- **DPDP-aligned consent** with audit logging and data deletion
-- **Append-only** knowledge bases (DB triggers prevent UPDATE/DELETE)
-- **EXIF stripping** on uploaded photos
-- **Network isolation** — ms2 and PostgreSQL are internal-only
-- **8MB upload limit** enforced at NGINX and Express
-
----
-
-## 🧪 CI/CD
-
-GitHub Actions runs on every push/PR to `main`:
-1. Lint + test ms1 (ESLint, Jest)
-2. Lint ms2 (flake8)
-3. Lint frontend (ESLint)
-4. Docker Compose build validation
+## 🔐 Security & Hardening
+- **MFA (2-Step Verification)** on user logins with secure session tokens.
+- **Single-use Caregiver Link Codes** to enforce private caregiver boundaries.
+- **IDOR Protection** validating patient ownership records before read/write.
+- **Autofill Contrast Correction** fixing low-contrast blurred text in Chrome/Edge browsers.
+- **Rate limiting** and sanitization to prevent injection and brute-force access.
 
 ---
 
 ## 📜 License
-
 [MIT](LICENSE)

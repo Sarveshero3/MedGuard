@@ -5,11 +5,11 @@ MedGuard is an AI-powered medication safety and visit-preparation platform desig
 ## Mandated Technology Stack
 
 The platform is designed as a single GitHub monorepo consisting of:
-- **ms1-core-api**: Express.js microservice handling auth, roles, patient/caregiver linking, medicine list and alert lifecycle, visit records, SES dispatch, and admin dashboard data.
+- **ms1-core-api**: Express.js microservice handling auth, roles, patient/caregiver linking, medicine list and alert lifecycle, visit records, and SES dispatch.
 - **ms2-agent-service**: FastAPI + LangGraph microservice handling image preprocessing, prescription assessment, lab trend, and visit-brief generation graphs. Accessible only internally.
-- **frontend**: React client application for patients, caregivers, and admins.
+- **frontend**: React client application for patients and caregivers.
 - **Database**: PostgreSQL (System of record storing users, links, medicines, brand-to-generic maps, interactions, lab reports, and consent logs).
-- **Authentication**: Custom JWT Auth (patient, caregiver, admin claims).
+- **Authentication**: Custom JWT Auth (patient, caregiver claims).
 - **Email**: AWS SES for confirmation and alert dispatch.
 - **Infrastructure**: AWS EC2 instance running docker-compose, using NGINX as a reverse proxy with Certbot SSL/HTTPS termination.
 - **CI/CD**: GitHub Actions workflows.

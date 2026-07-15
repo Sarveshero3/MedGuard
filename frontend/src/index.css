@@ -3,8 +3,8 @@
 
 :root {
   /* Premium clinical editorial tokens */
-  --mg-ink: #0B1F33;
-  --mg-muted: #5D6B78;
+  --mg-ink: #000000;
+  --mg-muted: #1e293b;
   --mg-accent: #0F766E;
   --mg-accent-hover: #0D6660;
   --mg-surface: #F4F8F8;
@@ -25,6 +25,12 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* Global input text color force for accessibility and contrast */
+input, select, textarea {
+  color: #000000 !important;
+  background-color: #ffffff !important;
 }
 
 body {
@@ -793,5 +799,16 @@ footer .font-display.text-body-lg {
 
 .animate-fade-in {
   animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Autofill overrides to prevent greyed-out text and default blue backgrounds (Step 13) */
+input:-webkit-autofill,
+input:-webkit-autofill:hover, 
+input:-webkit-autofill:focus, 
+input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 1000px #ffffff inset !important;
+  -webkit-text-fill-color: #000000 !important;
+  color: #000000 !important;
+  transition: background-color 5000s ease-in-out 0s;
 }
 

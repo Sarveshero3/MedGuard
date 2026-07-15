@@ -1,52 +1,169 @@
-"""
-Extraction API — placeholder router for prescription and lab report extraction.
-Endpoints will be wired to LangGraph graphs in Milestone 2.
-"""
-
-from fastapi import APIRouter, UploadFile, File
+import json
+from fastapi import APIRouter, UploadFile, File, Form
 from pydantic import BaseModel
+from typing import List, Dict, Any
+
+from app.graphs import (
+    prescription_graph,
+    lab_report_graph,
+    critique_research_graph,
+    brief_writer_graph,
+    qa_graph,
+    trend_explainer_graph,
+)
 
 router = APIRouter()
 
+# ── Pydantic Request Models ───────────────────────────────────
 
-class ExtractionResponse(BaseModel):
-    """Structured extraction result from vision model."""
-    brand_name: str | None = None
-    dosage: str | None = None
-    frequency: str | None = None
-    prescribing_doctor: str | None = None
-    confidence_scores: dict = {}
-    needs_follow_up: bool = False
-    follow_up_question: str | None = None
+
+class ChatRequest(BaseModel):
+    question: str
+    active_medicines: List[Dict[str, Any]] = []
+    interaction_flags: List[Dict[str, Any]] = []
+
+
+class TrendRequest(BaseModel):
+    test_type: str
+    values: List[float]
+    dates: List[str] = []
+
+
+class BriefRequest(BaseModel):
+    active_medicines: List[Dict[str, Any]]
+    interaction_flags: List[Dict[str, Any]]
+    lab_trends: List[Dict[str, Any]]
+    reason_for_visit: str | None = None
+
+
+class InteractionRequest(BaseModel):
+    generic_a: str
+    generic_b: str
+
+# ── Endpoints ─────────────────────────────────────────────────
 
 
 @router.post("/extract/prescription")
-async def extract_prescription(photo: UploadFile = File(...)):
+async def extract_prescription(
+    photo: UploadFile = File(...),
+    existing_visits: str = Form("[]")
+):
     """
-    Accept a prescription photo and return structured extraction.
-    Currently returns a placeholder; will be wired to the
-    Prescription Assessment Graph in Milestone 2.
+    Invokes the Prescription Assessment Graph (OCR+VLM) to parse prescriptions.
     """
+    try:
+        visits_list = json.loads(existing_visits)
+    except Exception:
+        visits_list = []
+
+    state_input = {
+        "photo_path": photo.filename,
+        "filename": photo.filename,
+        "existing_visits": visits_list,
+    }
+
+    result = await prescription_graph.ainvoke(state_input)
+
     return {
         "success": True,
-        "data": {
-            "message": "Extraction endpoint ready — LangGraph integration pending",
-            "filename": photo.filename,
-            "content_type": photo.content_type,
-        },
+        "data": result,
     }
 
 
 @router.post("/extract/lab-report")
-async def extract_lab_report(photo: UploadFile = File(...)):
+async def extract_lab_report(
+    photo: UploadFile = File(...),
+    existing_visits: str = Form("[]")
+):
     """
-    Accept a lab report photo and return extracted values.
-    Placeholder for Lab Report Extraction Graph.
+    Invokes the Lab Report Extraction Graph (OCR+VLM) to parse clinical lab results.
     """
+    try:
+        visits_list = json.loads(existing_visits)
+    except Exception:
+        visits_list = []
+
+    state_input = {
+        "photo_path": photo.filename,
+        "filename": photo.filename,
+        "existing_visits": visits_list,
+    }
+
+    result = await lab_report_graph.ainvoke(state_input)
+
     return {
         "success": True,
-        "data": {
-            "message": "Lab report extraction endpoint ready — LangGraph integration pending",
-            "filename": photo.filename,
-        },
+        "data": result,
+    }
+
+
+@router.post("/chat")
+async def chat_qa(req: ChatRequest):
+    """
+    Invokes the Q&A graph for non-diagnostic queries.
+    """
+    state_input = {
+        "question": req.question,
+        "active_medicines": req.active_medicines,
+        "interaction_flags": req.interaction_flags,
+    }
+    result = await qa_graph.ainvoke(state_input)
+    return {
+        "success": True,
+        "data": result,
+    }
+
+
+@router.post("/explain-trends")
+async def explain_trends_route(req: TrendRequest):
+    """
+    Invokes the Trend Explainer graph for neutral test trends description.
+    """
+    state_input = {
+        "test_type": req.test_type,
+        "values": req.values,
+        "dates": req.dates,
+    }
+    result = await trend_explainer_graph.ainvoke(state_input)
+    return {
+        "success": True,
+        "data": result,
+    }
+
+
+@router.post("/visit-brief")
+async def visit_brief_route(req: BriefRequest):
+    """
+    Invokes the Visit-Brief Writer graph to compile physician discussion summaries.
+    """
+    state_input = {
+        "active_medicines": req.active_medicines,
+        "interaction_flags": req.interaction_flags,
+        "lab_trends": req.lab_trends,
+        "reason_for_visit": req.reason_for_visit,
+    }
+    result = await brief_writer_graph.ainvoke(state_input)
+    return {
+        "success": True,
+        "data": result["brief_output"],
+    }
+
+
+@router.post("/research-interaction")
+async def research_interaction_route(req: InteractionRequest):
+    """
+    Invokes the Critique Interaction Research graph to perform bounded research on drug-drug warnings.
+    """
+    state_input = {
+        "generic_a": req.generic_a,
+        "generic_b": req.generic_b,
+        "critique_iterations": 0,
+        "is_valid": False,
+        "explanation": "",
+        "research_summary": "",
+    }
+    result = await critique_research_graph.ainvoke(state_input)
+    return {
+        "success": True,
+        "data": result,
     }

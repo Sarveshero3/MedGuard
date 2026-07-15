@@ -12,7 +12,7 @@
   - [ ] *Proof It Works*: Stack boots with one command (`docker-compose up --build`); vision model extracts medicine names reliably.
 
 - [ ] **Days 3–4: Core Authentication, Deployment Skeleton & Seed Data**
-  - [x] Implement JWT login/refresh token authentication with `patient`, `caregiver`, and `admin` roles in `ms1`.
+  - [x] Implement JWT login/refresh token authentication with `patient` and `caregiver` roles in `ms1`.
   - [ ] Write deployment shell scripts and configure NGINX reverse-proxy routes with Certbot SSL/TLS.
   - [ ] Configure AWS SES verified domain / sandbox setup.
   - [ ] Seed PostgreSQL with initial subset of 50–150 brand-to-generic mappings and 50–150 interaction pairs.
@@ -33,10 +33,10 @@
   - [x] Wire up real-time SES email alerts for new medicine additions and flagged interactions.
   - [x] *Proof It Works*: Inviting a caregiver produces a working linked account that sees the same alerts and can acknowledge them.
 
-- [ ] **Days 10–11: Admin Review Dashboard & Versioned Editors**
-  - [ ] Implement admin review queue in React dashboard, showing raw photo side-by-side with extracted values.
-  - [ ] Create append-only management interface for brand-to-generic mappings and interaction rules.
-  - [ ] *Proof It Works*: Admin corrects a low-confidence extraction in the dashboard, appending a versioned row, and changes reflect system-wide.
+- [ ] **Days 10–11: Patient Confirm-or-Correct Flow & Versioned Mappings**
+  - [ ] Implement patient confirm-or-correct screen in React dashboard, showing raw photo side-by-side with low-confidence extracted values.
+  - [ ] Create append-only backend trigger/logic to update brand-to-generic mappings and interaction rules when patient corrects.
+  - [ ] *Proof It Works*: Patient corrects a low-confidence brand extraction, appending a versioned row, and changes reflect system-wide.
 
 - [ ] **Day 12: OpenTelemetry Tracing & Telemetry**
   - [ ] Instrument `ms1` and `ms2` with OpenTelemetry.

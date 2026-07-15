@@ -20,12 +20,12 @@ function enforceConsent(consentType = 'health_data_processing') {
       const targetUserId = req.query.patient_id || req.body.patient_id || req.params.patientId || req.user.id;
 
       const consentResult = await query(
-        'SELECT granted_at, revoked_at FROM consent_records WHERE user_id = $1 AND consent_type = $2',
-        [targetUserId, consentType]
+        'SELECT consent_given_at FROM users WHERE id = $1',
+        [targetUserId]
       );
 
-      if (consentResult.rows.length === 0 || !consentResult.rows[0].granted_at || consentResult.rows[0].revoked_at) {
-        logger.warn('INSUFFICIENT_CONSENT', `Blocked action for user ${req.user.id} targeting patient ${targetUserId} due to missing or revoked consent: ${consentType}`);
+      if (consentResult.rows.length === 0 || !consentResult.rows[0].consent_given_at) {
+        logger.warn('INSUFFICIENT_CONSENT', `Blocked action for user ${req.user.id} targeting patient ${targetUserId} due to missing consent`);
         
         return res.status(403).json({
           success: false,
