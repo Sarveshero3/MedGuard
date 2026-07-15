@@ -432,14 +432,14 @@ export default function Upload() {
                   <div className="flex gap-2">
                     <button
                       onClick={triggerFileSelect}
-                      className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1.5 rounded font-semibold flex items-center gap-1 cursor-pointer"
+                      className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1.5 rounded-lg font-semibold flex items-center gap-1 cursor-pointer"
                     >
                       <span className="material-symbols-outlined text-xs">add</span> Add
                     </button>
                     <button
                       onClick={handleUploadAll}
                       disabled={uploadedFiles.every(f => f.status !== 'idle')}
-                      className="text-xs bg-[#0f766e] hover:bg-[#0d645c] disabled:opacity-50 text-white px-2.5 py-1.5 rounded font-semibold flex items-center gap-1 cursor-pointer"
+                      className="text-xs bg-[#0f766e] hover:bg-[#0d645c] disabled:opacity-50 text-white px-2.5 py-1.5 rounded-lg font-semibold flex items-center gap-1 cursor-pointer"
                     >
                       <span className="material-symbols-outlined text-xs">rocket_launch</span> Extract All
                     </button>
@@ -528,14 +528,16 @@ export default function Upload() {
                           </p>
                           <div className="mb-8 w-full max-w-xs text-left mx-auto">
                             <label className="block text-xs font-bold text-slate-500 uppercase mb-2 tracking-wider">Document Type</label>
-                            <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200">
+                            <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
                               <button
                                 type="button"
                                 onClick={() => {
                                   setUploadedFiles(prev => prev.map(f => f.id === activeItem.id ? { ...f, docType: 'prescription' } : f))
                                 }}
-                                className={`flex-1 text-center py-2 text-xs font-bold rounded transition-all cursor-pointer ${
-                                  activeItem.docType === 'prescription' ? 'bg-[#0f766e] text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                                className={`flex-1 text-center py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                                  activeItem.docType === 'prescription'
+                                    ? 'bg-[#0f766e] text-white shadow-sm'
+                                    : 'bg-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
                                 }`}
                               >
                                 Prescription
@@ -545,8 +547,10 @@ export default function Upload() {
                                 onClick={() => {
                                   setUploadedFiles(prev => prev.map(f => f.id === activeItem.id ? { ...f, docType: 'lab_report' } : f))
                                 }}
-                                className={`flex-1 text-center py-2 text-xs font-bold rounded transition-all cursor-pointer ${
-                                  activeItem.docType === 'lab_report' ? 'bg-[#0f766e] text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                                className={`flex-1 text-center py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                                  activeItem.docType === 'lab_report'
+                                    ? 'bg-[#0f766e] text-white shadow-sm'
+                                    : 'bg-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
                                 }`}
                               >
                                 Lab Report
@@ -557,13 +561,13 @@ export default function Upload() {
                           <div className="flex gap-4">
                             <button
                               onClick={() => handleUploadSingle(activeItem.id)}
-                              className="bg-[#0f766e] hover:bg-[#0d645c] text-white font-semibold text-xs px-6 py-2.5 rounded-lg flex items-center gap-1.5 cursor-pointer"
+                              className="bg-[#0f766e] hover:bg-[#0d645c] text-white font-semibold text-xs px-6 py-2.5 rounded-xl flex items-center gap-1.5 cursor-pointer"
                             >
                               <span className="material-symbols-outlined text-xs">rocket_launch</span> Extract Now
                             </button>
                             <button
                               onClick={() => handleSkipToManual(activeItem.id)}
-                              className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2.5 rounded-lg font-semibold cursor-pointer"
+                              className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2.5 rounded-xl font-semibold cursor-pointer"
                             >
                               Skip to Manual Entry
                             </button>
@@ -605,13 +609,13 @@ export default function Upload() {
                           <div className="flex gap-4">
                             <button
                               onClick={() => handleUploadSingle(activeItem.id)}
-                              className="bg-red-600 hover:bg-red-700 text-white font-semibold text-xs px-6 py-2 rounded-lg flex items-center gap-1 cursor-pointer"
+                              className="bg-red-600 hover:bg-red-700 text-white font-semibold text-xs px-6 py-2 rounded-xl flex items-center gap-1 cursor-pointer"
                             >
                               <span className="material-symbols-outlined text-xs">replay</span> Retry Upload
                             </button>
                             <button
                               onClick={() => handleSkipToManual(activeItem.id)}
-                              className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2.5 rounded-lg font-semibold cursor-pointer"
+                              className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2.5 rounded-xl font-semibold cursor-pointer"
                             >
                               Fill Manually
                             </button>
