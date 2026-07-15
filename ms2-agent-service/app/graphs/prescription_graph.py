@@ -49,165 +49,133 @@ def ocr_vlm_extraction_node(state: PrescriptionState) -> Dict[str, Any]:
     filename = state.get("filename", "").lower()
     is_pdf = filename.endswith(".pdf")
     
-    # ── MOCK FALLBACK LOGIC ──────────────────────────────────────────
-    is_low = "low" in filename or "unresolved" in filename or "crocin" in filename
-    
-    mock_data = {
-        "raw_extraction": {
-            "brand_name": "Croc1n" if is_low else "Glycomet",
-            "dosage": "650mg" if is_low else "500mg",
-            "frequency": "Three times daily" if is_low else "Once daily",
-            "prescribing_doctor": "Dr. Ramesh Kumar",
-            "duration_text": "5 days" if is_low else "30 days",
-        },
-        "confidence_scores": {
-            "brand_name": 0.72 if is_low else 0.96,
-            "dosage": 0.88 if is_low else 0.95,
-            "frequency": 0.65 if is_low else 0.92,
-            "prescribing_doctor": 0.92 if is_low else 0.98,
-        },
-        "resolution": {
-            "status": "generic_unresolved" if is_low else "resolved",
-            "generic_name": None if is_low else "Metformin",
-        },
-        "needs_follow_up": is_low,
-        "follow_up_question": "Is the brand name intended to be Crocin?" if is_low else None,
-    }
-
-    if not settings.nvidia_api_key:
-        return mock_data
-
-    try:
-        ocr_text = ""
-        if is_pdf:
-            reader = PdfReader(photo_path)
-            for page in reader.pages:
-                ocr_text += page.extract_text() or ""
-            ocr_text = ocr_text.strip()
-        else:
-            with open(photo_path, "rb") as f:
-                img_b64 = base64.b64encode(f.read()).decode("utf-8")
-            
-            ocr_client = ChatOpenAI(
-                model=settings.ocr_model,
-                api_key=settings.nvidia_api_key,
-                base_url=settings.nvidia_base_url,
-                temperature=0.0
-            )
-            ocr_response = ocr_client.invoke([
-                SystemMessage(content="Perform raw character-level OCR on the uploaded document. Extract all text exactly as written, preserving layout if possible. Do not interpret or summarize."),
-                HumanMessage(content=[
-                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_b64}"}}
-                ])
-            ])
-            ocr_text = ocr_response.content.strip()
-
-        orchestrator = ChatOpenAI(
-            model=settings.orchestrator_model,
+    ocr_text = ""
+    if is_pdf:
+        reader = PdfReader(photo_path)
+        for page in reader.pages:
+            ocr_text += page.extract_text() or ""
+        ocr_text = ocr_text.strip()
+    else:
+        with open(photo_path, "rb") as f:
+            img_b64 = base64.b64encode(f.read()).decode("utf-8")
+        
+        ocr_client = ChatOpenAI(
+            model=settings.ocr_model,
             api_key=settings.nvidia_api_key,
             base_url=settings.nvidia_base_url,
             temperature=0.0
         )
-        
-        prompt = """
-        Extract medicine details from the raw OCR text. Return a JSON object with:
-        - brand_name: string or null
-        - dosage: string or null
-        - frequency: string or null
-        - prescribing_doctor: string or null
-        - duration_text: string or null
-
-        Return ONLY the raw JSON object. Do not include markdown code block formatting.
-        """
-        
-        struct_a_res = orchestrator.invoke([
-            SystemMessage(content=prompt),
-            HumanMessage(content=f"Raw OCR text:\n\n{ocr_text}")
+        ocr_response = ocr_client.invoke([
+            SystemMessage(content="Perform raw character-level OCR on the uploaded document. Extract all text exactly as written, preserving layout if possible. Do not interpret or summarize."),
+            HumanMessage(content=[
+                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_b64}"}}
+            ])
         ])
-        structured_a = parse_json_safely(struct_a_res.content)
+        ocr_text = ocr_response.content.strip()
 
-        disambiguate_client = ChatOpenAI(
-            model=settings.disambiguation_model,
-            api_key=settings.nvidia_api_key,
-            base_url=settings.nvidia_base_url,
-            temperature=0.0
-        )
-        
-        if is_pdf:
-            struct_b_res = disambiguate_client.invoke([
-                SystemMessage(content=prompt),
-                HumanMessage(content=f"Document text:\n\n{ocr_text}")
+    orchestrator = ChatOpenAI(
+        model=settings.orchestrator_model,
+        api_key=settings.nvidia_api_key,
+        base_url=settings.nvidia_base_url,
+        temperature=0.0
+    )
+    
+    prompt = """
+    Extract medicine details from the raw OCR text. Return a JSON object with:
+    - brand_name: string or null
+    - dosage: string or null
+    - frequency: string or null
+    - prescribing_doctor: string or null
+    - duration_text: string or null
+
+    Return ONLY the raw JSON object. Do not include markdown code block formatting.
+    """
+    
+    struct_a_res = orchestrator.invoke([
+        SystemMessage(content=prompt),
+        HumanMessage(content=f"Raw OCR text:\n\n{ocr_text}")
+    ])
+    structured_a = parse_json_safely(struct_a_res.content)
+
+    disambiguate_client = ChatOpenAI(
+        model=settings.disambiguation_model,
+        api_key=settings.nvidia_api_key,
+        base_url=settings.nvidia_base_url,
+        temperature=0.0
+    )
+    
+    if is_pdf:
+        struct_b_res = disambiguate_client.invoke([
+            SystemMessage(content=prompt),
+            HumanMessage(content=f"Document text:\n\n{ocr_text}")
+        ])
+    else:
+        with open(photo_path, "rb") as f:
+            img_b64 = base64.b64encode(f.read()).decode("utf-8")
+        struct_b_res = disambiguate_client.invoke([
+            SystemMessage(content=prompt),
+            HumanMessage(content=[
+                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_b64}"}}
             ])
-        else:
-            with open(photo_path, "rb") as f:
-                img_b64 = base64.b64encode(f.read()).decode("utf-8")
-            struct_b_res = disambiguate_client.invoke([
-                SystemMessage(content=prompt),
-                HumanMessage(content=[
-                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_b64}"}}
-                ])
-            ])
-        structured_b = parse_json_safely(struct_b_res.content)
+        ])
+    structured_b = parse_json_safely(struct_b_res.content)
 
-        fields = ["brand_name", "dosage", "frequency"]
-        mismatch_fields = []
+    fields = ["brand_name", "dosage", "frequency"]
+    mismatch_fields = []
+    
+    def clean_str(val):
+        if not val:
+            return ""
+        return str(val).strip().lower().replace(" ", "")
+
+    for fld in fields:
+        val_a = structured_a.get(fld)
+        val_b = structured_b.get(fld)
+        if clean_str(val_a) != clean_str(val_b):
+            mismatch_fields.append(fld)
+
+    if mismatch_fields:
+        brand_a = structured_a.get("brand_name") or "Unknown"
+        brand_b = structured_b.get("brand_name") or "Unknown"
+        follow_up_question = f"Model disagreement detected on {', '.join(mismatch_fields)}. Model A extracted '{brand_a}' and Model B extracted '{brand_b}'. Please confirm correct values."
         
-        def clean_str(val):
-            if not val:
-                return ""
-            return str(val).strip().lower().replace(" ", "")
-
-        for fld in fields:
-            val_a = structured_a.get(fld)
-            val_b = structured_b.get(fld)
-            if clean_str(val_a) != clean_str(val_b):
-                mismatch_fields.append(fld)
-
-        if mismatch_fields:
-            brand_a = structured_a.get("brand_name") or "Unknown"
-            brand_b = structured_b.get("brand_name") or "Unknown"
-            follow_up_question = f"Model disagreement detected on {', '.join(mismatch_fields)}. Model A extracted '{brand_a}' and Model B extracted '{brand_b}'. Please confirm correct values."
-            
-            return {
-                "raw_extraction": {
-                    "brand_name": structured_b.get("brand_name") or structured_a.get("brand_name"),
-                    "dosage": structured_b.get("dosage") or structured_a.get("dosage"),
-                    "frequency": structured_b.get("frequency") or structured_a.get("frequency"),
-                    "prescribing_doctor": structured_b.get("prescribing_doctor") or structured_a.get("prescribing_doctor"),
-                    "duration_text": structured_b.get("duration_text") or structured_a.get("duration_text"),
-                },
-                "confidence_scores": {
-                    "brand_name": 0.70 if "brand_name" in mismatch_fields else 0.95,
-                    "dosage": 0.70 if "dosage" in mismatch_fields else 0.95,
-                    "frequency": 0.70 if "frequency" in mismatch_fields else 0.95,
-                    "prescribing_doctor": 0.95,
-                },
-                "resolution": {
-                    "status": "generic_unresolved",
-                    "generic_name": None,
-                },
-                "needs_follow_up": True,
-                "follow_up_question": follow_up_question,
-            }
-        else:
-            return {
-                "raw_extraction": structured_b,
-                "confidence_scores": {
-                    "brand_name": 0.96,
-                    "dosage": 0.95,
-                    "frequency": 0.92,
-                    "prescribing_doctor": 0.98,
-                },
-                "resolution": {
-                    "status": "resolved",
-                    "generic_name": "Metformin" if "glycomet" in clean_str(structured_b.get("brand_name")) else None,
-                },
-                "needs_follow_up": False,
-                "follow_up_question": None,
-            }
-
-    except Exception as e:
-        return mock_data
+        return {
+            "raw_extraction": {
+                "brand_name": structured_b.get("brand_name") or structured_a.get("brand_name"),
+                "dosage": structured_b.get("dosage") or structured_a.get("dosage"),
+                "frequency": structured_b.get("frequency") or structured_a.get("frequency"),
+                "prescribing_doctor": structured_b.get("prescribing_doctor") or structured_a.get("prescribing_doctor"),
+                "duration_text": structured_b.get("duration_text") or structured_a.get("duration_text"),
+            },
+            "confidence_scores": {
+                "brand_name": 0.70 if "brand_name" in mismatch_fields else 0.95,
+                "dosage": 0.70 if "dosage" in mismatch_fields else 0.95,
+                "frequency": 0.70 if "frequency" in mismatch_fields else 0.95,
+                "prescribing_doctor": 0.95,
+            },
+            "resolution": {
+                "status": "generic_unresolved",
+                "generic_name": None,
+            },
+            "needs_follow_up": True,
+            "follow_up_question": follow_up_question,
+        }
+    else:
+        return {
+            "raw_extraction": structured_b,
+            "confidence_scores": {
+                "brand_name": 0.96,
+                "dosage": 0.95,
+                "frequency": 0.92,
+                "prescribing_doctor": 0.98,
+            },
+            "resolution": {
+                "status": "resolved",
+                "generic_name": "Metformin" if "glycomet" in clean_str(structured_b.get("brand_name")) else None,
+            },
+            "needs_follow_up": False,
+            "follow_up_question": None,
+        }
 
 
 def proximity_auto_link_node(state: PrescriptionState) -> Dict[str, Any]:

@@ -507,4 +507,34 @@ router.post('/medicines/upload', authenticateUser, enforceConsent('health_data_p
   }
 });
 
+router.get('/check-interaction', async (req, res, next) => {
+  try {
+    const { generic_a, generic_b } = req.query;
+    if (!generic_a || !generic_b) {
+      return res.status(400).json({
+        success: false,
+        error: 'Both generic_a and generic_b query parameters are required.'
+      });
+    }
+    const genA = generic_a.trim().toLowerCase();
+    const genB = generic_b.trim().toLowerCase();
+    const sorted = [genA, genB].sort();
+    
+    const dbRes = await query(
+      `SELECT id, generic_a, generic_b, severity, explanation, version 
+       FROM interaction_kb 
+       WHERE (LOWER(generic_a) = $1 AND LOWER(generic_b) = $2)
+       ORDER BY effective_date DESC LIMIT 1`,
+      [sorted[0], sorted[1]]
+    );
+    res.json({
+      success: true,
+      exists: dbRes.rows.length > 0,
+      interaction: dbRes.rows[0] || null
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 module.exports = router;
