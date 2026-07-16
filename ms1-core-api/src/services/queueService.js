@@ -1,7 +1,7 @@
 const { Queue, Worker } = require('bullmq');
 const redisConnection = require('../config/redis');
 const logger = require('../utils/logger');
-const { extractPrescription, extractLabReport } = require('./visionService');
+const { extractDocument, extractPrescription, extractLabReport } = require('./visionService');
 const fs = require('fs');
 
 // Map to hold active Server-Sent Events (SSE) connections
@@ -24,7 +24,9 @@ if (redisConnection.isMock) {
         
         try {
           let result;
-          if (data.type === 'prescription') {
+          if (data.type === 'auto') {
+            result = await extractDocument(data.filePath, data.fileName, data.visitsContext);
+          } else if (data.type === 'prescription') {
             result = await extractPrescription(data.filePath, data.fileName, data.visitsContext);
           } else {
             result = await extractLabReport(data.filePath, data.fileName, data.visitsContext);
@@ -86,7 +88,9 @@ if (redisConnection.isMock) {
 
       try {
         let result;
-        if (type === 'prescription') {
+        if (type === 'auto') {
+          result = await extractDocument(filePath, fileName, visitsContext);
+        } else if (type === 'prescription') {
           result = await extractPrescription(filePath, fileName, visitsContext);
         } else {
           result = await extractLabReport(filePath, fileName, visitsContext);

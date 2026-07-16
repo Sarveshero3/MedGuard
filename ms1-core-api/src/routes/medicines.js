@@ -394,9 +394,110 @@ router.delete('/medicines/:id', authenticateUser, validateUUID('id'), enforceCon
 });
 
 /**
- * POST /api/medicines/upload
- * Secure prescription upload endpoint. Checks file properties and sends request internally to ms2.
+ * POST /api/documents/upload
+ * Unified document upload endpoint. Accepts any image/PDF, hashes it,
+ * checks Redis for idempotency, and queues it with job type 'auto'.
  */
+router.post('/documents/upload', authenticateUser, enforceConsent('health_data_processing'), enforceEmailVerified, uploadLimiter, upload.single('photo'), async (req, res, next) => {
+  if (!req.file) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'BAD_REQUEST', message: 'photo field containing JPG/PNG/PDF is required.' },
+    });
+  }
+
+  const patientId = req.body.patient_id;
+  if (!patientId) {
+    fs.unlinkSync(req.file.path);
+    return res.status(400).json({
+      success: false,
+      error: { code: 'BAD_REQUEST', message: 'patient_id is required.' },
+    });
+  }
+
+  try {
+    const isAuthorized = await verifyPatientAccess(req, patientId, 'full_view');
+    if (!isAuthorized) {
+      fs.unlinkSync(req.file.path);
+      return res.status(403).json({
+        success: false,
+        error: { code: 'FORBIDDEN', message: 'Access denied. Unauthorized resource access.' },
+      });
+    }
+
+    const visitsResult = await query(
+      'SELECT id, scheduled_date, doctor_name, specialty, disease_type FROM visits WHERE patient_id = $1',
+      [patientId]
+    );
+
+    const crypto = require('crypto');
+    const fileBuffer = fs.readFileSync(req.file.path);
+    const fileHash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
+    const idempotencyKey = `idempotency:file:${fileHash}`;
+
+    const redisConnection = require('../config/redis');
+    try {
+      const cachedJobId = await redisConnection.get(idempotencyKey);
+      if (cachedJobId) {
+        logger.info('IDEMPOTENT_UPLOAD_HIT', `Duplicate upload detected. Mapping to existing job ${cachedJobId}`);
+        fs.unlinkSync(req.file.path);
+        return res.status(202).json({
+          success: true,
+          data: {
+            jobId: cachedJobId,
+            message: 'Document analysis job already queued.',
+          },
+        });
+      }
+    } catch (err) {
+      logger.warn('IDEMPOTENCY_CHECK_FAILED', `Failed to check idempotency key in Redis: ${err.message}`);
+    }
+
+    logger.info('QUEUE_EXTRACTION_JOB', `Enqueuing document auto-extraction job for patient ${patientId}`);
+
+    const traceId = crypto.randomBytes(16).toString('hex');
+    const spanId = crypto.randomBytes(8).toString('hex');
+    const traceparent = `00-${traceId}-${spanId}-01`;
+
+    const job = await extractionQueue.add('extract', {
+      type: 'auto',
+      filePath: req.file.path,
+      fileName: req.file.originalname || req.file.filename,
+      patientId,
+      visitsContext: visitsResult.rows,
+      _traceparent: traceparent,
+    });
+
+    try {
+      await redisConnection.setex(idempotencyKey, 3600, job.id);
+    } catch (err) {
+      logger.warn('IDEMPOTENCY_SET_FAILED', `Failed to set idempotency key in Redis: ${err.message}`);
+    }
+
+    res.status(202).json({
+      success: true,
+      data: {
+        jobId: job.id,
+        message: 'Document analysis job queued.',
+      },
+    });
+
+  } catch (err) {
+    if (req.file && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
+    logger.error('DOCUMENT_UPLOAD_ERROR', `Error processing document upload: ${err.message}`);
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Failed to enqueue extraction job.',
+        details: [err.message],
+      },
+    });
+  }
+});
+
 const { extractPrescription } = require('../services/visionService');
 router.post('/medicines/upload', authenticateUser, enforceConsent('health_data_processing'), enforceEmailVerified, uploadLimiter, upload.single('photo'), async (req, res, next) => {
   // Multer runs first and populates req.file and req.body.patient_id.

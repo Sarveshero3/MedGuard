@@ -2,9 +2,14 @@ import json
 import shutil
 import tempfile
 import os
+import base64
 from fastapi import APIRouter, UploadFile, File, Form
 from pydantic import BaseModel
 from typing import List, Dict, Any
+from pypdf import PdfReader
+from langchain_openai import ChatOpenAI
+from langchain_core.messages import HumanMessage, SystemMessage
+from app.config import settings
 
 from app.graphs import (
     prescription_graph,
@@ -44,6 +49,145 @@ class InteractionRequest(BaseModel):
     generic_b: str
 
 # ── Endpoints ─────────────────────────────────────────────────
+
+
+def _extract_text_from_file(file_path: str, filename: str) -> str:
+    """Extract raw text from a file using pypdf for PDFs or NVIDIA OCR for images."""
+    is_pdf = filename.lower().endswith(".pdf")
+    if is_pdf:
+        reader = PdfReader(file_path)
+        text = ""
+        for page in reader.pages:
+            text += page.extract_text() or ""
+        return text.strip()
+    else:
+        with open(file_path, "rb") as f:
+            img_b64 = base64.b64encode(f.read()).decode("utf-8")
+        ocr_client = ChatOpenAI(
+            model=settings.ocr_model,
+            api_key=settings.nvidia_api_key,
+            base_url=settings.nvidia_base_url,
+            temperature=0.0
+        )
+        ocr_response = ocr_client.invoke([
+            SystemMessage(content="Perform raw character-level OCR on the uploaded document. Extract all text exactly as written, preserving layout if possible. Do not interpret or summarize."),
+            HumanMessage(content=[
+                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_b64}"}}
+            ])
+        ])
+        return ocr_response.content.strip()
+
+
+@router.post("/extract/document")
+async def extract_document(
+    photo: UploadFile = File(...),
+    existing_visits: str = Form("[]")
+):
+    """
+    Unified document extraction endpoint.
+    1. Extracts raw text via OCR/pypdf.
+    2. Classifies the document as 'prescription' or 'lab_report' with a confidence score.
+    3. Routes to the correct extraction graph.
+    4. Returns docType, classification_confidence, and extracted data.
+       If classification_confidence < 0.80, sets needs_classification_confirmation = True.
+    """
+    try:
+        visits_list = json.loads(existing_visits)
+    except Exception:
+        visits_list = []
+
+    suffix = os.path.splitext(photo.filename)[1]
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        shutil.copyfileobj(photo.file, tmp)
+        tmp_path = tmp.name
+
+    try:
+        # Step 1: Extract raw text
+        raw_text = _extract_text_from_file(tmp_path, photo.filename)
+
+        # Step 2: Classify using the orchestrator model
+        classifier = ChatOpenAI(
+            model=settings.orchestrator_model,
+            api_key=settings.nvidia_api_key,
+            base_url=settings.nvidia_base_url,
+            temperature=0.0
+        )
+        classify_prompt = """You are a medical document classifier. Given the text extracted from a medical document, classify it as either "prescription" or "lab_report".
+
+A prescription typically contains:
+- Doctor/physician name, patient name
+- Medicine/drug names, dosages, frequencies
+- Directions like "Take twice daily", "After meals"
+
+A lab report typically contains:
+- Test names (e.g. HbA1c, TSH, CBC, Lipid Panel)
+- Numerical values with units (e.g. 7.2%, 3.4 uIU/mL)
+- Reference ranges, panel names
+
+Return ONLY a JSON object with:
+- "doc_type": "prescription" or "lab_report"
+- "confidence": a float between 0.0 and 1.0 indicating how certain you are
+- "reasoning": a brief one-sentence explanation
+
+Do not include markdown formatting. Return only the raw JSON object."""
+
+        classify_res = classifier.invoke([
+            SystemMessage(content=classify_prompt),
+            HumanMessage(content=f"Document text:\n\n{raw_text[:4000]}")
+        ])
+
+        # Parse classification result
+        classify_text = classify_res.content.strip()
+        if classify_text.startswith("```"):
+            lines = classify_text.split("\n")
+            if lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines[-1].startswith("```"):
+                lines = lines[:-1]
+            classify_text = "\n".join(lines).strip()
+        try:
+            classification = json.loads(classify_text)
+        except Exception:
+            start = classify_text.find("{")
+            end = classify_text.rfind("}")
+            if start != -1 and end != -1:
+                try:
+                    classification = json.loads(classify_text[start:end+1])
+                except Exception:
+                    classification = {"doc_type": "prescription", "confidence": 0.5, "reasoning": "Parse failed, defaulting"}
+            else:
+                classification = {"doc_type": "prescription", "confidence": 0.5, "reasoning": "Parse failed, defaulting"}
+
+        doc_type = classification.get("doc_type", "prescription")
+        classification_confidence = float(classification.get("confidence", 0.5))
+        needs_confirmation = classification_confidence < 0.80
+
+        # Step 3: Route to the correct graph
+        state_input = {
+            "photo_path": tmp_path,
+            "filename": photo.filename,
+            "existing_visits": visits_list,
+        }
+
+        if doc_type == "lab_report":
+            result = await lab_report_graph.ainvoke(state_input)
+        else:
+            result = await prescription_graph.ainvoke(state_input)
+
+    finally:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+
+    return {
+        "success": True,
+        "data": {
+            "docType": doc_type,
+            "classification_confidence": classification_confidence,
+            "classification_reasoning": classification.get("reasoning", ""),
+            "needs_classification_confirmation": needs_confirmation,
+            **result,
+        },
+    }
 
 
 @router.post("/extract/prescription")
