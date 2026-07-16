@@ -148,9 +148,9 @@ router.post('/medicines', authenticateUser, enforcePatientAccess('full_view'), e
         finalResolutionStatus = resolution_status;
       }
 
-      // Find existing active medicines for this patient to check interactions
+      // Lock existing active medicines for this patient to prevent concurrent races
       const existingMedsRes = await client.query(
-        "SELECT id, generic_name FROM medicines WHERE patient_id = $1 AND status = 'active'",
+        "SELECT id, generic_name FROM medicines WHERE patient_id = $1 AND status = 'active' FOR UPDATE",
         [patient_id]
       );
       const existingMeds = existingMedsRes.rows;
@@ -253,13 +253,17 @@ router.post('/medicines', authenticateUser, enforcePatientAccess('full_view'), e
         })();
       }
 
-      // Fetch patient and caregiver emails for notification
+      await client.query('COMMIT');
+
+      // === Side effects run AFTER successful COMMIT ===
+
+      // Send alert emails outside the transaction
       if (flaggedInteractions.length > 0) {
         const { sendEmail } = require('../utils/email');
-        const patientEmailRes = await client.query("SELECT email, name FROM users WHERE id = $1", [patient_id]);
+        const patientEmailRes = await query("SELECT email, name FROM users WHERE id = $1", [patient_id]);
         const patient = patientEmailRes.rows[0];
 
-        const caregiversRes = await client.query(
+        const caregiversRes = await query(
           `SELECT u.email, u.name FROM caregiver_links cl
            JOIN users u ON cl.caregiver_id = u.id
            WHERE cl.patient_id = $1 AND cl.status = 'active'`,
@@ -290,8 +294,6 @@ The MedGuard Team`;
           await sendEmail({ to: cg.email, subject: alertSubject, body: alertBody });
         }
       }
-
-      await client.query('COMMIT');
 
       logger.audit('MEDICINE_CREATED', `User ${req.user.id} manually created medicine ${newMed.id} for patient ${patient_id}`, {
         userId: req.user.id,

@@ -238,13 +238,27 @@ CREATE TRIGGER trg_test_normalization_no_delete
     EXECUTE FUNCTION prevent_mutation();
 
 -- ─────────────────────────────────────────────────────────────
+-- 12. refresh_tokens (for JWT refresh token rotation)
+-- ─────────────────────────────────────────────────────────────
+CREATE TABLE refresh_tokens (
+    id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id    UUID             NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token_hash VARCHAR(255)     NOT NULL UNIQUE,
+    expires_at TIMESTAMPTZ      NOT NULL,
+    revoked_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ      NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_refresh_tokens_user ON refresh_tokens(user_id);
+CREATE INDEX idx_refresh_tokens_hash ON refresh_tokens(token_hash);
+
+-- ─────────────────────────────────────────────────────────────
 -- Schema version tracking
 -- ─────────────────────────────────────────────────────────────
 CREATE TABLE schema_migrations (
     version    VARCHAR(20) PRIMARY KEY,
     applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-INSERT INTO schema_migrations (version) VALUES ('v2.0.0');
+INSERT INTO schema_migrations (version) VALUES ('v2.1.0');
 
 -- ─────────────────────────────────────────────────────────────
 -- Seed Data Mappings & Interactions & Normalization

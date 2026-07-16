@@ -9,6 +9,57 @@ const { authLimiter, registerLimiter } = require('../middleware/rateLimiter');
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'change-me-to-a-random-64-char-string';
+const JWT_ACCESS_TTL = process.env.JWT_ACCESS_TTL || '15m';
+const JWT_REFRESH_TTL = process.env.JWT_REFRESH_TTL || '7d';
+
+/**
+ * Parses a duration string (e.g. '15m', '7d', '1h') into milliseconds.
+ * Supports s(econds), m(inutes), h(ours), d(ays).
+ * Falls back to 7 days if the format is unrecognized.
+ */
+function parseDurationToMs(duration) {
+  const match = duration.match(/^(\d+)([smhd])$/);
+  if (!match) return 7 * 24 * 60 * 60 * 1000;
+  const value = parseInt(match[1], 10);
+  const unit = match[2];
+  switch (unit) {
+    case 's': return value * 1000;
+    case 'm': return value * 60 * 1000;
+    case 'h': return value * 60 * 60 * 1000;
+    case 'd': return value * 24 * 60 * 60 * 1000;
+    default: return 7 * 24 * 60 * 60 * 1000;
+  }
+}
+
+/**
+ * Issues an access token + refresh token pair and stores the refresh token hash in the database.
+ * Returns { accessToken, refreshToken }.
+ */
+async function issueTokenPair(user, dbClient) {
+  const accessToken = jwt.sign(
+    { sub: user.id, userId: user.id, email: user.email, role: user.role, name: user.name },
+    JWT_SECRET,
+    { expiresIn: JWT_ACCESS_TTL }
+  );
+
+  const jti = crypto.randomUUID();
+  const refreshToken = jwt.sign(
+    { userId: user.id, jti },
+    JWT_SECRET,
+    { expiresIn: JWT_REFRESH_TTL }
+  );
+
+  const tokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
+  const expiresAt = new Date(Date.now() + parseDurationToMs(JWT_REFRESH_TTL));
+
+  const queryFn = dbClient ? dbClient.query.bind(dbClient) : query;
+  await queryFn(
+    `INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)`,
+    [user.id, tokenHash, expiresAt]
+  );
+
+  return { accessToken, refreshToken };
+}
 
 /**
  * POST /api/auth/register
@@ -100,6 +151,9 @@ router.post('/auth/register', registerLimiter, sanitizeInput, validateBody('regi
         await client.query(linkInsertQuery, [linkedPatientId, newUser.id]);
       }
 
+      // Issue token pair (access + refresh) within the same transaction
+      const { accessToken, refreshToken } = await issueTokenPair(newUser, client);
+
       await client.query('COMMIT');
 
       logger.audit('USER_REGISTERED', `Successfully registered user ${newUser.id} with role ${newUser.role}`, {
@@ -118,17 +172,11 @@ router.post('/auth/register', registerLimiter, sanitizeInput, validateBody('regi
         });
       }
 
-      // Generate JWT Token (1 hour validity)
-      const token = jwt.sign(
-        { sub: newUser.id, userId: newUser.id, email: newUser.email, role: newUser.role, name: newUser.name },
-        JWT_SECRET,
-        { expiresIn: '1h' }
-      );
-
       res.status(201).json({
         success: true,
         data: {
-          token,
+          accessToken,
+          refreshToken,
           user: {
             id: newUser.id,
             name: newUser.name,
@@ -280,17 +328,14 @@ router.post('/auth/verify-mfa', sanitizeInput, async (req, res, next) => {
 
     logger.audit('LOGIN_SUCCESS', `User ${user.id} logged in successfully via MFA`, { userId: user.id, role: user.role });
 
-    // Generate permanent JWT Token (1 hour validity)
-    const token = jwt.sign(
-      { sub: user.id, userId: user.id, email: user.email, role: user.role, name: user.name },
-      JWT_SECRET,
-      { expiresIn: '1h' }
-    );
+    // Issue token pair (access + refresh)
+    const { accessToken, refreshToken } = await issueTokenPair(user);
 
     res.json({
       success: true,
       data: {
-        token,
+        accessToken,
+        refreshToken,
         user: {
           id: user.id,
           name: user.name,
@@ -303,6 +348,142 @@ router.post('/auth/verify-mfa', sanitizeInput, async (req, res, next) => {
 
   } catch (err) {
     logger.error('MFA_VERIFICATION_ERROR', `Error during MFA verification: ${err.message}`);
+    next(err);
+  }
+});
+
+/**
+ * POST /api/auth/refresh
+ * Rotate refresh token and issue a new access + refresh token pair.
+ * Uses database transaction with FOR UPDATE locking to prevent racing rotations.
+ */
+router.post('/auth/refresh', async (req, res, next) => {
+  const { refreshToken } = req.body;
+
+  if (!refreshToken) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'BAD_REQUEST', message: 'refreshToken is required.' },
+    });
+  }
+
+  try {
+    // Verify JWT signature and expiry
+    let decoded;
+    try {
+      decoded = jwt.verify(refreshToken, JWT_SECRET);
+    } catch (err) {
+      return res.status(401).json({
+        success: false,
+        error: { code: 'UNAUTHORIZED', message: 'Refresh token is invalid or expired.' },
+      });
+    }
+
+    const tokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
+    const client = await require('../config/db').pool.connect();
+
+    try {
+      await client.query('BEGIN');
+
+      // Lock the token row to prevent concurrent rotation races
+      const tokenResult = await client.query(
+        `SELECT id, user_id, revoked_at FROM refresh_tokens
+         WHERE token_hash = $1 AND expires_at > NOW()
+         FOR UPDATE`,
+        [tokenHash]
+      );
+
+      if (tokenResult.rows.length === 0 || tokenResult.rows[0].revoked_at) {
+        await client.query('ROLLBACK');
+        return res.status(401).json({
+          success: false,
+          error: { code: 'UNAUTHORIZED', message: 'Refresh token is invalid, expired, or already revoked.' },
+        });
+      }
+
+      const tokenRow = tokenResult.rows[0];
+
+      // Revoke the old refresh token
+      await client.query(
+        'UPDATE refresh_tokens SET revoked_at = NOW() WHERE id = $1',
+        [tokenRow.id]
+      );
+
+      // Fetch user details for new token claims
+      const userResult = await client.query(
+        'SELECT id, name, email, role FROM users WHERE id = $1',
+        [tokenRow.user_id]
+      );
+
+      if (userResult.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(401).json({
+          success: false,
+          error: { code: 'UNAUTHORIZED', message: 'User not found.' },
+        });
+      }
+
+      const user = userResult.rows[0];
+
+      // Issue new token pair within the same transaction
+      const { accessToken, refreshToken: newRefreshToken } = await issueTokenPair(user, client);
+
+      await client.query('COMMIT');
+
+      logger.info('TOKEN_REFRESHED', `Successfully rotated refresh token for user ${user.id}`, { userId: user.id });
+
+      res.json({
+        success: true,
+        data: {
+          accessToken,
+          refreshToken: newRefreshToken,
+        },
+      });
+
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+
+  } catch (err) {
+    logger.error('TOKEN_REFRESH_ERROR', `Error during token refresh: ${err.message}`);
+    next(err);
+  }
+});
+
+/**
+ * POST /api/auth/logout
+ * Revokes the refresh token on the server side.
+ */
+router.post('/auth/logout', async (req, res, next) => {
+  const { refreshToken } = req.body;
+
+  if (!refreshToken) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'BAD_REQUEST', message: 'refreshToken is required.' },
+    });
+  }
+
+  try {
+    const tokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
+
+    await query(
+      'UPDATE refresh_tokens SET revoked_at = NOW() WHERE token_hash = $1 AND revoked_at IS NULL',
+      [tokenHash]
+    );
+
+    logger.info('LOGOUT_SUCCESS', 'Refresh token revoked successfully');
+
+    res.json({
+      success: true,
+      data: { message: 'Logged out successfully.' },
+    });
+
+  } catch (err) {
+    logger.error('LOGOUT_ERROR', `Error during logout: ${err.message}`);
     next(err);
   }
 });

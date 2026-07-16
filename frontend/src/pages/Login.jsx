@@ -39,7 +39,7 @@ export default function Login() {
           mfaToken: mfaToken,
           otp: mfaOtp,
         })
-        login(res.data.data.token)
+        login(res.data.data.accessToken, res.data.data.refreshToken)
         navigate('/dashboard')
         return
       }
@@ -65,7 +65,7 @@ export default function Login() {
         setShowMfa(true)
       } else {
         // Normal login/register success
-        login(res.data.data.token)
+        login(res.data.data.accessToken, res.data.data.refreshToken)
         navigate('/dashboard')
       }
     } catch (err) {

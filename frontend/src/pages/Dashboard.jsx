@@ -25,6 +25,13 @@ export default function Dashboard() {
   const [otpExpiry, setOtpExpiry] = useState(null)
   const [generatingOtp, setGeneratingOtp] = useState(false)
 
+  // Brief generation state
+  const [briefLoading, setBriefLoading] = useState(false)
+  const [briefData, setBriefData] = useState(null)
+  const [showBriefModal, setShowBriefModal] = useState(false)
+  const [briefCached, setBriefCached] = useState(false)
+  const [briefVisitId, setBriefVisitId] = useState(null)
+
   useEffect(() => {
     if (!authLoading && !user) {
       navigate('/login')
@@ -126,6 +133,34 @@ export default function Dashboard() {
     setSelectedPatientId(pId)
     const patientObj = linkedPatients.find(p => p.patient_id === pId)
     setSelectedPatientName(patientObj ? patientObj.name : '')
+  }
+
+  // Brief generation handler
+  const handleGenerateBrief = async (visitId, regenerate = false) => {
+    setBriefLoading(true)
+    setError('')
+    setBriefVisitId(visitId)
+    try {
+      const url = regenerate ? `/visits/${visitId}/brief?regenerate=true` : `/visits/${visitId}/brief`
+      const res = await api.get(url)
+      setBriefData(res.data.data.brief.content)
+      setBriefCached(res.data.data.cached || false)
+      setShowBriefModal(true)
+    } catch (err) {
+      setError(err.response?.data?.error?.message || 'Failed to generate brief.')
+    } finally {
+      setBriefLoading(false)
+    }
+  }
+
+  const handleCopyBrief = () => {
+    if (!briefData) return
+    const content = typeof briefData === 'string' ? briefData : JSON.stringify(briefData, null, 2)
+    navigator.clipboard.writeText(content)
+  }
+
+  const handlePrintBrief = () => {
+    window.print()
   }
 
   if (authLoading || !user) {
@@ -328,7 +363,16 @@ export default function Dashboard() {
                   <Skeleton className="h-12 w-full" />
                 </div>
               ) : stats.visits.length === 0 ? (
-                <p className="text-sm text-slate-500">No upcoming appointments scheduled.</p>
+                <div className="text-center py-6">
+                  <p className="text-sm text-slate-500 mb-4">No upcoming appointments scheduled.</p>
+                  <button
+                    onClick={() => navigate('/calendar')}
+                    className="text-xs font-semibold px-4 py-2 rounded-full border transition-colors"
+                    style={{ borderColor: 'var(--mg-accent)', color: 'var(--mg-accent)' }}
+                  >
+                    + Add a Visit
+                  </button>
+                </div>
               ) : (
                 <div className="flex flex-col gap-4">
                   {stats.visits.slice(0, 5).map((visit, index) => (
@@ -343,10 +387,23 @@ export default function Dashboard() {
                             {new Date(visit.scheduled_date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} &nbsp;•&nbsp; {visit.doctor_name || 'Clinician'}
                           </span>
                         </div>
-                        <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-3">
                           <span className="text-xs text-slate-500 px-3 py-1 bg-slate-100 rounded-md">
                             {new Date(visit.scheduled_date).toLocaleDateString([], { month: 'short', day: 'numeric' })}
                           </span>
+                          <button
+                            id={`brief-btn-${visit.id}`}
+                            onClick={(e) => { e.stopPropagation(); handleGenerateBrief(visit.id) }}
+                            disabled={briefLoading}
+                            className="text-xs font-semibold px-4 py-1.5 rounded-full transition-all duration-200 cursor-pointer shadow-sm hover:shadow-md"
+                            style={{
+                              backgroundColor: 'var(--mg-accent)',
+                              color: 'white',
+                              opacity: briefLoading ? 0.6 : 1,
+                            }}
+                          >
+                            {briefLoading ? '...' : '📋 Generate Brief'}
+                          </button>
                           <button 
                             onClick={() => navigate('/calendar')}
                             className="text-xs font-semibold text-[#0F766E] opacity-0 group-hover:opacity-100 transition-opacity duration-200 cursor-pointer"
@@ -430,6 +487,119 @@ export default function Dashboard() {
           </div>
         )}
       </main>
+
+      {/* Brief Modal Overlay */}
+      {showBriefModal && briefData && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}
+          onClick={() => setShowBriefModal(false)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-y-auto p-8 text-left relative"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Close button */}
+            <button
+              onClick={() => setShowBriefModal(false)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+            >
+              <span className="material-symbols-outlined">close</span>
+            </button>
+
+            <h2 className="text-xl font-bold text-slate-900 mb-1 flex items-center gap-2">
+              <span className="material-symbols-outlined" style={{ color: 'var(--mg-accent)' }}>clinical_notes</span>
+              Visit Prep Brief
+            </h2>
+            <p className="text-xs text-slate-500 mb-6">
+              {typeof briefData === 'object' && briefData.visit_type ? briefData.visit_type : 'General Consult'}
+              {briefCached && <span className="ml-2 px-2 py-0.5 bg-slate-100 rounded text-[10px] text-slate-500">Cached</span>}
+            </p>
+
+            {/* Active Medicines */}
+            {typeof briefData === 'object' && briefData.active_medicines?.length > 0 && (
+              <div className="mb-6">
+                <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wider mb-3">Active Medicines</h3>
+                <ul className="space-y-1">
+                  {briefData.active_medicines.map((med, i) => (
+                    <li key={i} className="text-sm text-slate-600 flex items-start gap-2">
+                      <span style={{ color: 'var(--mg-accent)' }}>•</span>
+                      {med}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Warnings */}
+            {typeof briefData === 'object' && briefData.warnings?.length > 0 && (
+              <div className="mb-6 p-4 rounded-lg" style={{ backgroundColor: 'var(--mg-red-bg)', border: '1px solid rgba(220,38,38,0.2)' }}>
+                <h3 className="text-sm font-bold text-red-700 uppercase tracking-wider mb-2">⚠️ Interaction Warnings</h3>
+                {briefData.warnings.map((w, i) => (
+                  <p key={i} className="text-sm text-red-600 mb-1">{w}</p>
+                ))}
+              </div>
+            )}
+
+            {/* Lab Trends */}
+            {typeof briefData === 'object' && briefData.lab_trends?.length > 0 && (
+              <div className="mb-6">
+                <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wider mb-3">Lab Trends</h3>
+                {briefData.lab_trends.map((t, i) => (
+                  <p key={i} className="text-sm text-slate-600 mb-1">{t}</p>
+                ))}
+              </div>
+            )}
+
+            {/* Suggested Questions */}
+            {typeof briefData === 'object' && briefData.suggested_questions?.length > 0 && (
+              <div className="mb-6">
+                <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wider mb-3">Questions for Your Doctor</h3>
+                <ol className="space-y-2 list-decimal list-inside">
+                  {briefData.suggested_questions.map((q, i) => (
+                    <li key={i} className="text-sm text-slate-600">{q}</li>
+                  ))}
+                </ol>
+              </div>
+            )}
+
+            {/* Disclaimer */}
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg mb-6">
+              <p className="text-[11px] text-slate-500 italic">
+                {typeof briefData === 'object' && briefData.disclaimer ? briefData.disclaimer : 'Discuss this with your doctor — this is not a diagnosis.'}
+              </p>
+            </div>
+
+            {/* Action buttons */}
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleCopyBrief}
+                className="text-xs font-semibold px-4 py-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer flex items-center gap-1"
+              >
+                <span className="material-symbols-outlined text-[16px]">content_copy</span>
+                Copy
+              </button>
+              <button
+                onClick={handlePrintBrief}
+                className="text-xs font-semibold px-4 py-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer flex items-center gap-1"
+              >
+                <span className="material-symbols-outlined text-[16px]">print</span>
+                Print
+              </button>
+              {briefCached && (
+                <button
+                  onClick={() => { setShowBriefModal(false); handleGenerateBrief(briefVisitId, true) }}
+                  className="text-xs font-semibold px-4 py-2 rounded-lg transition-colors cursor-pointer flex items-center gap-1"
+                  style={{ backgroundColor: 'var(--mg-accent)', color: 'white' }}
+                >
+                  <span className="material-symbols-outlined text-[16px]">refresh</span>
+                  Regenerate
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Footer */}
       <footer className="bg-[#f6fafa] border-t border-slate-200">

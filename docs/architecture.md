@@ -221,7 +221,7 @@ erDiagram
 
 | Control | Implementation |
 |:---|:---|
-| **Authentication** | JWT with role claims (`patient`, `caregiver`); bcrypt-12 password hashing; 1-hour access token expiry |
+| **Authentication** | Dual-token authentication: Short-lived access token (**15 minutes**, `JWT_ACCESS_TTL`) + rotated refresh token (**7 days**, `JWT_REFRESH_TTL`); bcrypt-12 password hashing; refresh tokens stored as SHA-256 hashes in `refresh_tokens` table. |
 | **Authorization (RBAC)** | `requireRoles()` middleware on every route; role-specific enforcement for patient and caregiver |
 | **IDOR protection** | `verifyPatientAccess()` + `enforcePatientAccess()` middleware on every data endpoint; ownership verified against DB before read/write/delete |
 | **Email verification** | `is_email_verified` tracked in DB; `enforceEmailVerified` middleware blocks medicine add, update, delete, and AI upload for unverified users |
@@ -233,9 +233,9 @@ erDiagram
 | **CORS lockdown** | ms2 CORS restricted to `ms1-core-api` origin only (not `*`) |
 | **Upload limits** | 8MB max (NGINX `client_max_body_size` + Express JSON limit + Multer `fileSize`) |
 | **Audit logging** | Structured JSON logger with automatic redaction of passwords, tokens, secrets; logs auth attempts, IDOR blocks, rate limit hits, unknown endpoints |
-| **Mock email gating** | Verification/reset token links logged to console ONLY when `NODE_ENV=development`; production path redacts tokens |
-| **DPDP compliance** | Explicit consent at signup, audit log in `consent_records`, delete-my-data route planned |
+| **Mock email gating** | Verification/reset token links logged to console ONLY when `NODE_ENV` is set to `development` or `test`; production path routes emails via AWS SES. |
 | **Append-only data** | `interaction_kb` and `brand_generic_map` have DB triggers preventing UPDATE/DELETE |
+| **Concurrency Locking** | Manual and confirmed medicine additions run inside a PostgreSQL transaction (`BEGIN`/`COMMIT`/`ROLLBACK`) with a `SELECT ... FOR UPDATE` lock on the patient's existing medicines to prevent write races. |
 | **HTTPS** | Certbot SSL/TLS at NGINX (production); HSTS header ready to uncomment |
 
 ### Restricted Actions for Unverified Accounts
@@ -255,8 +255,8 @@ Unverified users **can** still: log in, view their dashboard, read existing medi
 
 | Item | Status |
 |:---|:---|
-| Email dispatch via AWS SES | Mock only (console log); gated behind `NODE_ENV=development`. Must wire SES before production deployment. |
-| Refresh token rotation | Not yet implemented; single access token with 1-hour expiry is used. |
+| Email dispatch via AWS SES | Fully implemented via `@aws-sdk/client-ses` in production. Falls back to mock logs in development/test. |
+| Refresh token rotation | Fully implemented. Uses dual token system, secure DB hash tracking, `FOR UPDATE` lock on rotation, and shared Axios interceptor. |
 | Account lockout after N failures | Rate limiter blocks IP, but per-account lockout is not implemented. |
 | CSRF protection | Not applicable (stateless JWT auth, no cookies). |
 

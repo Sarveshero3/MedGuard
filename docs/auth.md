@@ -15,10 +15,13 @@ Upon successful login or registration, the backend signs a JWT with the followin
 - `role`: Role of the user (`patient` or `caregiver`).
 - `name`: Full name of the user (e.g. for greetings).
 
-### 2. Token Lifecycle
-- Tokens are stored in the client's `localStorage` as `medguard_token`.
-- An Axios interceptor automatically appends this token in the `Authorization: Bearer <token>` header of every outgoing `/api` call.
-- On the server, `ms1-core-api/src/middleware/auth.js` intercepts, validates the signature, decodes the claims, queries the database to confirm user existence, and populates `req.user`.
+### 2. Token Lifecycle & Rotation
+- Access tokens (`accessToken`) are short-lived JWTs valid for **15 minutes** (configured via `JWT_ACCESS_TTL`). They contain the user claims (`sub`, `userId`, `email`, `role`, `name`).
+- Refresh tokens (`refreshToken`) are long-lived JWTs valid for **7 days** (configured via `JWT_REFRESH_TTL`) and contain only minimal claims (`userId` and a unique `jti`).
+- Refresh tokens are stored securely on the client in `localStorage` as `medguard_refresh_token`. The SHA-256 hash of the refresh token is stored in the database.
+- **Token Rotation**: On each `/auth/refresh` request, the server revokes the old refresh token (`revoked_at = NOW()`) and issues a new access token and a rotated refresh token. This uses database transactions with `FOR UPDATE` locking to prevent race conditions.
+- **Shared Interceptor**: The frontend `api.js` client wraps refresh requests in a shared in-flight promise to prevent concurrent 401s from triggering multiple racing refresh requests.
+- On logout, a call to `/auth/logout` explicitly revokes the refresh token on the server side.
 
 ### 3. Two-Step MFA Login (Gmail-Style 2FA)
 - Logging in triggers a verification flow where the user must supply a 6-digit one-time passcode (OTP).
@@ -31,10 +34,10 @@ Upon successful login or registration, the backend signs a JWT with the followin
 - Once registered, the caregiver-patient association is written to `caregiver_links` with status `active` and the patient's `linking_otp` is immediately cleared (invalidated) to guarantee single-use.
 
 ### 5. Role-Based Access Control (RBAC)
-Routes are gated depending on user roles:
-- **Caregivers** are allowed to switch contexts, view linked patient statistics, and read regimen entries in a clinical, read-only mode.
-- **Patients** have access to upload prescriptions, edit metadata, and modify calendar visits.
-- Caregiver access to patient data is strictly validated against links configured in the caregiver-link mapping table.
+- Routes are gated depending on user roles:
+  - **Caregivers** are allowed to switch contexts, view linked patient statistics, and read regimen entries in a clinical, read-only mode.
+  - **Patients** have access to upload prescriptions, edit metadata, and modify calendar visits.
+  - Caregiver access to patient data is strictly validated against links configured in the caregiver-link mapping table.
 
 ---
 
@@ -43,13 +46,13 @@ Routes are gated depending on user roles:
 The system uses `express-rate-limit` handlers to mitigate brute-force and Denial-of-Service (DoS) abuse:
 
 ### 1. Configured Limiters (`src/middleware/rateLimiter.js`)
-- **Authentication Limiter**: Restricts `/api/auth/login` and `/api/auth/register` to a maximum of 5 requests per 15-minute window per IP.
-- **Upload Limiter**: Restricts prescription uploads to 10 files per hour.
-- **General API Limiter**: Applies a global threshold of 100 requests per 15-minute window.
+- **API Limiter (`apiLimiter`)**: Max 100 requests per 15 minutes per IP.
+- **Authentication Limiter (`authLimiter`)**: Max 5 login/MFA verification attempts per 15 minutes per IP.
+- **Registration Limiter (`registerLimiter`)**: Max 3 account registrations per hour per IP.
+- **Upload Limiter (`uploadLimiter`)**: Max 5 document uploads per 10 minutes per IP.
 
-### 2. Development/Testing Pass-Through
-- To facilitate fluid user registration and testing, rate limiting is currently bypassed via pass-through middleware in `rateLimiter.js` which immediately invokes `next()`.
-- **Production Enablement**: Simply restore the respective rate limit middleware exports to lock down these routes.
+### 2. Implementation & Production Enforcement
+- Rate limits are fully enabled in both development and production. Violations log `RATE_LIMIT_EXCEEDED` warnings via the system logger and return a standardized `429 Too Many Requests` JSON response.
 
 ---
 
