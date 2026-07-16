@@ -1,5 +1,5 @@
 const express = require('express');
-const { sseClients } = require('../services/queueService');
+const { sseClients, extractionQueue } = require('../services/queueService');
 const logger = require('../utils/logger');
 
 const router = express.Router();
@@ -24,6 +24,33 @@ router.get('/status/stream/:jobId', (req, res) => {
 
   // Send initial signal
   res.write(`data: ${JSON.stringify({ status: 'queued', message: 'Job is queued...' })}\n\n`);
+
+  // Check if job has already completed or failed, and push the status immediately
+  (async () => {
+    try {
+      if (extractionQueue && typeof extractionQueue.getJob === 'function') {
+        const job = await extractionQueue.getJob(jobId);
+        if (job) {
+          const state = await job.getState();
+          if (state === 'completed') {
+            res.write(`data: ${JSON.stringify({
+              status: 'completed',
+              message: 'Extraction complete.',
+              data: job.returnvalue
+            })}\n\n`);
+          } else if (state === 'failed') {
+            res.write(`data: ${JSON.stringify({
+              status: 'failed',
+              message: 'Extraction failed.',
+              error: job.failedReason || 'Previous extraction failed.'
+            })}\n\n`);
+          }
+        }
+      }
+    } catch (err) {
+      logger.warn('SSE_INIT_CHECK_FAILED', `Failed to check initial job state for SSE: ${err.message}`);
+    }
+  })();
 
   req.on('close', () => {
     sseClients.delete(jobId);

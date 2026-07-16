@@ -23,6 +23,37 @@ class PrescriptionState(TypedDict):
     needs_visit_link_resolution: bool
     candidate_visits: List[Dict[str, Any]]
 
+def resolve_brand_to_generic(brand_name: str) -> str | None:
+    if not brand_name:
+        return None
+    try:
+        resolver_client = ChatNVIDIA(
+            model=settings.orchestrator_model,
+            api_key=settings.nvidia_api_key,
+            temperature=0.0
+        )
+        resolve_prompt = f"""You are an expert clinical pharmacist. Resolve the commercial medicine brand name "{brand_name}" to its active generic pharmaceutical ingredient (molecule name).
+Examples of mapping:
+- "Glycomet" -> "Metformin"
+- "Crocin" -> "Paracetamol"
+- "Amoxil" -> "Amoxicillin"
+- "Lipitor" -> "Atorvastatin"
+
+If the brand name is completely unrecognizable, invalid, or cannot be resolved, return "generic_unresolved".
+Otherwise, return ONLY the exact generic ingredient name (e.g. "Paracetamol", "Metformin") without any additional text, markdown, or punctuation."""
+        
+        resolve_res = resolver_client.invoke([
+            SystemMessage(content=resolve_prompt),
+            HumanMessage(content=f"Brand: {brand_name}")
+        ])
+        res_content = resolve_res.content.strip()
+        if "generic_unresolved" not in res_content.lower() and len(res_content) < 50:
+            return res_content
+    except Exception:
+        pass
+    return None
+
+
 def parse_json_safely(text: str) -> Dict[str, Any]:
     text = text.strip()
     if text.startswith("```"):
@@ -62,14 +93,36 @@ def ocr_vlm_extraction_node(state: PrescriptionState) -> Dict[str, Any]:
         if is_pdf:
             reader = PdfReader(photo_path)
             for page in reader.pages:
-                ocr_text += page.extract_text() or ""
+                page_text = page.extract_text() or ""
+                if page_text.strip():
+                    ocr_text += page_text + "\n"
+                else:
+                    # Scanned PDF: extract page images and OCR them
+                    try:
+                        for img_file in page.images:
+                            img_data = img_file.data
+                            img_b64 = base64.b64encode(img_data).decode("utf-8")
+                            ocr_client = ChatNVIDIA(
+                                model=settings.vision_model,
+                                api_key=settings.nvidia_api_key,
+                                temperature=0.0
+                            )
+                            ocr_response = ocr_client.invoke([
+                                SystemMessage(content="Perform raw character-level OCR on the uploaded document. Extract all text exactly as written, preserving layout if possible. Do not interpret or summarize."),
+                                HumanMessage(content=[
+                                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_b64}"}}
+                                ])
+                            ])
+                            ocr_text += ocr_response.content.strip() + "\n"
+                    except Exception as e:
+                        print("Failed to run OCR on PDF page image in prescription graph:", e)
             ocr_text = ocr_text.strip()
         else:
             with open(photo_path, "rb") as f:
                 img_b64 = base64.b64encode(f.read()).decode("utf-8")
             
             ocr_client = ChatNVIDIA(
-                model=settings.orchestrator_model,
+                model=settings.vision_model,
                 api_key=settings.nvidia_api_key,
                 temperature=0.0
             )
@@ -140,6 +193,9 @@ def ocr_vlm_extraction_node(state: PrescriptionState) -> Dict[str, Any]:
         if clean_str(val_a) != clean_str(val_b):
             mismatch_fields.append(fld)
 
+    brand_name = structured_b.get("brand_name") or structured_a.get("brand_name")
+    generic_name = resolve_brand_to_generic(brand_name)
+
     if mismatch_fields:
         brand_a = structured_a.get("brand_name") or "Unknown"
         brand_b = structured_b.get("brand_name") or "Unknown"
@@ -160,8 +216,8 @@ def ocr_vlm_extraction_node(state: PrescriptionState) -> Dict[str, Any]:
                 "prescribing_doctor": 0.95,
             },
             "resolution": {
-                "status": "generic_unresolved",
-                "generic_name": None,
+                "status": "resolved" if generic_name else "generic_unresolved",
+                "generic_name": generic_name,
             },
             "needs_follow_up": True,
             "follow_up_question": follow_up_question,
@@ -176,11 +232,11 @@ def ocr_vlm_extraction_node(state: PrescriptionState) -> Dict[str, Any]:
                 "prescribing_doctor": 0.98,
             },
             "resolution": {
-                "status": "resolved",
-                "generic_name": "Metformin" if "glycomet" in clean_str(structured_b.get("brand_name")) else None,
+                "status": "resolved" if generic_name else "generic_unresolved",
+                "generic_name": generic_name,
             },
-            "needs_follow_up": False,
-            "follow_up_question": None,
+            "needs_follow_up": False if generic_name else True,
+            "follow_up_question": "Could not map brand name to generic name. Please verify generic mapping." if not generic_name else None,
         }
 
 

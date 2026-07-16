@@ -15,11 +15,12 @@ It communicates with LangChain models (NVIDIA NIM APIs including GLM-5.2, Nemotr
    - If classification confidence is high, it automatically runs the corresponding extraction graph (`prescription_graph` or `lab_report_graph`).
    - If confidence is low, it returns `needs_classification_confirmation = True` to verify the document type with the patient.
 2. **AI Consensus Extraction**:
-   - Compares parsing output from a character OCR + GLM-5.2 pipeline against direct VLM extraction (`minimax/minimax-m3-preview`).
+   - Compares parsing output from a character OCR + Llama-3.1-8B pipeline against direct VLM extraction (`minimax/minimax-m3-preview`).
    - High-agreement fields are accepted; mismatches flag lower confidence (`0.70`) and construct confirmation questions for the patient.
-3. **Research & Brief Generation**:
-   - Interaction Research runs literature lookup agents via GLM-5.2 with self-critique iteration logic.
-   - Brief Writer compiles visit guidelines by listing patient parameters, framing medical questions neutrally to prepare the patient for discussions with their physician.
+3. **Research & Brief Generation (Senior Medical Reviewer Agent)**:
+   - Interaction Research runs literature lookup agents via Llama-3.1-8B.
+   - A **Senior Medical Reviewer Agent** acts as a critic, evaluating the generated findings over **1 to 2 refinement iterations** to verify accuracy, drug-class alignment, and clinical safety warnings.
+   - This research execution runs asynchronously as a background task, keeping user operations instant while pushing live notifications upon resolution.
 
 ---
 

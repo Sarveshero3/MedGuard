@@ -108,7 +108,7 @@ router.get('/medicines/:id', authenticateUser, validateUUID('id'), enforceConsen
  * Secured: enforce patient access and validate payload.
  */
 router.post('/medicines', authenticateUser, enforcePatientAccess('full_view'), enforceConsent('health_data_processing'), enforceEmailVerified, sanitizeInput, validateBody('medicine'), async (req, res, next) => {
-  const { patient_id, brand_name, generic_name, dosage, frequency, duration_text, brand_mapping_correction, resolution_status, visit_id } = req.body;
+  const { patient_id, brand_name, generic_name, dosage, frequency, duration_text, brand_mapping_correction, resolution_status, visit_id, added_at } = req.body;
 
   try {
     const client = await require('../config/db').pool.connect();
@@ -158,10 +158,10 @@ router.post('/medicines', authenticateUser, enforcePatientAccess('full_view'), e
 
       // Save the medicine
       const result = await client.query(
-        `INSERT INTO medicines (patient_id, brand_name, generic_name, dosage, frequency, duration_text, course_end_date, resolution_status, status, visit_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active', $9)
+        `INSERT INTO medicines (patient_id, brand_name, generic_name, dosage, frequency, duration_text, course_end_date, resolution_status, status, visit_id, added_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active', $9, $10)
          RETURNING *`,
-        [patient_id, brand_name, resolvedGeneric, dosage, frequency, duration_text || null, courseEndDate, finalResolutionStatus, visit_id || null]
+        [patient_id, brand_name, resolvedGeneric, dosage, frequency, duration_text || null, courseEndDate, finalResolutionStatus, visit_id || null, added_at ? new Date(added_at) : new Date()]
       );
       const newMed = result.rows[0];
 
@@ -174,8 +174,6 @@ router.post('/medicines', authenticateUser, enforcePatientAccess('full_view'), e
 
       // Save flagged interactions and send emails
       if (flaggedInteractions.length > 0) {
-        const { sendEmail } = require('../utils/email');
-
         for (const interaction of flaggedInteractions) {
           // Identify which generic name is the existing one
           const existingGenName = [interaction.generic_a.toLowerCase(), interaction.generic_b.toLowerCase()]
@@ -190,8 +188,74 @@ router.post('/medicines', authenticateUser, enforcePatientAccess('full_view'), e
             );
           }
         }
+      }
 
-        // Fetch patient and caregiver emails for notification
+      // Trigger LLM agent research in the background (asynchronous, fire-and-forget)
+      if (resolvedGeneric && existingMeds.length > 0) {
+        (async () => {
+          const { pool } = require('../config/db');
+          let bgClient;
+          try {
+            bgClient = await pool.connect();
+            for (const conflictingMed of existingMeds) {
+              if (!conflictingMed.generic_name) continue;
+              
+              const alreadyFlagged = flaggedInteractions.some(f => 
+                (f.generic_a.toLowerCase() === resolvedGeneric.toLowerCase() && f.generic_b.toLowerCase() === conflictingMed.generic_name.toLowerCase()) ||
+                (f.generic_b.toLowerCase() === resolvedGeneric.toLowerCase() && f.generic_a.toLowerCase() === conflictingMed.generic_name.toLowerCase())
+              );
+              
+              if (!alreadyFlagged) {
+                try {
+                  logger.info('AGENT_RESEARCH_TRIGGER_BG', `Triggering background LLM research agent for ${resolvedGeneric} and ${conflictingMed.generic_name}`);
+                  const ms2Res = await axios.post(`${MS2_BASE_URL}/api/research-interaction`, {
+                    generic_a: resolvedGeneric,
+                    generic_b: conflictingMed.generic_name
+                  }, { timeout: 45000 });
+                  
+                  if (ms2Res.data && ms2Res.data.success) {
+                    const researchResult = ms2Res.data.data;
+                    const explanation = researchResult.explanation || '';
+                    
+                    const lowercaseExp = explanation.toLowerCase();
+                    const isNoInteraction = lowercaseExp.includes("no significant interaction") || 
+                                            lowercaseExp.includes("no known interaction") || 
+                                            (lowercaseExp.includes("no interaction") && lowercaseExp.includes("safe"));
+                    
+                    if (explanation && !isNoInteraction) {
+                      const sorted = [resolvedGeneric.toLowerCase(), conflictingMed.generic_name.toLowerCase()].sort();
+                      const kbRes = await bgClient.query(
+                        `INSERT INTO interaction_kb (generic_a, generic_b, severity, explanation, source, version)
+                         VALUES ($1, $2, 'monitor_closely', $3, 'NVIDIA NIM Research Agent', 'v1')
+                         RETURNING id`,
+                        [sorted[0], sorted[1], explanation]
+                      );
+                      const kbEntryId = kbRes.rows[0].id;
+                      
+                      await bgClient.query(
+                        `INSERT INTO interaction_flags (patient_id, new_medicine_id, existing_medicine_id, kb_entry_id, severity, confidence, status)
+                         VALUES ($1, $2, $3, $4, 'monitor_closely', 1.0, 'shown')`,
+                        [patient_id, newMed.id, conflictingMed.id, kbEntryId]
+                      );
+                      logger.info('AGENT_ALERT_CREATED_BG', `Researched and created custom interaction flag in background for ${resolvedGeneric} and ${conflictingMed.generic_name}`);
+                    }
+                  }
+                } catch (agentErr) {
+                  logger.error('AGENT_RESEARCH_FAILED_BG', `Background research failed: ${agentErr.message}`);
+                }
+              }
+            }
+          } catch (connErr) {
+            logger.error('BG_DB_CONNECTION_FAILED', `Failed to open connection for background research: ${connErr.message}`);
+          } finally {
+            if (bgClient) bgClient.release();
+          }
+        })();
+      }
+
+      // Fetch patient and caregiver emails for notification
+      if (flaggedInteractions.length > 0) {
+        const { sendEmail } = require('../utils/email');
         const patientEmailRes = await client.query("SELECT email, name FROM users WHERE id = $1", [patient_id]);
         const patient = patientEmailRes.rows[0];
 
@@ -439,15 +503,35 @@ router.post('/documents/upload', authenticateUser, enforceConsent('health_data_p
     try {
       const cachedJobId = await redisConnection.get(idempotencyKey);
       if (cachedJobId) {
-        logger.info('IDEMPOTENT_UPLOAD_HIT', `Duplicate upload detected. Mapping to existing job ${cachedJobId}`);
-        fs.unlinkSync(req.file.path);
-        return res.status(202).json({
-          success: true,
-          data: {
-            jobId: cachedJobId,
-            message: 'Document analysis job already queued.',
-          },
-        });
+        let shouldReuse = true;
+        try {
+          if (!redisConnection.isMock && extractionQueue && typeof extractionQueue.getJob === 'function') {
+            const job = await extractionQueue.getJob(cachedJobId);
+            if (job) {
+              const state = await job.getState();
+              if (state === 'failed') {
+                shouldReuse = false;
+                logger.info('IDEMPOTENT_UPLOAD_RETRY', `Cached job ${cachedJobId} was failed. Enqueuing a new job.`);
+              }
+            } else {
+              shouldReuse = false;
+            }
+          }
+        } catch (err) {
+          logger.warn('JOB_STATE_CHECK_FAILED', `Failed to check job state: ${err.message}`);
+        }
+
+        if (shouldReuse) {
+          logger.info('IDEMPOTENT_UPLOAD_HIT', `Duplicate upload detected. Mapping to existing job ${cachedJobId}`);
+          fs.unlinkSync(req.file.path);
+          return res.status(202).json({
+            success: true,
+            data: {
+              jobId: cachedJobId,
+              message: 'Document analysis job already queued.',
+            },
+          });
+        }
       }
     } catch (err) {
       logger.warn('IDEMPOTENCY_CHECK_FAILED', `Failed to check idempotency key in Redis: ${err.message}`);

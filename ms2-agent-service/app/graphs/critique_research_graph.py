@@ -71,7 +71,7 @@ def critique_findings_node(state: CritiqueResearchState) -> Dict[str, Any]:
     explanation = state.get("explanation", "")
     iterations = state.get("critique_iterations", 0)
 
-    if state.get("is_valid", False) or iterations >= 1:
+    if state.get("is_valid", False) or iterations >= 2:
         return {
             "is_valid": True,
             "critique_iterations": iterations + 1
@@ -111,8 +111,10 @@ def critique_findings_node(state: CritiqueResearchState) -> Dict[str, Any]:
             "critique_iterations": iterations + 1
         }
     else:
+        # Cap at 2 iterations (so mark as valid on second pass to exit)
+        is_cap = (iterations >= 1)
         return {
-            "is_valid": True, # Cap at 1 iteration (meaning this is the second and final pass, so we mark it as valid to exit)
+            "is_valid": is_cap,
             "explanation": res_text,
             "critique_iterations": iterations + 1
         }

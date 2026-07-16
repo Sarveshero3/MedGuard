@@ -127,7 +127,7 @@ export default function MedicineList() {
                       {isActive ? (
                         <p className="text-sm text-slate-500 flex items-center gap-2">
                           <span className="material-symbols-outlined text-slate-400 text-lg">calendar_today</span>
-                          Since: {new Date(med.created_at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
+                          Since: {new Date(med.added_at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
                         </p>
                       ) : (
                         <p className="text-sm text-slate-500 flex items-center gap-2">

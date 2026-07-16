@@ -225,10 +225,10 @@ router.post('/lab-reports/confirm', authenticateUser, enforceConsent('health_dat
 
       // 2. Insert into lab_reports
       const reportRes = await client.query(
-        `INSERT INTO lab_reports (patient_id, visit_id, source_photo_id) 
-         VALUES ($1, $2, $3) 
+        `INSERT INTO lab_reports (patient_id, visit_id, source_photo_id, uploaded_at) 
+         VALUES ($1, $2, $3, $4) 
          RETURNING id`,
-        [patient_id, visit_id || null, source_photo_id || null]
+        [patient_id, visit_id || null, source_photo_id || null, values[0]?.recorded_at ? new Date(values[0].recorded_at) : new Date()]
       );
       const reportId = reportRes.rows[0].id;
 
@@ -253,9 +253,9 @@ router.post('/lab-reports/confirm', authenticateUser, enforceConsent('health_dat
 
         // Save value
         await client.query(
-          `INSERT INTO lab_values (report_id, test_type, panel_name, value, unit, resolution_status, confidence)
-           VALUES ($1, $2, $3, $4, $5, 'resolved', $6)`,
-          [reportId, canonicalType, val.panel_name || null, val.value, val.unit || '', val.confidence || 1.0]
+          `INSERT INTO lab_values (report_id, test_type, panel_name, value, unit, resolution_status, confidence, recorded_at)
+           VALUES ($1, $2, $3, $4, $5, 'resolved', $6, $7)`,
+          [reportId, canonicalType, val.panel_name || null, val.value, val.unit || '', val.confidence || 1.0, val.recorded_at ? new Date(val.recorded_at) : new Date()]
         );
       }
 

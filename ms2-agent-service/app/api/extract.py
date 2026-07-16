@@ -68,14 +68,38 @@ def _extract_text_from_file(file_path: str, filename: str) -> str:
         reader = PdfReader(file_path)
         text = ""
         for page in reader.pages:
-            text += page.extract_text() or ""
+            page_text = page.extract_text() or ""
+            if page_text.strip():
+                text += page_text + "\n"
+            else:
+                # Scanned PDF: extract page images and OCR them
+                try:
+                    for img_file in page.images:
+                        img_data = img_file.data
+                        img_b64 = base64.b64encode(img_data).decode("utf-8")
+                        ocr_client = ChatNVIDIA(
+                            model=settings.vision_model,
+                            api_key=settings.nvidia_api_key,
+                            temperature=0.0
+                        )
+                        ocr_response = ocr_client.invoke([
+                            SystemMessage(content="Perform raw character-level OCR on the uploaded document. Extract all text exactly as written, preserving layout if possible. Do not interpret or summarize."),
+                            HumanMessage(content=[
+                                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_b64}"}}
+                            ])
+                        ])
+                        ocr_text = ocr_response.content.strip()
+                        if ocr_text:
+                            text += ocr_text + "\n"
+                except Exception as e:
+                    print("Failed to run OCR on PDF page image:", e)
         return text.strip()
     else:
         with open(file_path, "rb") as f:
             img_b64 = base64.b64encode(f.read()).decode("utf-8")
-        # Use the orchestrator VLM (glm-5.2) for OCR since Nemotron OCR v2 is a self-hosted NIM
+        # Use the separate vision model for OCR since the orchestrator (glm-5.2) is not a vision model
         ocr_client = ChatNVIDIA(
-            model=settings.orchestrator_model,
+            model=settings.vision_model,
             api_key=settings.nvidia_api_key,
             temperature=0.0
         )

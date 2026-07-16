@@ -61,14 +61,36 @@ def ocr_vlm_lab_extraction_node(state: LabReportState) -> Dict[str, Any]:
         if is_pdf:
             reader = PdfReader(photo_path)
             for page in reader.pages:
-                ocr_text += page.extract_text() or ""
+                page_text = page.extract_text() or ""
+                if page_text.strip():
+                    ocr_text += page_text + "\n"
+                else:
+                    # Scanned PDF: extract page images and OCR them
+                    try:
+                        for img_file in page.images:
+                            img_data = img_file.data
+                            img_b64 = base64.b64encode(img_data).decode("utf-8")
+                            ocr_client = ChatNVIDIA(
+                                model=settings.vision_model,
+                                api_key=settings.nvidia_api_key,
+                                temperature=0.0
+                            )
+                            ocr_response = ocr_client.invoke([
+                                SystemMessage(content="Perform raw character-level OCR on the uploaded document. Extract all text exactly as written, preserving layout if possible. Do not interpret or summarize."),
+                                HumanMessage(content=[
+                                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_b64}"}}
+                                ])
+                            ])
+                            ocr_text += ocr_response.content.strip() + "\n"
+                    except Exception as e:
+                        print("Failed to run OCR on PDF page image in lab report graph:", e)
             ocr_text = ocr_text.strip()
         else:
             with open(photo_path, "rb") as f:
                 img_b64 = base64.b64encode(f.read()).decode("utf-8")
             
             ocr_client = ChatNVIDIA(
-                model=settings.orchestrator_model,
+                model=settings.vision_model,
                 api_key=settings.nvidia_api_key,
                 temperature=0.0
             )

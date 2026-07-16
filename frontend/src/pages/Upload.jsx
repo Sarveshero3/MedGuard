@@ -15,6 +15,7 @@ export default function Upload() {
   }, [user, authLoading, navigate])
   
   // Document type switcher for new files to add: 'prescription' or 'lab_report'
+  // Document type switcher for new files to add: 'prescription' or 'lab_report'
   const [docType, setDocType] = useState('prescription')
   
   // Batch Queue States
@@ -40,10 +41,12 @@ export default function Upload() {
   // Editable prescription fields for the currently active file review
   const [prescriptionFields, setPrescriptionFields] = useState({
     brand_name: '',
+    generic_name: '',
     dosage: '',
     frequency: '',
     duration_text: '',
     course_end_date: '',
+    added_at: '',
   })
 
   // Editable lab report fields for the currently active file review
@@ -53,33 +56,91 @@ export default function Upload() {
     value: '',
     unit: '',
     disease_type: '',
+    recorded_at: '',
   })
 
   // State to hold the active file's extraction structure directly for UI helpers
   const [activeExtraction, setActiveExtraction] = useState(null)
 
+  // 1. Session Storage Hooks to preserve state across refreshes & tab switches
+  useEffect(() => {
+    const cachedQueue = sessionStorage.getItem('medguard_upload_queue');
+    const cachedActiveId = sessionStorage.getItem('medguard_active_file_id');
+    if (cachedQueue) {
+      try {
+        const parsed = JSON.parse(cachedQueue);
+        setUploadedFiles(parsed);
+        if (cachedActiveId) {
+          setActiveFileId(cachedActiveId);
+        }
+      } catch (err) {
+        console.error('Failed to parse cached upload queue:', err);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (uploadedFiles.length > 0) {
+      const serializable = uploadedFiles.map(f => ({
+        id: f.id,
+        name: f.name,
+        status: f.status,
+        progressMessage: f.progressMessage,
+        jobId: f.jobId,
+        extraction: f.extraction,
+        docType: f.docType,
+        isPdf: f.isPdf,
+        saved: f.saved,
+        needsClassificationConfirmation: f.needsClassificationConfirmation,
+        classificationConfidence: f.classificationConfidence,
+        base64: f.base64
+      }));
+      sessionStorage.setItem('medguard_upload_queue', JSON.stringify(serializable));
+    } else {
+      sessionStorage.removeItem('medguard_upload_queue');
+    }
+  }, [uploadedFiles]);
+
+  useEffect(() => {
+    if (activeFileId) {
+      sessionStorage.setItem('medguard_active_file_id', activeFileId);
+    } else {
+      sessionStorage.removeItem('medguard_active_file_id');
+    }
+  }, [activeFileId]);
+
   const triggerFileSelect = () => {
     fileInputRef.current?.click()
   }
 
-  const handleFileChange = (e) => {
+  const handleFileChange = async (e) => {
     const selectedFiles = Array.from(e.target.files)
     if (selectedFiles.length > 0) {
-      const newItems = selectedFiles.map(file => {
+      const newItems = await Promise.all(selectedFiles.map(async (file) => {
         const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+        
+        // Convert file content to Base64 to survive browser refresh
+        const base64 = await new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result);
+          reader.readAsDataURL(file);
+        });
+
         return {
           id: Math.random().toString(36).substring(7),
           file,
           name: file.name,
-          preview: isPdf ? null : URL.createObjectURL(file),
+          preview: isPdf ? null : base64,
           isPdf,
           status: 'idle',
           progressMessage: 'Ready to extract',
           extraction: null,
           saved: false,
-          docType: docType
+          docType: docType,
+          base64: base64
         };
-      });
+      }));
+
       setUploadedFiles(prev => [...prev, ...newItems]);
       setError('');
       setSuccess('');
@@ -96,13 +157,16 @@ export default function Upload() {
   // Initialize form fields helper
   const initializeFormFields = (type, data) => {
     const raw = data?.raw_extraction || {}
+    const defaultDate = new Date().toISOString().split('T')[0];
     if (type === 'prescription') {
       setPrescriptionFields({
         brand_name: raw.brand_name || '',
+        generic_name: data?.resolution?.generic_name || '',
         dosage: raw.dosage || '',
         frequency: raw.frequency || '',
         duration_text: raw.duration_text || '',
         course_end_date: '',
+        added_at: defaultDate,
       })
     } else {
       setLabFields({
@@ -111,6 +175,7 @@ export default function Upload() {
         value: raw.value || '',
         unit: raw.unit || '',
         disease_type: '',
+        recorded_at: defaultDate,
       })
     }
     
@@ -148,8 +213,21 @@ export default function Upload() {
     // Mark as uploading
     setUploadedFiles(prev => prev.map(f => f.id === fileId ? { ...f, status: 'uploading', progressMessage: 'Uploading to server...' } : f))
 
+    let fileObj = item.file;
+    if (!fileObj && item.base64) {
+      try {
+        const response = await fetch(item.base64);
+        const blob = await response.blob();
+        fileObj = new File([blob], item.name, { type: item.isPdf ? 'application/pdf' : 'image/png' });
+      } catch (err) {
+        console.error('Failed to reconstruct file from base64:', err);
+      }
+    }
+
     const formData = new FormData()
-    formData.append('photo', item.file)
+    if (fileObj) {
+      formData.append('photo', fileObj)
+    }
     if (user) {
       formData.append('patient_id', user.id)
     }
@@ -278,12 +356,14 @@ export default function Upload() {
           source_photo_id: activeItem.extraction.source_photo_id,
           visit_id: finalVisitId,
           brand_name: prescriptionFields.brand_name,
+          generic_name: prescriptionFields.generic_name,
           dosage: prescriptionFields.dosage,
           frequency: prescriptionFields.frequency,
           duration_text: prescriptionFields.duration_text,
+          added_at: prescriptionFields.added_at,
           brand_mapping_correction: activeItem.extraction.resolution?.status === 'generic_unresolved' ? {
             brand_name: prescriptionFields.brand_name,
-            generic_name: activeItem.extraction.resolution.generic_name || 'Generic molecule'
+            generic_name: prescriptionFields.generic_name
           } : undefined
         }
         await api.post('/medicines', payload)
@@ -299,6 +379,7 @@ export default function Upload() {
             value: parseFloat(labFields.value),
             unit: labFields.unit,
             confidence: activeItem.extraction.confidence_scores?.value || 1.0,
+            recorded_at: labFields.recorded_at,
           }]
         }
         await api.post('/lab-reports/confirm', payload)
@@ -433,6 +514,17 @@ export default function Upload() {
                 <div className="flex justify-between items-center mb-4">
                   <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">Upload Queue ({uploadedFiles.length})</h3>
                   <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        setUploadedFiles([]);
+                        setActiveFileId(null);
+                        sessionStorage.removeItem('medguard_upload_queue');
+                        sessionStorage.removeItem('medguard_active_file_id');
+                      }}
+                      className="text-xs bg-rose-50 hover:bg-rose-100 text-rose-700 px-2.5 py-1.5 rounded-lg font-semibold flex items-center gap-1 cursor-pointer border border-rose-200"
+                    >
+                      <span className="material-symbols-outlined text-xs">delete_sweep</span> Clear
+                    </button>
                     <button
                       onClick={triggerFileSelect}
                       className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1.5 rounded-lg font-semibold flex items-center gap-1 cursor-pointer"
@@ -581,21 +673,66 @@ export default function Upload() {
 
                     // 2. Uploading / processing states
                     if (activeItem.status === 'uploading' || activeItem.status === 'processing') {
+                      const msg = activeItem.progressMessage || '';
+                      
+                      const steps = [
+                        { id: 1, label: 'Document Ingestion & Checksum Verification', status: msg !== 'Uploading to server...' ? 'completed' : 'active' },
+                        { id: 2, label: 'Text Extraction & Character Parsing (OCR)', status: (msg === 'Analyzing document structure...' || msg === 'Extracting fields...') ? 'active' : (msg !== 'Uploading to server...' ? 'completed' : 'pending') },
+                        { id: 3, label: 'Dual-Model Consensus Extraction (Model A & B)', status: msg === 'Analyzing document structure...' ? 'active' : (msg === 'Extracting fields...' || msg === 'Ready for review' ? 'completed' : 'pending') },
+                        { id: 4, label: 'NVIDIA NIM Multi-Pass Critique & Safety Research', status: msg === 'Analyzing document structure...' ? 'pending' : (msg === 'Extracting fields...' ? 'active' : 'pending') },
+                        { id: 5, label: 'Compiling Final Resolution Verification Review', status: msg === 'Ready for review' ? 'completed' : 'pending' }
+                      ];
+
+                      if (msg === 'Enqueued in pipeline...') {
+                        steps[0].status = 'completed';
+                        steps[1].status = 'active';
+                      }
+
                       return (
-                        <div className="flex flex-col items-center justify-center p-12 border border-slate-200 rounded-2xl bg-white min-h-[400px] shadow-sm text-center">
-                          <div className="mb-6 relative">
-                            <div className="w-20 h-24 border border-slate-200 rounded-lg bg-white relative overflow-hidden flex items-center justify-center shadow-sm">
-                              <div className="absolute top-0 left-0 w-full h-1 bg-[#0f766e] animate-[scan_2s_ease-in-out_infinite]"></div>
-                              <span className="material-symbols-outlined text-3xl text-slate-200">
-                                {activeItem.docType === 'prescription' ? 'prescriptions' : 'biotech'}
-                              </span>
+                        <div className="flex flex-col items-center justify-center p-8 border border-slate-200 rounded-2xl bg-white min-h-[420px] shadow-sm text-left max-w-xl mx-auto w-full">
+                          <div className="flex items-center gap-3 mb-6 w-full border-b border-slate-100 pb-4">
+                            <span className="material-symbols-outlined text-2xl text-[#0f766e] animate-pulse">clinical_research</span>
+                            <div>
+                              <h3 className="text-sm font-bold text-slate-800">Clinical Agent Research Active</h3>
+                              <p className="text-[10px] text-slate-500">NVIDIA NIM Consensus & Literature Search Loop</p>
                             </div>
                           </div>
-                          <h3 className="text-lg font-bold text-slate-800 mb-1">Analyzing Document</h3>
-                          <p className="text-xs text-slate-500 mb-4">{activeItem.progressMessage}</p>
-                          <div className="w-full max-w-xs bg-slate-100 h-1.5 rounded-full overflow-hidden mx-auto">
-                            <div className="bg-[#0f766e] h-full w-[70%] animate-pulse"></div>
+
+                          <div className="space-y-5 w-full mb-6">
+                            {steps.map((step) => (
+                              <div key={step.id} className="flex items-start gap-4">
+                                <div className="flex-shrink-0 mt-0.5">
+                                  {step.status === 'completed' && (
+                                    <span className="material-symbols-outlined text-emerald-500 font-bold text-lg">check_circle</span>
+                                  )}
+                                  {step.status === 'active' && (
+                                    <div className="w-4 h-4 rounded-full border-2 border-slate-200 border-t-[#0f766e] animate-spin"></div>
+                                  )}
+                                  {step.status === 'pending' && (
+                                    <div className="w-4 h-4 rounded-full border-2 border-slate-200"></div>
+                                  )}
+                                </div>
+                                <div className="flex-grow">
+                                  <p className={`text-xs font-semibold ${step.status === 'completed' ? 'text-slate-800' : step.status === 'active' ? 'text-[#0f766e] font-bold' : 'text-slate-400'}`}>
+                                    {step.label}
+                                  </p>
+                                  {step.status === 'active' && (
+                                    <span className="text-[10px] text-slate-400 block mt-0.5 animate-pulse font-medium">Agent invoking ChatNVIDIA...</span>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
                           </div>
+
+                          <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden mb-2">
+                            <div className="bg-[#0f766e] h-full transition-all duration-500" style={{
+                              width: msg === 'Uploading to server...' ? '15%' :
+                                     msg === 'Enqueued in pipeline...' ? '35%' :
+                                     msg === 'Analyzing document structure...' ? '65%' :
+                                     msg === 'Extracting fields...' ? '85%' : '95%'
+                            }}></div>
+                          </div>
+                          <span className="text-[10px] text-slate-400 font-mono self-end">{msg}</span>
                         </div>
                       );
                     }
@@ -668,15 +805,21 @@ export default function Upload() {
                               </div>
                               <div className="p-4 flex-grow flex items-center justify-center min-h-[350px] bg-slate-150">
                                 {activeItem.isPdf ? (
-                                  <div className="flex flex-col items-center justify-center text-center gap-3">
-                                    <span className="material-symbols-outlined text-6xl text-rose-500">picture_as_pdf</span>
-                                    <span className="text-xs font-bold text-slate-700 truncate max-w-[200px]" title={activeItem.name}>
-                                      {activeItem.name}
-                                    </span>
-                                    <span className="text-[10px] bg-slate-200 text-slate-600 px-2 py-0.5 rounded font-semibold uppercase">
-                                      PDF Document
-                                    </span>
-                                  </div>
+                                  <object
+                                    data={activeItem.base64}
+                                    type="application/pdf"
+                                    className="w-full min-h-[450px] rounded border border-slate-200 shadow-sm"
+                                  >
+                                    <div className="flex flex-col items-center justify-center text-center gap-3 p-8">
+                                      <span className="material-symbols-outlined text-6xl text-rose-500">picture_as_pdf</span>
+                                      <span className="text-xs font-bold text-slate-700 truncate max-w-[200px]" title={activeItem.name}>
+                                        {activeItem.name}
+                                      </span>
+                                      <span className="text-[10px] bg-slate-200 text-slate-600 px-2 py-0.5 rounded font-semibold uppercase">
+                                        PDF Preview Unavailable
+                                      </span>
+                                    </div>
+                                  </object>
                                 ) : (
                                   <img className="object-contain max-h-[350px] w-full rounded border border-slate-200 shadow-sm" src={activeItem.preview} alt="Document preview" />
                                 )}
@@ -740,6 +883,25 @@ export default function Upload() {
                                     />
                                   </div>
 
+                                  <div>
+                                    <div className="flex justify-between items-center mb-1">
+                                      <label className="text-xs font-bold text-slate-700">Generic Name</label>
+                                      {activeExtraction.resolution?.status === 'resolved' ? (
+                                        <span className="bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] px-2 py-0.5 rounded font-semibold">Resolved</span>
+                                      ) : (
+                                        <span className="bg-amber-50 border border-amber-200 text-amber-700 text-[10px] px-2 py-0.5 rounded font-semibold">Unresolved</span>
+                                      )}
+                                    </div>
+                                    <input
+                                      type="text"
+                                      required
+                                      value={prescriptionFields.generic_name}
+                                      onChange={(e) => setPrescriptionFields({ ...prescriptionFields, generic_name: e.target.value })}
+                                      className="w-full bg-white border border-slate-200 rounded px-3 py-2 text-xs focus:outline-none focus:border-[#0f766e] focus:ring-1 focus:ring-[#0f766e]"
+                                      placeholder="e.g. Metformin, Amoxicillin"
+                                    />
+                                  </div>
+
                                   <div className="grid grid-cols-2 gap-4">
                                     <div>
                                       <label className="block text-xs font-bold text-slate-700 mb-1">Dosage</label>
@@ -771,6 +933,17 @@ export default function Upload() {
                                       value={prescriptionFields.duration_text}
                                       onChange={(e) => setPrescriptionFields({ ...prescriptionFields, duration_text: e.target.value })}
                                       className="w-full bg-white border border-slate-200 rounded px-3 py-2 text-xs focus:outline-none"
+                                    />
+                                  </div>
+
+                                  <div>
+                                    <label className="block text-xs font-bold text-slate-700 mb-1">Prescription Date</label>
+                                    <input
+                                      type="date"
+                                      required
+                                      value={prescriptionFields.added_at}
+                                      onChange={(e) => setPrescriptionFields({ ...prescriptionFields, added_at: e.target.value })}
+                                      className="w-full bg-white border border-slate-200 rounded px-3 py-2 text-xs focus:outline-none focus:border-[#0f766e] focus:ring-1 focus:ring-[#0f766e]"
                                     />
                                   </div>
                                 </div>
@@ -836,6 +1009,17 @@ export default function Upload() {
                                       onChange={(e) => setLabFields({ ...labFields, disease_type: e.target.value })}
                                       placeholder="e.g. Diabetes, Thyroid"
                                       className="w-full bg-white border border-slate-200 rounded px-3 py-2 text-xs focus:outline-none"
+                                    />
+                                  </div>
+
+                                  <div>
+                                    <label className="block text-xs font-bold text-slate-700 mb-1">Report Date</label>
+                                    <input
+                                      type="date"
+                                      required
+                                      value={labFields.recorded_at}
+                                      onChange={(e) => setLabFields({ ...labFields, recorded_at: e.target.value })}
+                                      className="w-full bg-white border border-slate-200 rounded px-3 py-2 text-xs focus:outline-none focus:border-[#0f766e] focus:ring-1 focus:ring-[#0f766e]"
                                     />
                                   </div>
                                 </div>

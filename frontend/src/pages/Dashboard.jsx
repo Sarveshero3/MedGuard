@@ -9,7 +9,8 @@ export default function Dashboard() {
   const navigate = useNavigate()
 
   // Common stats state
-  const [stats, setStats] = useState({ medicines: 0, alerts: 0, visits: [] })
+  // Common stats state
+  const [stats, setStats] = useState({ medicines: 0, alerts: 0, visits: [], labs: 0 })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -66,20 +67,23 @@ export default function Dashboard() {
     const fetchStats = async () => {
       setLoading(true)
       try {
-        const [medsRes, alertsRes, visitsRes] = await Promise.allSettled([
+        const [medsRes, alertsRes, visitsRes, labsRes] = await Promise.allSettled([
           api.get('/medicines', { params: { patient_id: targetId } }),
           api.get('/alerts', { params: { patient_id: targetId } }),
           api.get('/calendar', { params: { patient_id: targetId } }),
+          api.get('/lab-reports', { params: { patient_id: targetId } }),
         ])
 
         const meds = medsRes.status === 'fulfilled' ? medsRes.value.data.data : []
         const alerts = alertsRes.status === 'fulfilled' ? alertsRes.value.data.data : []
         const visits = visitsRes.status === 'fulfilled' ? visitsRes.value.data.data?.visits || [] : []
+        const labs = labsRes.status === 'fulfilled' ? labsRes.value.data.data : []
 
         setStats({
           medicines: meds.filter(m => m.status === 'active').length,
           alerts: alerts.filter(a => a.status === 'shown').length,
           visits: visits,
+          labs: labs.length,
         })
       } catch {
         setError('Failed to refresh data summaries.')
@@ -190,58 +194,83 @@ export default function Dashboard() {
         ) : (
           <>
             {/* Summary Cards Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-16">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-16">
               
               {/* Active Medicines Card */}
               <div 
                 onClick={() => navigate('/medicines')}
-                className="bg-white border border-slate-200/80 rounded-xl p-8 flex flex-col justify-between h-48 shadow-sm hover:shadow-md hover:border-[#0F766E]/30 transition-all duration-200 cursor-pointer"
+                className="bg-white border border-slate-200/80 rounded-xl p-6 flex flex-col justify-between h-48 shadow-sm hover:shadow-md hover:border-[#0F766E]/30 transition-all duration-200 cursor-pointer"
               >
                 <div className="flex justify-between items-start">
                   <div className="flex items-center gap-2">
-                    <span className="material-symbols-outlined text-[#0F766E] text-2xl">pill</span>
-                    <span className="text-sm font-semibold text-slate-600">Medicines</span>
+                    <span className="material-symbols-outlined text-[#0F766E] text-xl">pill</span>
+                    <span className="text-xs font-semibold text-slate-600">Medicines</span>
                   </div>
                   {loading ? (
-                    <Skeleton className="h-10 w-12" />
+                    <Skeleton className="h-8 w-10" />
                   ) : (
-                    <span className="font-sans text-5xl font-bold text-slate-900 leading-none">
+                    <span className="font-sans text-4xl font-bold text-slate-900 leading-none">
                       {stats.medicines}
                     </span>
                   )}
                 </div>
 
                 <div>
-                  <h4 className="text-xs font-bold text-slate-800 uppercase tracking-widest">Active Medicines</h4>
-                  <p className="text-xs text-slate-500 mt-1">Current regimen adherence optimal.</p>
+                  <h4 className="text-[10px] font-bold text-slate-800 uppercase tracking-widest">Active Medicines</h4>
+                  <p className="text-[10px] text-slate-500 mt-1">Current regimen adherence optimal.</p>
+                </div>
+              </div>
+
+              {/* Lab Reports Card */}
+              <div 
+                onClick={() => navigate('/lab-reports')}
+                className="bg-white border border-slate-200/80 rounded-xl p-6 flex flex-col justify-between h-48 shadow-sm hover:shadow-md hover:border-[#0F766E]/30 transition-all duration-200 cursor-pointer"
+              >
+                <div className="flex justify-between items-start">
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-[#0F766E] text-xl">biotech</span>
+                    <span className="text-xs font-semibold text-slate-600">Lab Reports</span>
+                  </div>
+                  {loading ? (
+                    <Skeleton className="h-8 w-10" />
+                  ) : (
+                    <span className="font-sans text-4xl font-bold text-slate-900 leading-none">
+                      {stats.labs}
+                    </span>
+                  )}
+                </div>
+
+                <div>
+                  <h4 className="text-[10px] font-bold text-slate-800 uppercase tracking-widest">Lab Reports</h4>
+                  <p className="text-[10px] text-slate-500 mt-1">Historical test values logged.</p>
                 </div>
               </div>
 
               {/* Interaction Alerts Card */}
               <div 
                 onClick={() => navigate('/alerts')}
-                className="bg-white border border-slate-200/80 rounded-xl p-8 flex flex-col justify-between h-48 shadow-sm hover:shadow-md hover:border-amber-500/30 transition-all duration-200 cursor-pointer relative overflow-hidden group"
+                className="bg-white border border-slate-200/80 rounded-xl p-6 flex flex-col justify-between h-48 shadow-sm hover:shadow-md hover:border-amber-500/30 transition-all duration-200 cursor-pointer relative overflow-hidden group"
               >
                 <div className="absolute inset-0 bg-amber-500 opacity-0 group-hover:opacity-[0.02] transition-opacity duration-300"></div>
                 <div className="flex justify-between items-start relative z-10">
                   <div className="flex items-center gap-2">
-                    <span className={`material-symbols-outlined text-2xl ${stats.alerts > 0 ? 'text-amber-500' : 'text-[#0F766E]'}`}>
+                    <span className={`material-symbols-outlined text-xl ${stats.alerts > 0 ? 'text-amber-500' : 'text-[#0F766E]'}`}>
                       warning
                     </span>
-                    <span className="text-sm font-semibold text-slate-600">Alerts</span>
+                    <span className="text-xs font-semibold text-slate-600">Alerts</span>
                   </div>
                   {loading ? (
-                    <Skeleton className="h-10 w-12" />
+                    <Skeleton className="h-8 w-10" />
                   ) : (
-                    <span className={`font-sans text-5xl font-bold leading-none ${stats.alerts > 0 ? 'text-amber-500' : 'text-slate-900'}`}>
+                    <span className={`font-sans text-4xl font-bold leading-none ${stats.alerts > 0 ? 'text-amber-500' : 'text-slate-900'}`}>
                       {stats.alerts}
                     </span>
                   )}
                 </div>
                 <div className="relative z-10">
-                  <h4 className="text-xs font-bold text-slate-800 uppercase tracking-widest">Interaction Alerts</h4>
-                  <p className="text-xs text-slate-500 mt-1">
-                    {stats.alerts > 0 ? 'Review advised for newly prescribed item.' : 'No interactions detected.'}
+                  <h4 className="text-[10px] font-bold text-slate-800 uppercase tracking-widest">Interaction Alerts</h4>
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    {stats.alerts > 0 ? 'Review advised.' : 'No warnings.'}
                   </p>
                 </div>
               </div>
@@ -249,25 +278,25 @@ export default function Dashboard() {
               {/* Upcoming Visits Card */}
               <div 
                 onClick={() => navigate('/calendar')}
-                className="bg-white border border-slate-200/80 rounded-xl p-8 flex flex-col justify-between h-48 shadow-sm hover:shadow-md hover:border-[#0F766E]/30 transition-all duration-200 cursor-pointer"
+                className="bg-white border border-slate-200/80 rounded-xl p-6 flex flex-col justify-between h-48 shadow-sm hover:shadow-md hover:border-[#0F766E]/30 transition-all duration-200 cursor-pointer"
               >
                 <div className="flex justify-between items-start">
                   <div className="flex items-center gap-2">
-                    <span className="material-symbols-outlined text-[#0F766E] text-2xl">calendar_month</span>
-                    <span className="text-sm font-semibold text-slate-600">Visits</span>
+                    <span className="material-symbols-outlined text-[#0F766E] text-xl">calendar_month</span>
+                    <span className="text-xs font-semibold text-slate-600">Visits</span>
                   </div>
                   {loading ? (
-                    <Skeleton className="h-10 w-12" />
+                    <Skeleton className="h-8 w-10" />
                   ) : (
-                    <span className="font-sans text-5xl font-bold text-slate-900 leading-none">
+                    <span className="font-sans text-4xl font-bold text-slate-900 leading-none">
                       {stats.visits.length}
                     </span>
                   )}
                 </div>
                 <div>
-                  <h4 className="text-xs font-bold text-slate-800 uppercase tracking-widest">Upcoming Visits</h4>
-                  <p className="text-xs text-slate-500 mt-1">
-                    {stats.visits.length > 0 ? `Next consultation scheduled.` : 'No upcoming visits.'}
+                  <h4 className="text-[10px] font-bold text-slate-800 uppercase tracking-widest">Upcoming Visits</h4>
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    {stats.visits.length > 0 ? `Consultation scheduled.` : 'No upcoming visits.'}
                   </p>
                 </div>
               </div>

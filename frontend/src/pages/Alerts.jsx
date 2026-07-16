@@ -79,6 +79,39 @@ export default function Alerts() {
     return SEVERITY_CONFIG[severity] || SEVERITY_CONFIG.no_action
   }
 
+  const renderExplanation = (text) => {
+    if (!text) return null;
+    
+    // Split into paragraphs/lines
+    const paragraphs = text.split('\n').filter(p => p.trim());
+    
+    return (
+      <div className="space-y-4 my-6 text-slate-600">
+        {paragraphs.map((p, idx) => {
+          // Replace markdown double-asterisks with styled bold tags
+          const parts = p.split('**');
+          if (parts.length > 1) {
+            return (
+              <p key={idx} className="text-sm leading-relaxed">
+                {parts.map((part, i) => {
+                  if (i % 2 === 1) {
+                    return <strong key={i} className="text-slate-800 font-bold block mt-4 mb-1.5 first:mt-0">{part}</strong>;
+                  }
+                  return part;
+                })}
+              </p>
+            );
+          }
+          return (
+            <p key={idx} className="text-sm leading-relaxed bg-slate-50/50 p-3 rounded-lg border border-slate-100/50">
+              {p}
+            </p>
+          );
+        })}
+      </div>
+    );
+  };
+
   // Filter out acknowledged alerts to match active list, showing only unacknowledged ones
   const activeAlerts = alerts.filter(a => a.status === 'shown')
 
@@ -138,9 +171,7 @@ export default function Alerts() {
                       </h2>
 
                       {/* Explanation */}
-                      <p className="text-sm text-slate-500 mb-6 leading-relaxed">
-                        {alert.explanation}
-                      </p>
+                      {renderExplanation(alert.explanation)}
 
                       {/* Side-by-Side Split Drugs Cards */}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

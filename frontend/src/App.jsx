@@ -1,8 +1,9 @@
-import { Routes, Route } from 'react-router-dom'
+import { Routes, Route, Navigate } from 'react-router-dom'
 import Login from './pages/Login.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import Upload from './pages/Upload.jsx'
 import MedicineList from './pages/MedicineList.jsx'
+import LabReports from './pages/LabReports.jsx'
 import Alerts from './pages/Alerts.jsx'
 import Calendar from './pages/Calendar.jsx'
 import PrivacySettings from './pages/PrivacySettings.jsx'
@@ -26,10 +27,10 @@ function App() {
       <Route path="/login" element={<Login />} />
       
       {/* Static Info Pages */}
-      <Route path="/terms" element={<Terms />} />
-      <Route path="/privacy-policy" element={<PrivacyPolicy />} />
-      <Route path="/clinical-guidelines" element={<ClinicalGuidelines />} />
-      <Route path="/support" element={<Support />} />
+      <Route path="/terms" element={<Navigate to="/dashboard" replace />} />
+      <Route path="/privacy-policy" element={<Navigate to="/dashboard" replace />} />
+      <Route path="/clinical-guidelines" element={<Navigate to="/dashboard" replace />} />
+      <Route path="/support" element={<Navigate to="/dashboard" replace />} />
 
       {/* Authenticated Clinical Workspace */}
       <Route element={<ProtectedRoute />}>
@@ -37,6 +38,7 @@ function App() {
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/upload" element={<Upload />} />
           <Route path="/medicines" element={<MedicineList />} />
+          <Route path="/lab-reports" element={<LabReports />} />
           <Route path="/alerts" element={<Alerts />} />
           <Route path="/calendar" element={<Calendar />} />
           <Route path="/privacy" element={<PrivacySettings />} />
