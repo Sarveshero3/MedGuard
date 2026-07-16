@@ -47,10 +47,10 @@ const registerLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-// uploadLimiter: Max 5 uploads per 10 minutes
+// uploadLimiter: Max 50 uploads per 10 minutes for dev/testing ease
 const uploadLimiter = rateLimit({
   windowMs: 10 * 60 * 1000,
-  max: 5,
+  max: 50,
   message: 'Too many document uploads. Please try again after 10 minutes.',
   handler: handleLimitReached('uploadLimiter'),
   standardHeaders: true,
