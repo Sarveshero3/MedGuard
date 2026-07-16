@@ -14,11 +14,10 @@ class Settings(BaseSettings):
     ms1_base_url: str = "http://ms1-core-api:4000"
     log_level: str = "info"
     
-    # Model configuration defaults (NVIDIA integrate)
-    nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"
-    orchestrator_model: str = "glm-5.2"
-    ocr_model: str = "nvidia/nemotron-ocr-v2"
-    disambiguation_model: str = "minimax/minimax-m3-preview"
+    # Model configuration defaults (NVIDIA NIM)
+    orchestrator_model: str = "z-ai/glm-5.2"
+    vision_model: str = "nvidia/nemotron-nano-12b-v2-vl"
+    disambiguation_model: str = "minimaxai/minimax-m3"
 
     class Config:
         env_file = ".env"

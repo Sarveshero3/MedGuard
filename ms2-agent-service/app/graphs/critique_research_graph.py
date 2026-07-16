@@ -2,7 +2,7 @@ import httpx
 from typing import TypedDict, Dict, Any
 from langgraph.graph import StateGraph, END
 from app.config import settings
-from langchain_openai import ChatOpenAI
+from langchain_nvidia_ai_endpoints import ChatNVIDIA
 from langchain_core.messages import HumanMessage, SystemMessage
 
 class CritiqueResearchState(TypedDict):
@@ -38,10 +38,9 @@ def research_generic_interactions_node(state: CritiqueResearchState) -> Dict[str
         pass
 
     # 2. If not found in interaction_kb, research it via GLM-5.2 (orchestrator_model)
-    client = ChatOpenAI(
+    client = ChatNVIDIA(
         model=settings.orchestrator_model,
         api_key=settings.nvidia_api_key,
-        base_url=settings.nvidia_base_url,
         temperature=0.0
     )
     
@@ -78,10 +77,9 @@ def critique_findings_node(state: CritiqueResearchState) -> Dict[str, Any]:
             "critique_iterations": iterations + 1
         }
 
-    client = ChatOpenAI(
+    client = ChatNVIDIA(
         model=settings.orchestrator_model,
         api_key=settings.nvidia_api_key,
-        base_url=settings.nvidia_base_url,
         temperature=0.0
     )
     

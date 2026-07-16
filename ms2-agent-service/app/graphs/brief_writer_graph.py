@@ -2,7 +2,7 @@ from typing import TypedDict, List, Dict, Any
 from langgraph.graph import StateGraph, END
 import json
 from app.config import settings
-from langchain_openai import ChatOpenAI
+from langchain_nvidia_ai_endpoints import ChatNVIDIA
 from langchain_core.messages import HumanMessage, SystemMessage
 
 class BriefWriterState(TypedDict):
@@ -41,10 +41,9 @@ def write_visit_brief_node(state: BriefWriterState) -> Dict[str, Any]:
     trends = state.get("lab_trends", [])
     reason = state.get("reason_for_visit", "")
 
-    client = ChatOpenAI(
+    client = ChatNVIDIA(
         model=settings.orchestrator_model,
         api_key=settings.nvidia_api_key,
-        base_url=settings.nvidia_base_url,
         temperature=0.0
     )
     

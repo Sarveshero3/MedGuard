@@ -7,7 +7,7 @@ from fastapi import APIRouter, UploadFile, File, Form
 from pydantic import BaseModel
 from typing import List, Dict, Any
 from pypdf import PdfReader
-from langchain_openai import ChatOpenAI
+from langchain_nvidia_ai_endpoints import ChatNVIDIA
 from langchain_core.messages import HumanMessage, SystemMessage
 from app.config import settings
 
@@ -52,7 +52,17 @@ class InteractionRequest(BaseModel):
 
 
 def _extract_text_from_file(file_path: str, filename: str) -> str:
-    """Extract raw text from a file using pypdf for PDFs or NVIDIA OCR for images."""
+    """Extract raw text from a file. Attempts to use docling if available, falling back to pypdf/ChatNVIDIA VLM."""
+    try:
+        from docling.document_converter import DocumentConverter
+        converter = DocumentConverter()
+        result = converter.convert(file_path)
+        text = result.document.export_to_markdown()
+        if text.strip():
+            return text.strip()
+    except Exception:
+        pass
+
     is_pdf = filename.lower().endswith(".pdf")
     if is_pdf:
         reader = PdfReader(file_path)
@@ -63,10 +73,10 @@ def _extract_text_from_file(file_path: str, filename: str) -> str:
     else:
         with open(file_path, "rb") as f:
             img_b64 = base64.b64encode(f.read()).decode("utf-8")
-        ocr_client = ChatOpenAI(
-            model=settings.ocr_model,
+        # Use the orchestrator VLM (glm-5.2) for OCR since Nemotron OCR v2 is a self-hosted NIM
+        ocr_client = ChatNVIDIA(
+            model=settings.orchestrator_model,
             api_key=settings.nvidia_api_key,
-            base_url=settings.nvidia_base_url,
             temperature=0.0
         )
         ocr_response = ocr_client.invoke([
@@ -106,10 +116,9 @@ async def extract_document(
         raw_text = _extract_text_from_file(tmp_path, photo.filename)
 
         # Step 2: Classify using the orchestrator model
-        classifier = ChatOpenAI(
+        classifier = ChatNVIDIA(
             model=settings.orchestrator_model,
             api_key=settings.nvidia_api_key,
-            base_url=settings.nvidia_base_url,
             temperature=0.0
         )
         classify_prompt = """You are a medical document classifier. Given the text extracted from a medical document, classify it as either "prescription" or "lab_report".

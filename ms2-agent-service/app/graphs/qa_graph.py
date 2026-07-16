@@ -2,7 +2,7 @@ from typing import TypedDict, List, Dict, Any
 from langgraph.graph import StateGraph, END
 import json
 from app.config import settings
-from langchain_openai import ChatOpenAI
+from langchain_nvidia_ai_endpoints import ChatNVIDIA
 from langchain_core.messages import HumanMessage, SystemMessage
 
 class QaState(TypedDict):
@@ -19,10 +19,9 @@ def answer_question_node(state: QaState) -> Dict[str, Any]:
 
     disclaimer = "\n\n*Discuss this with your doctor — this is not a diagnosis.*"
 
-    client = ChatOpenAI(
+    client = ChatNVIDIA(
         model=settings.orchestrator_model,
         api_key=settings.nvidia_api_key,
-        base_url=settings.nvidia_base_url,
         temperature=0.0
     )
     
