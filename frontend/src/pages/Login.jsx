@@ -327,7 +327,7 @@ export default function Login() {
               {/* Password */}
               <div className="space-y-1 text-left">
                 <Label htmlFor="password" className="text-xs">Password</Label>
-                <div className="relative">
+                <div className="relative w-full">
                   <Input
                     id="password"
                     type={showPassword ? "text" : "password"}
@@ -341,9 +341,10 @@ export default function Login() {
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-[#0F766E] transition-colors flex items-center justify-center cursor-pointer focus:outline-none"
+                    style={{ border: 'none', background: 'none', padding: 0, boxShadow: 'none' }}
                     aria-label={showPassword ? "Hide password" : "Show password"}
                   >
-                    <span className="material-symbols-outlined text-base">
+                    <span className="material-symbols-outlined text-[16px] select-none">
                       {showPassword ? 'visibility' : 'visibility_off'}
                     </span>
                   </button>
