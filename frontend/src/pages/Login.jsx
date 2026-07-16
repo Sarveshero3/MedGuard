@@ -32,6 +32,37 @@ export default function Login() {
     e.preventDefault()
     setError('')
     setLoading(true)
+
+    // JS Validation to prevent silent failures on incorrect input formats
+    if (!showMfa) {
+      if (isSignup && !formData.name) {
+        setError('Full Name is required.')
+        setLoading(false)
+        return
+      }
+      if (!formData.email) {
+        setError('Email Address is required.')
+        setLoading(false)
+        return
+      }
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+      if (!emailRegex.test(formData.email)) {
+        setError('Please enter a valid email address (e.g., user@example.com).')
+        setLoading(false)
+        return
+      }
+      if (!formData.password) {
+        setError('Password is required.')
+        setLoading(false)
+        return
+      }
+      if (isSignup && !formData.consentGranted) {
+        setError('You must grant consent under the DPDP Act to register.')
+        setLoading(false)
+        return
+      }
+    }
+
     try {
       if (showMfa) {
         // MFA Verification Step
@@ -113,7 +144,7 @@ export default function Login() {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4" noValidate>
           {showMfa ? (
             // MFA OTP verification form
             <div className="space-y-3 text-left">
