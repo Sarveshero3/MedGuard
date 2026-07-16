@@ -92,7 +92,7 @@ def draw_prescription(filename, hospital, doctor, specialty, date_str, medicines
 
     path = os.path.join(SAMPLES_DIR, filename)
     img.save(path, 'PNG')
-    print(f"  ✅ Created {path}")
+    print(f"  [OK] Created {path}")
 
 
 def draw_lab_report(filename, lab_name, date_str, values, patient_note=""):
@@ -144,7 +144,7 @@ def draw_lab_report(filename, lab_name, date_str, values, patient_note=""):
 
     path = os.path.join(SAMPLES_DIR, filename)
     img.save(path, 'PNG')
-    print(f"  ✅ Created {path}")
+    print(f"  [OK] Created {path}")
 
 
 def main():
@@ -154,7 +154,7 @@ def main():
     lab1_date = (today - timedelta(days=14)).strftime("%d/%m/%Y")
     lab2_date = today.strftime("%d/%m/%Y")
 
-    print("\n🏥 MedGuard — John Doe Test Case Generator\n")
+    print("\nMedGuard - John Doe Test Case Generator\n")
 
     # 1. Prescription 1: Glycomet + Coumadin
     draw_prescription(
@@ -210,7 +210,7 @@ def main():
         patient_note="Compared to baseline from 2 weeks ago: HbA1c +0.4, Creatinine +0.4, K+ +1.1"
     )
 
-    print(f"\n✅ All test case documents generated in {os.path.abspath(SAMPLES_DIR)}/\n")
+    print(f"\nAll test case documents generated in {os.path.abspath(SAMPLES_DIR)}/\n")
 
 
 if __name__ == '__main__':
