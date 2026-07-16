@@ -38,16 +38,8 @@ export default function Upload() {
     scheduled_date: '',
   })
 
-  // Editable prescription fields for the currently active file review
-  const [prescriptionFields, setPrescriptionFields] = useState({
-    brand_name: '',
-    generic_name: '',
-    dosage: '',
-    frequency: '',
-    duration_text: '',
-    course_end_date: '',
-    added_at: '',
-  })
+  // Editable prescription medicines for the currently active file review
+  const [prescriptionMedicines, setPrescriptionMedicines] = useState([])
 
   // Editable lab report fields for the currently active file review
   const [labFields, setLabFields] = useState({
@@ -159,15 +151,25 @@ export default function Upload() {
     const raw = data?.raw_extraction || {}
     const defaultDate = new Date().toISOString().split('T')[0];
     if (type === 'prescription') {
-      setPrescriptionFields({
-        brand_name: raw.brand_name || '',
-        generic_name: data?.resolution?.generic_name || '',
-        dosage: raw.dosage || '',
-        frequency: raw.frequency || '',
-        duration_text: raw.duration_text || '',
-        course_end_date: '',
-        added_at: defaultDate,
-      })
+      if (raw.medicines && Array.isArray(raw.medicines)) {
+        setPrescriptionMedicines(raw.medicines.map(m => ({
+          brand_name: m.brand_name || '',
+          generic_name: m.generic_name || '',
+          dosage: m.dosage || '',
+          frequency: m.frequency || '',
+          duration_text: m.duration_text || '',
+          added_at: defaultDate,
+        })))
+      } else {
+        setPrescriptionMedicines([{
+          brand_name: raw.brand_name || '',
+          generic_name: data?.resolution?.generic_name || '',
+          dosage: raw.dosage || '',
+          frequency: raw.frequency || '',
+          duration_text: raw.duration_text || '',
+          added_at: defaultDate,
+        }])
+      }
     } else {
       setLabFields({
         test_type: raw.test_type || '',
@@ -353,20 +355,22 @@ export default function Upload() {
       if (activeItem.docType === 'prescription') {
         const payload = {
           patient_id: user.id,
-          source_photo_id: activeItem.extraction.source_photo_id,
           visit_id: finalVisitId,
-          brand_name: prescriptionFields.brand_name,
-          generic_name: prescriptionFields.generic_name,
-          dosage: prescriptionFields.dosage,
-          frequency: prescriptionFields.frequency,
-          duration_text: prescriptionFields.duration_text,
-          added_at: prescriptionFields.added_at,
-          brand_mapping_correction: activeItem.extraction.resolution?.status === 'generic_unresolved' ? {
-            brand_name: prescriptionFields.brand_name,
-            generic_name: prescriptionFields.generic_name
-          } : undefined
+          medicines: prescriptionMedicines.map(m => ({
+            brand_name: m.brand_name,
+            generic_name: m.generic_name,
+            dosage: m.dosage,
+            frequency: m.frequency,
+            duration_text: m.duration_text,
+            added_at: m.added_at,
+            source_photo_id: activeItem.extraction.source_photo_id,
+            brand_mapping_correction: m.generic_name && (m.generic_name !== 'generic_unresolved') ? {
+              brand_name: m.brand_name,
+              generic_name: m.generic_name
+            } : undefined
+          }))
         }
-        await api.post('/medicines', payload)
+        await api.post('/medicines/batch', payload)
       } else {
         const payload = {
           patient_id: user.id,
@@ -868,84 +872,131 @@ export default function Upload() {
                                 </div>
                               ) : null}
                               {activeItem.docType === 'prescription' ? (
-                                <div className="space-y-4">
-                                  <div>
-                                    <div className="flex justify-between items-center mb-1">
-                                      <label className="text-xs font-bold text-slate-700">Brand Name</label>
-                                      {getConfidenceBadge(activeExtraction.confidence_scores?.brand_name || 1.0)}
-                                    </div>
-                                    <input
-                                      type="text"
-                                      required
-                                      value={prescriptionFields.brand_name}
-                                      onChange={(e) => setPrescriptionFields({ ...prescriptionFields, brand_name: e.target.value })}
-                                      className="w-full bg-white border border-slate-200 rounded px-3 py-2 text-xs focus:outline-none focus:border-[#0f766e] focus:ring-1 focus:ring-[#0f766e]"
-                                    />
-                                  </div>
+                                <div className="space-y-6">
+                                  {prescriptionMedicines.map((med, index) => (
+                                    <div key={index} className="p-4 border border-slate-100 rounded-xl bg-slate-50/50 space-y-4 relative">
+                                      <div className="flex justify-between items-center">
+                                        <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">Medicine #{index + 1}</h4>
+                                        {prescriptionMedicines.length > 1 && (
+                                          <button
+                                            type="button"
+                                            onClick={() => setPrescriptionMedicines(prev => prev.filter((_, i) => i !== index))}
+                                            className="text-xs bg-rose-50 hover:bg-rose-100 text-rose-700 px-2 py-1 rounded font-semibold flex items-center gap-1 cursor-pointer border border-rose-200"
+                                          >
+                                            <span className="material-symbols-outlined text-xs">delete</span> Remove
+                                          </button>
+                                        )}
+                                      </div>
 
-                                  <div>
-                                    <div className="flex justify-between items-center mb-1">
-                                      <label className="text-xs font-bold text-slate-700">Generic Name</label>
-                                      {activeExtraction.resolution?.status === 'resolved' ? (
-                                        <span className="bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] px-2 py-0.5 rounded font-semibold">Resolved</span>
-                                      ) : (
-                                        <span className="bg-amber-50 border border-amber-200 text-amber-700 text-[10px] px-2 py-0.5 rounded font-semibold">Unresolved</span>
-                                      )}
-                                    </div>
-                                    <input
-                                      type="text"
-                                      required
-                                      value={prescriptionFields.generic_name}
-                                      onChange={(e) => setPrescriptionFields({ ...prescriptionFields, generic_name: e.target.value })}
-                                      className="w-full bg-white border border-slate-200 rounded px-3 py-2 text-xs focus:outline-none focus:border-[#0f766e] focus:ring-1 focus:ring-[#0f766e]"
-                                      placeholder="e.g. Metformin, Amoxicillin"
-                                    />
-                                  </div>
+                                      <div>
+                                        <label className="block text-xs font-bold text-slate-700 mb-1 font-semibold">Brand Name</label>
+                                        <input
+                                          type="text"
+                                          required
+                                          value={med.brand_name}
+                                          onChange={(e) => {
+                                            const updated = [...prescriptionMedicines];
+                                            updated[index] = { ...updated[index], brand_name: e.target.value };
+                                            setPrescriptionMedicines(updated);
+                                          }}
+                                          className="w-full bg-white border border-slate-200 rounded px-3 py-2 text-xs focus:outline-none"
+                                        />
+                                      </div>
 
-                                  <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                      <label className="block text-xs font-bold text-slate-700 mb-1">Dosage</label>
-                                      <input
-                                        type="text"
-                                        required
-                                        value={prescriptionFields.dosage}
-                                        onChange={(e) => setPrescriptionFields({ ...prescriptionFields, dosage: e.target.value })}
-                                        className="w-full bg-white border border-slate-200 rounded px-3 py-2 text-xs focus:outline-none"
-                                      />
-                                    </div>
-                                    <div>
-                                      <label className="block text-xs font-bold text-slate-700 mb-1">Frequency</label>
-                                      <input
-                                        type="text"
-                                        required
-                                        value={prescriptionFields.frequency}
-                                        onChange={(e) => setPrescriptionFields({ ...prescriptionFields, frequency: e.target.value })}
-                                        className="w-full bg-white border border-slate-200 rounded px-3 py-2 text-xs focus:outline-none"
-                                      />
-                                    </div>
-                                  </div>
+                                      <div>
+                                        <label className="block text-xs font-bold text-slate-700 mb-1 font-semibold">Generic Name</label>
+                                        <input
+                                          type="text"
+                                          required
+                                          value={med.generic_name}
+                                          onChange={(e) => {
+                                            const updated = [...prescriptionMedicines];
+                                            updated[index] = { ...updated[index], generic_name: e.target.value };
+                                            setPrescriptionMedicines(updated);
+                                          }}
+                                          className="w-full bg-white border border-slate-200 rounded px-3 py-2 text-xs focus:outline-none"
+                                          placeholder="e.g. Metformin, Amoxicillin"
+                                        />
+                                      </div>
 
-                                  <div>
-                                    <label className="block text-xs font-bold text-slate-700 mb-1">Duration</label>
-                                    <input
-                                      type="text"
-                                      required
-                                      value={prescriptionFields.duration_text}
-                                      onChange={(e) => setPrescriptionFields({ ...prescriptionFields, duration_text: e.target.value })}
-                                      className="w-full bg-white border border-slate-200 rounded px-3 py-2 text-xs focus:outline-none"
-                                    />
-                                  </div>
+                                      <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                          <label className="block text-xs font-bold text-slate-700 mb-1 font-semibold">Dosage</label>
+                                          <input
+                                            type="text"
+                                            required
+                                            value={med.dosage}
+                                            onChange={(e) => {
+                                              const updated = [...prescriptionMedicines];
+                                              updated[index] = { ...updated[index], dosage: e.target.value };
+                                              setPrescriptionMedicines(updated);
+                                            }}
+                                            className="w-full bg-white border border-slate-200 rounded px-3 py-2 text-xs focus:outline-none"
+                                          />
+                                        </div>
+                                        <div>
+                                          <label className="block text-xs font-bold text-slate-700 mb-1 font-semibold">Frequency</label>
+                                          <input
+                                            type="text"
+                                            required
+                                            value={med.frequency}
+                                            onChange={(e) => {
+                                              const updated = [...prescriptionMedicines];
+                                              updated[index] = { ...updated[index], frequency: e.target.value };
+                                              setPrescriptionMedicines(updated);
+                                            }}
+                                            className="w-full bg-white border border-slate-200 rounded px-3 py-2 text-xs focus:outline-none"
+                                          />
+                                        </div>
+                                      </div>
 
-                                  <div>
-                                    <label className="block text-xs font-bold text-slate-700 mb-1">Prescription Date</label>
-                                    <input
-                                      type="date"
-                                      required
-                                      value={prescriptionFields.added_at}
-                                      onChange={(e) => setPrescriptionFields({ ...prescriptionFields, added_at: e.target.value })}
-                                      className="w-full bg-white border border-slate-200 rounded px-3 py-2 text-xs focus:outline-none focus:border-[#0f766e] focus:ring-1 focus:ring-[#0f766e]"
-                                    />
-                                  </div>
+                                      <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                          <label className="block text-xs font-bold text-slate-700 mb-1 font-semibold">Duration</label>
+                                          <input
+                                            type="text"
+                                            required
+                                            value={med.duration_text}
+                                            onChange={(e) => {
+                                              const updated = [...prescriptionMedicines];
+                                              updated[index] = { ...updated[index], duration_text: e.target.value };
+                                              setPrescriptionMedicines(updated);
+                                            }}
+                                            className="w-full bg-white border border-slate-200 rounded px-3 py-2 text-xs focus:outline-none"
+                                          />
+                                        </div>
+                                        <div>
+                                          <label className="block text-xs font-bold text-slate-700 mb-1 font-semibold">Prescription Date</label>
+                                          <input
+                                            type="date"
+                                            required
+                                            value={med.added_at}
+                                            onChange={(e) => {
+                                              const updated = [...prescriptionMedicines];
+                                              updated[index] = { ...updated[index], added_at: e.target.value };
+                                              setPrescriptionMedicines(updated);
+                                            }}
+                                            className="w-full bg-white border border-slate-200 rounded px-3 py-2 text-xs focus:outline-none"
+                                          />
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ))}
+
+                                  <button
+                                    type="button"
+                                    onClick={() => setPrescriptionMedicines(prev => [...prev, {
+                                      brand_name: '',
+                                      generic_name: '',
+                                      dosage: '',
+                                      frequency: '',
+                                      duration_text: '',
+                                      added_at: new Date().toISOString().split('T')[0]
+                                    }])}
+                                    className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs py-2 rounded-lg flex items-center justify-center gap-1 cursor-pointer border border-slate-200"
+                                  >
+                                    <span className="material-symbols-outlined text-xs">add</span> Add Another Medicine
+                                  </button>
                                 </div>
                               ) : (
                                 <div className="space-y-4">

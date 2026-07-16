@@ -141,12 +141,13 @@ def ocr_vlm_extraction_node(state: PrescriptionState) -> Dict[str, Any]:
     )
     
     prompt = """
-    Extract medicine details from the raw OCR text. Return a JSON object with:
-    - brand_name: string or null
-    - dosage: string or null
-    - frequency: string or null
+    Extract prescribing doctor and all medicines details from the raw OCR text. Return a JSON object with:
     - prescribing_doctor: string or null
-    - duration_text: string or null
+    - medicines: a list of objects, each containing:
+      - brand_name: string or null
+      - dosage: string or null
+      - frequency: string or null
+      - duration_text: string or null
 
     Return ONLY the raw JSON object. Do not include markdown code block formatting.
     """
@@ -179,7 +180,7 @@ def ocr_vlm_extraction_node(state: PrescriptionState) -> Dict[str, Any]:
         ])
     structured_b = parse_json_safely(struct_b_res.content)
 
-    fields = ["brand_name", "dosage", "frequency"]
+    fields = ["brand_name", "dosage", "frequency", "duration_text"]
     mismatch_fields = []
     
     def clean_str(val):
@@ -187,56 +188,83 @@ def ocr_vlm_extraction_node(state: PrescriptionState) -> Dict[str, Any]:
             return ""
         return str(val).strip().lower().replace(" ", "")
 
-    for fld in fields:
-        val_a = structured_a.get(fld)
-        val_b = structured_b.get(fld)
-        if clean_str(val_a) != clean_str(val_b):
-            mismatch_fields.append(fld)
+    meds_a = structured_a.get("medicines") or []
+    meds_b = structured_b.get("medicines") or []
+    if not isinstance(meds_a, list): meds_a = [meds_a]
+    if not isinstance(meds_b, list): meds_b = [meds_b]
+    
+    meds_a = [m for m in meds_a if isinstance(m, dict)]
+    meds_b = [m for m in meds_b if isinstance(m, dict)]
 
-    brand_name = structured_b.get("brand_name") or structured_a.get("brand_name")
-    generic_name = resolve_brand_to_generic(brand_name)
+    if len(meds_a) != len(meds_b):
+        mismatch_fields.append("medicines_count")
+    else:
+        for idx in range(len(meds_b)):
+            m_a = meds_a[idx]
+            m_b = meds_b[idx]
+            for fld in fields:
+                val_a = m_a.get(fld)
+                val_b = m_b.get(fld)
+                if clean_str(val_a) != clean_str(val_b):
+                    mismatch_fields.append(fld)
+
+    primary_meds = meds_b if meds_b else meds_a
+    raw_medicines = []
+    for med in primary_meds:
+        brand = med.get("brand_name")
+        generic = resolve_brand_to_generic(brand)
+        raw_medicines.append({
+            "brand_name": brand,
+            "generic_name": generic or "generic_unresolved",
+            "dosage": med.get("dosage"),
+            "frequency": med.get("frequency"),
+            "duration_text": med.get("duration_text"),
+            "resolution_status": "resolved" if generic else "generic_unresolved"
+        })
 
     if mismatch_fields:
-        brand_a = structured_a.get("brand_name") or "Unknown"
-        brand_b = structured_b.get("brand_name") or "Unknown"
-        follow_up_question = f"Model disagreement detected on {', '.join(mismatch_fields)}. Model A extracted '{brand_a}' and Model B extracted '{brand_b}'. Please confirm correct values."
+        brands_a = [m.get("brand_name") or "Unknown" for m in meds_a]
+        brands_b = [m.get("brand_name") or "Unknown" for m in meds_b]
+        follow_up_question = f"Model disagreement detected on {', '.join(set(mismatch_fields))}. Model A extracted '{', '.join(brands_a)}' and Model B extracted '{', '.join(brands_b)}'. Please confirm correct values."
         
         return {
             "raw_extraction": {
-                "brand_name": structured_b.get("brand_name") or structured_a.get("brand_name"),
-                "dosage": structured_b.get("dosage") or structured_a.get("dosage"),
-                "frequency": structured_b.get("frequency") or structured_a.get("frequency"),
                 "prescribing_doctor": structured_b.get("prescribing_doctor") or structured_a.get("prescribing_doctor"),
-                "duration_text": structured_b.get("duration_text") or structured_a.get("duration_text"),
+                "medicines": raw_medicines
             },
             "confidence_scores": {
-                "brand_name": 0.70 if "brand_name" in mismatch_fields else 0.95,
-                "dosage": 0.70 if "dosage" in mismatch_fields else 0.95,
-                "frequency": 0.70 if "frequency" in mismatch_fields else 0.95,
+                "brand_name": 0.70,
+                "dosage": 0.70,
+                "frequency": 0.70,
                 "prescribing_doctor": 0.95,
             },
             "resolution": {
-                "status": "resolved" if generic_name else "generic_unresolved",
-                "generic_name": generic_name,
+                "status": "generic_unresolved",
+                "generic_name": None,
             },
             "needs_follow_up": True,
             "follow_up_question": follow_up_question,
         }
     else:
+        all_resolved = all(m.get("generic_name") != "generic_unresolved" for m in raw_medicines)
+        
         return {
-            "raw_extraction": structured_b,
+            "raw_extraction": {
+                "prescribing_doctor": structured_b.get("prescribing_doctor") or structured_a.get("prescribing_doctor"),
+                "medicines": raw_medicines
+            },
             "confidence_scores": {
-                "brand_name": 0.96,
+                "brand_name": 0.95,
                 "dosage": 0.95,
-                "frequency": 0.92,
+                "frequency": 0.95,
                 "prescribing_doctor": 0.98,
             },
             "resolution": {
-                "status": "resolved" if generic_name else "generic_unresolved",
-                "generic_name": generic_name,
+                "status": "resolved" if all_resolved else "generic_unresolved",
+                "generic_name": raw_medicines[0].get("generic_name") if len(raw_medicines) == 1 else None,
             },
-            "needs_follow_up": False if generic_name else True,
-            "follow_up_question": "Could not map brand name to generic name. Please verify generic mapping." if not generic_name else None,
+            "needs_follow_up": not all_resolved,
+            "follow_up_question": "Could not map brand name to generic name for one or more medicines. Please verify generic mapping." if not all_resolved else None,
         }
 
 
