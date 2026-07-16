@@ -10,6 +10,7 @@ from pypdf import PdfReader
 from langchain_nvidia_ai_endpoints import ChatNVIDIA
 from langchain_core.messages import HumanMessage, SystemMessage
 from app.config import settings
+from app.services.retry import invoke_with_retry
 
 from app.graphs import (
     prescription_graph,
@@ -82,7 +83,7 @@ def _extract_text_from_file(file_path: str, filename: str) -> str:
                             api_key=settings.nvidia_api_key,
                             temperature=0.0
                         )
-                        ocr_response = ocr_client.invoke([
+                        ocr_response = invoke_with_retry(ocr_client, [
                             SystemMessage(content="Perform raw character-level OCR on the uploaded document. Extract all text exactly as written, preserving layout if possible. Do not interpret or summarize."),
                             HumanMessage(content=[
                                 {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_b64}"}}
@@ -105,7 +106,7 @@ def _extract_text_from_file(file_path: str, filename: str) -> str:
             api_key=settings.nvidia_api_key,
             temperature=0.0
         )
-        ocr_response = ocr_client.invoke([
+        ocr_response = invoke_with_retry(ocr_client, [
             SystemMessage(content="Perform raw character-level OCR on the uploaded document. Extract all text exactly as written, preserving layout if possible. Do not interpret or summarize."),
             HumanMessage(content=[
                 {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_b64}"}}
