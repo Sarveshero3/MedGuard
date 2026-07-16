@@ -31,7 +31,7 @@ export function MgTabs({ value, onValueChange, tabs, defaultValue }) {
             onClick={() => handleTabClick(tab.value)}
             className={`flex-1 py-2.5 text-sm font-semibold transition-all duration-200 cursor-pointer rounded-lg text-center outline-none border-0 ${
               isActive 
-                ? 'bg-white text-[#0B1F33] shadow-sm border-b-2 border-[#0F766E]' 
+                ? 'bg-[#0F766E] text-white shadow-sm' 
                 : 'bg-transparent text-slate-500 hover:text-slate-900 hover:bg-white/40'
             }`}
           >
