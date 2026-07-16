@@ -154,7 +154,7 @@ export default function Upload() {
       formData.append('patient_id', user.id)
     }
 
-    const endpoint = item.docType === 'prescription' ? '/medicines/upload' : '/lab-reports/upload'
+    const endpoint = '/documents/upload'
 
     try {
       const res = await api.post(endpoint, formData, {
@@ -164,8 +164,8 @@ export default function Upload() {
       const { jobId } = res.data.data
       setUploadedFiles(prev => prev.map(f => f.id === fileId ? { ...f, jobId, status: 'processing', progressMessage: 'Enqueued in pipeline...' } : f))
 
-      // Establish SSE stream pointing directly to ms1
-      const sseUrl = `http://localhost:4000/api/status/stream/${jobId}`
+      // Establish relative SSE stream routing through Nginx to prevent CSP blocks
+      const sseUrl = `/api/status/stream/${jobId}`
       const eventSource = new EventSource(sseUrl)
 
       eventSource.onmessage = (event) => {
@@ -180,7 +180,10 @@ export default function Upload() {
             ...f, 
             status: 'completed', 
             progressMessage: 'Ready for review', 
-            extraction: data 
+            extraction: data,
+            docType: data.docType,
+            needsClassificationConfirmation: data.needs_classification_confirmation,
+            classificationConfidence: data.classification_confidence
           } : f))
         } else if (payload.status === 'failed') {
           eventSource.close()
@@ -679,10 +682,48 @@ export default function Upload() {
                                 )}
                               </div>
                             </div>
-
                             {/* Right: Validation Forms */}
                             <form onSubmit={handleSaveActive} className="space-y-5">
                               
+                              {activeItem.needsClassificationConfirmation ? (
+                                <div className="bg-amber-50 border border-amber-200 p-5 rounded-xl mb-6 text-left shadow-sm">
+                                  <h4 className="text-xs font-bold text-amber-800 mb-1.5 flex items-center gap-1.5 uppercase tracking-wider">
+                                    <span className="material-symbols-outlined text-base">question_mark</span>
+                                    Confirm Document Type
+                                  </h4>
+                                  <p className="text-xs text-amber-700 mb-4 leading-relaxed">
+                                    MedGuard classified this document as a <strong>{activeItem.docType === 'prescription' ? 'Prescription' : 'Lab Report'}</strong> with low confidence ({((activeItem.classificationConfidence || 0.5) * 100).toFixed(0)}%). Please confirm the correct document type to load the verification form.
+                                  </p>
+                                  <div className="flex gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setUploadedFiles(prev => prev.map(f => f.id === activeItem.id ? { 
+                                          ...f, 
+                                          needsClassificationConfirmation: false 
+                                        } : f))
+                                      }}
+                                      className="bg-amber-800 hover:bg-amber-900 text-white font-semibold text-[10px] px-3 py-2 rounded-lg transition-all cursor-pointer shadow-sm uppercase tracking-wider"
+                                    >
+                                      Correct, it's a {activeItem.docType === 'prescription' ? 'Prescription' : 'Lab Report'}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const newDocType = activeItem.docType === 'prescription' ? 'lab_report' : 'prescription';
+                                        setUploadedFiles(prev => prev.map(f => f.id === activeItem.id ? { 
+                                          ...f, 
+                                          docType: newDocType,
+                                          needsClassificationConfirmation: false 
+                                        } : f))
+                                      }}
+                                      className="bg-white hover:bg-amber-100/50 text-amber-800 border border-amber-300 font-semibold text-[10px] px-3 py-2 rounded-lg transition-all cursor-pointer shadow-sm uppercase tracking-wider"
+                                    >
+                                      Incorrect, it's a {activeItem.docType === 'prescription' ? 'Lab Report' : 'Prescription'}
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : null}
                               {activeItem.docType === 'prescription' ? (
                                 <div className="space-y-4">
                                   <div>
