@@ -96,7 +96,9 @@ def _extract_text_from_file(file_path: str, filename: str) -> str:
         return text.strip()
     else:
         with open(file_path, "rb") as f:
-            img_b64 = base64.b64encode(f.read()).decode("utf-8")
+            img_bytes = f.read()
+            print(f"Reading file for OCR: {file_path}, size: {len(img_bytes)} bytes", flush=True)
+            img_b64 = base64.b64encode(img_bytes).decode("utf-8")
         # Use the separate vision model for OCR since the orchestrator (glm-5.2) is not a vision model
         ocr_client = ChatNVIDIA(
             model=settings.vision_model,
@@ -132,8 +134,10 @@ async def extract_document(
 
     suffix = os.path.splitext(photo.filename)[1]
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        photo.file.seek(0)
         shutil.copyfileobj(photo.file, tmp)
         tmp_path = tmp.name
+        print(f"Created temp file for document extract: {tmp_path}, size: {os.path.getsize(tmp_path)} bytes", flush=True)
 
     try:
         # Step 1: Extract raw text
@@ -239,8 +243,10 @@ async def extract_prescription(
     # Write upload to temporary file to allow local file reads by graph nodes
     suffix = os.path.splitext(photo.filename)[1]
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        photo.file.seek(0)
         shutil.copyfileobj(photo.file, tmp)
         tmp_path = tmp.name
+        print(f"Created temp file for prescription extract: {tmp_path}, size: {os.path.getsize(tmp_path)} bytes", flush=True)
 
     try:
         state_input = {
@@ -275,8 +281,10 @@ async def extract_lab_report(
     # Write upload to temporary file to allow local file reads by graph nodes
     suffix = os.path.splitext(photo.filename)[1]
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        photo.file.seek(0)
         shutil.copyfileobj(photo.file, tmp)
         tmp_path = tmp.name
+        print(f"Created temp file for lab report extract: {tmp_path}, size: {os.path.getsize(tmp_path)} bytes", flush=True)
 
     try:
         state_input = {
