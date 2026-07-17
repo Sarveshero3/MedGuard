@@ -15,10 +15,12 @@ const calendarRoutes = require('./routes/calendar');
 const consentRoutes = require('./routes/consent');
 const labReportRoutes = require('./routes/labReports');
 const jobRoutes = require('./routes/jobs');
+const briefRoutes = require('./routes/briefs');
 const { apiLimiter } = require('./middleware/rateLimiter');
 const logger = require('./utils/logger');
 
 const app = express();
+app.set('trust proxy', 1);
 const PORT = process.env.MS1_PORT || 4000;
 
 // ── Middleware ────────────────────────────────────────────────
@@ -41,6 +43,7 @@ app.use('/api', calendarRoutes);
 app.use('/api', consentRoutes);
 app.use('/api', labReportRoutes);
 app.use('/api', jobRoutes);
+app.use('/api', briefRoutes);
 
 // Fallback path to log unusual traffic patterns (unknown endpoints)
 app.use((req, res, next) => {

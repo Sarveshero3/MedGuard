@@ -226,7 +226,7 @@ router.post('/medicines', authenticateUser, enforcePatientAccess('full_view'), e
                       const sorted = [resolvedGeneric.toLowerCase(), conflictingMed.generic_name.toLowerCase()].sort();
                       const kbRes = await bgClient.query(
                         `INSERT INTO interaction_kb (generic_a, generic_b, severity, explanation, source, version)
-                         VALUES ($1, $2, 'monitor_closely', $3, 'NVIDIA NIM Research Agent', 'v1')
+                         VALUES ($1, $2, 'monitor_closely', $3, 'Groq Research Agent', 'v1')
                          RETURNING id`,
                         [sorted[0], sorted[1], explanation]
                       );
@@ -847,7 +847,7 @@ router.post('/medicines/batch', authenticateUser, enforcePatientAccess('full_vie
                         const sorted = [newMed.generic_name.toLowerCase(), conflictingMed.generic_name.toLowerCase()].sort();
                         const kbRes = await bgClient.query(
                           `INSERT INTO interaction_kb (generic_a, generic_b, severity, explanation, source, version)
-                           VALUES ($1, $2, 'NVIDIA NIM Research Agent', 'v1', $3, NOW())
+                           VALUES ($1, $2, 'monitor_closely', $3, 'Groq Research Agent', 'v1')
                            RETURNING id`,
                           [sorted[0], sorted[1], explanation]
                         );

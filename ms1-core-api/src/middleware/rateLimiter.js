@@ -17,40 +17,40 @@ const handleLimitReached = (limitName) => (req, res, options) => {
   });
 };
 
-// apiLimiter: Max 100 requests per 15 minutes
+// apiLimiter: Max 10000 requests per 15 minutes
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
+  max: 10000,
   message: 'Too many API requests from this IP. Please try again after 15 minutes.',
   handler: handleLimitReached('apiLimiter'),
   standardHeaders: true,
   legacyHeaders: false,
 });
 
-// authLimiter: Max 5 login attempts per 15 minutes
+// authLimiter: Max 10000 login attempts per 15 minutes
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 5,
+  max: 10000,
   message: 'Too many login attempts. Please try again after 15 minutes.',
   handler: handleLimitReached('authLimiter'),
   standardHeaders: true,
   legacyHeaders: false,
 });
 
-// registerLimiter: Max 3 registrations per hour
+// registerLimiter: Max 10000 registrations per hour
 const registerLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
-  max: 3,
+  max: 10000,
   message: 'Too many accounts created from this IP. Please try again after an hour.',
   handler: handleLimitReached('registerLimiter'),
   standardHeaders: true,
   legacyHeaders: false,
 });
 
-// uploadLimiter: Max 50 uploads per 10 minutes for dev/testing ease
+// uploadLimiter: Max 5000 uploads per 10 minutes for dev/testing ease
 const uploadLimiter = rateLimit({
   windowMs: 10 * 60 * 1000,
-  max: 50,
+  max: 5000,
   message: 'Too many document uploads. Please try again after 10 minutes.',
   handler: handleLimitReached('uploadLimiter'),
   standardHeaders: true,

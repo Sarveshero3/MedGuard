@@ -27,10 +27,27 @@ export default function Calendar() {
     notes: '',
   })
 
+  // Briefs State
+  const [briefs, setBriefs] = useState([])
+  const [briefsLoading, setBriefsLoading] = useState(true)
+
   useEffect(() => {
     if (!user?.id) return
     fetchCalendarData()
+    fetchBriefs()
   }, [user?.id])
+
+  const fetchBriefs = async () => {
+    setBriefsLoading(true)
+    try {
+      const res = await api.get('/briefs', { params: { patient_id: user.id } })
+      setBriefs(res.data.data || [])
+    } catch (err) {
+      console.error('Failed to fetch briefs', err)
+    } finally {
+      setBriefsLoading(false)
+    }
+  }
 
   const fetchCalendarData = async () => {
     setLoading(true)
@@ -188,94 +205,160 @@ export default function Calendar() {
           </div>
         )}
 
-        {/* Timeline Container */}
-        <div className="bg-white border border-slate-200/80 rounded-2xl p-6 md:p-12 relative overflow-hidden text-left shadow-sm">
-          {loading ? (
-            <div className="space-y-6">
-              <Skeleton className="h-28 w-full rounded-xl" />
-              <Skeleton className="h-28 w-full rounded-xl" />
-              <Skeleton className="h-28 w-full rounded-xl" />
-            </div>
-          ) : timelineItems.length === 0 ? (
-            <p className="text-sm text-slate-500">No events or appointments scheduled.</p>
-          ) : (
-            <div className="relative">
-              {timelineItems.map((item, index) => {
-                const isAppt = item.type === 'appointment'
-                return (
-                  <div key={item.id || index} className="relative flex items-start mb-12 last:mb-0 group">
-                    
-                    {/* Vertical connecting line */}
-                    {index < timelineItems.length - 1 && (
-                      <div className="absolute left-[23px] top-[48px] bottom-[-48px] w-0.5 bg-slate-200 z-0"></div>
-                    )}
+        {/* Grid containing Timeline and Briefs */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+          
+          {/* Timeline Container */}
+          <div className="lg:col-span-2 bg-white border border-slate-200/80 rounded-2xl p-6 md:p-12 relative overflow-hidden text-left shadow-sm">
+            {loading ? (
+              <div className="space-y-6">
+                <Skeleton className="h-28 w-full rounded-xl" />
+                <Skeleton className="h-28 w-full rounded-xl" />
+                <Skeleton className="h-28 w-full rounded-xl" />
+              </div>
+            ) : timelineItems.length === 0 ? (
+              <p className="text-sm text-slate-500">No events or appointments scheduled.</p>
+            ) : (
+              <div className="relative">
+                {timelineItems.map((item, index) => {
+                  const isAppt = item.type === 'appointment'
+                  return (
+                    <div key={item.id || index} className="relative flex items-start mb-12 last:mb-0 group">
+                      
+                      {/* Vertical connecting line */}
+                      {index < timelineItems.length - 1 && (
+                        <div className="absolute left-[23px] top-[48px] bottom-[-48px] w-0.5 bg-slate-200 z-0"></div>
+                      )}
 
-                    {/* Circle Node icon */}
-                    <div className="flex-shrink-0 flex flex-col items-center mr-8 z-10 w-12">
-                      <div className={`w-12 h-12 rounded-full border bg-white flex items-center justify-center transition-all duration-300 ${
-                        isAppt 
-                          ? 'border-[#0F766E] text-[#0F766E] group-hover:bg-[#f0f9f8]' 
-                          : 'border-slate-300 text-slate-400 group-hover:bg-slate-100'
+                      {/* Circle Node icon */}
+                      <div className="flex-shrink-0 flex flex-col items-center mr-8 z-10 w-12">
+                        <div className={`w-12 h-12 rounded-full border bg-white flex items-center justify-center transition-all duration-300 ${
+                          isAppt 
+                            ? 'border-[#0F766E] text-[#0F766E] group-hover:bg-[#f0f9f8]' 
+                            : 'border-slate-300 text-slate-400 group-hover:bg-slate-100'
+                        }`}>
+                          <span className="material-symbols-outlined text-xl">
+                            {getTimelineIcon(item)}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Content Card */}
+                      <div className={`flex-grow border border-slate-200/80 rounded-xl p-6 transition-all duration-300 relative bg-white shadow-sm ${
+                        isAppt ? 'hover:border-[#0F766E]' : 'hover:border-slate-400'
                       }`}>
-                        <span className="material-symbols-outlined text-xl">
-                          {getTimelineIcon(item)}
-                        </span>
-                      </div>
-                    </div>
+                        {/* Left border indicator cue */}
+                        <div className={`absolute left-0 top-0 bottom-0 w-1 rounded-l-lg opacity-80 ${
+                          isAppt ? 'bg-[#0F766E]' : 'bg-slate-300'
+                        }`}></div>
 
-                    {/* Content Card */}
-                    <div className={`flex-grow border border-slate-200/80 rounded-xl p-6 transition-all duration-300 relative bg-white shadow-sm ${
-                      isAppt ? 'hover:border-[#0F766E]' : 'hover:border-slate-400'
-                    }`}>
-                      {/* Left border indicator cue */}
-                      <div className={`absolute left-0 top-0 bottom-0 w-1 rounded-l-lg opacity-80 ${
-                        isAppt ? 'bg-[#0F766E]' : 'bg-slate-300'
-                      }`}></div>
-
-                      <div className="flex flex-col md:flex-row justify-between md:items-start gap-4">
-                        <div>
-                          <div className="flex items-center gap-3 mb-2">
-                            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                              {new Date(item.sortDate).toLocaleDateString([], { month: 'short', day: 'numeric' })}
-                              {isAppt && ` • ${new Date(item.sortDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
-                            </span>
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md uppercase ${
-                              isAppt ? 'bg-teal-50 text-teal-800' : 'bg-slate-100 text-slate-600'
-                            }`}>
-                              {isAppt ? 'Appointment' : 'Medicine Course End'}
-                            </span>
+                        <div className="flex flex-col md:flex-row justify-between md:items-start gap-4">
+                          <div>
+                            <div className="flex items-center gap-3 mb-2">
+                              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                                {new Date(item.sortDate).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                                {isAppt && ` • ${new Date(item.sortDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
+                              </span>
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md uppercase ${
+                                isAppt ? 'bg-teal-50 text-teal-800' : 'bg-slate-100 text-slate-600'
+                              }`}>
+                                {isAppt ? 'Appointment' : 'Medicine Course End'}
+                              </span>
+                            </div>
+                            
+                            <h3 className="text-2xl font-bold text-slate-900 mb-1">
+                              {isAppt 
+                                ? (item.visit_type ? `${item.visit_type.toUpperCase()} Consult` : 'General Consult') 
+                                : `${item.brand_name} Course End`
+                              }
+                            </h3>
+                            <p className="text-sm text-slate-500">
+                              {isAppt 
+                                ? `Dr. ${item.doctor_name || 'Clinician'}${item.notes ? ` • ${item.notes}` : ''}` 
+                                : `Check clinical panel or consult physician before refill.`
+                              }
+                            </p>
                           </div>
-                          
-                          <h3 className="text-2xl font-bold text-slate-900 mb-1">
-                            {isAppt 
-                              ? (item.visit_type ? `${item.visit_type.toUpperCase()} Consult` : 'General Consult') 
-                              : `${item.brand_name} Course End`
-                            }
-                          </h3>
-                          <p className="text-sm text-slate-500">
-                            {isAppt 
-                              ? `Dr. ${item.doctor_name || 'Clinician'}${item.notes ? ` • ${item.notes}` : ''}` 
-                              : `Check clinical panel or consult physician before refill.`
-                            }
-                          </p>
-                        </div>
 
-                        <div className="flex items-center gap-2">
-                          <button className="text-slate-400 hover:text-[#0F766E] p-2 transition-colors border border-transparent hover:border-slate-100 rounded-lg cursor-pointer">
-                            <span className="material-symbols-outlined text-lg">edit</span>
-                          </button>
-                          <button className="text-slate-400 hover:text-[#0F766E] p-2 transition-colors border border-transparent hover:border-slate-100 rounded-lg cursor-pointer">
-                            <span className="material-symbols-outlined text-lg">more_vert</span>
-                          </button>
+                          <div className="flex items-center gap-2">
+                            <button className="text-slate-400 hover:text-[#0F766E] p-2 transition-colors border border-transparent hover:border-slate-100 rounded-lg cursor-pointer">
+                              <span className="material-symbols-outlined text-lg">edit</span>
+                            </button>
+                            <button className="text-slate-400 hover:text-[#0F766E] p-2 transition-colors border border-transparent hover:border-slate-100 rounded-lg cursor-pointer">
+                              <span className="material-symbols-outlined text-lg">more_vert</span>
+                            </button>
+                          </div>
                         </div>
                       </div>
-                    </div>
 
-                  </div>
-                )
-              })}
-            </div>
-          )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Recent Briefs Container */}
+          <div className="lg:col-span-1 bg-white border border-slate-200/80 rounded-2xl p-6 relative overflow-hidden text-left shadow-sm">
+            <h2 className="text-xl font-bold text-slate-900 mb-6 flex items-center gap-2">
+              <span className="material-symbols-outlined text-indigo-650">article</span>
+              Recent Briefs
+            </h2>
+            
+            {briefsLoading ? (
+              <div className="space-y-4">
+                <Skeleton className="h-24 w-full rounded-xl" />
+                <Skeleton className="h-24 w-full rounded-xl" />
+              </div>
+            ) : briefs.length === 0 ? (
+              <div className="text-center py-10 border border-slate-100 border-dashed rounded-xl bg-slate-50/50 p-4">
+                <p className="text-xs text-slate-400 mb-4">No doctor prep briefs found.</p>
+                <Link 
+                  to="/brief/new" 
+                  className="inline-flex items-center text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition-colors uppercase tracking-wider"
+                >
+                  Create Brief
+                  <span className="material-symbols-outlined text-xs ml-1 font-bold">arrow_forward</span>
+                </Link>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {briefs.map((brief) => {
+                  const forDate = brief.content?.for_date || new Date(brief.generated_at).toISOString().split('T')[0]
+                  const excerpt = brief.content?.summary 
+                    ? (brief.content.summary.length > 80 ? brief.content.summary.substring(0, 80) + '...' : brief.content.summary)
+                    : 'No summary available.'
+
+                  return (
+                    <div 
+                      key={brief.id}
+                      className="border border-slate-100 rounded-xl p-5 bg-slate-50/50 hover:bg-slate-50 transition-colors relative group"
+                    >
+                      <div className="flex justify-between items-start gap-2 mb-2">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                          For: {forDate}
+                        </span>
+                        <Link 
+                          to={`/brief/${brief.id}`}
+                          className="text-xs font-semibold text-indigo-600 hover:underline"
+                        >
+                          Edit Brief
+                        </Link>
+                      </div>
+                      
+                      <h4 className="text-sm font-bold text-slate-800 mb-1">
+                        Prep Brief
+                      </h4>
+                      <p className="text-xs text-slate-500 leading-relaxed line-clamp-2">
+                        {excerpt}
+                      </p>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+
         </div>
       </main>
 

@@ -26,6 +26,11 @@ api.interceptors.response.use(
     const originalRequest = error.config
     const isAuthRequest = originalRequest?.url?.includes('/auth/')
 
+    // Immediately reject rate-limit errors — do not enter refresh/retry flow
+    if (error.response?.status === 429) {
+      return Promise.reject(error)
+    }
+
     if (error.response?.status === 401 && !isAuthRequest && !originalRequest._retry) {
       originalRequest._retry = true
 

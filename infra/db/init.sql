@@ -204,7 +204,7 @@ CREATE INDEX idx_lab_values_type   ON lab_values(test_type);
 CREATE TABLE briefs (
     id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     patient_id   UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    visit_id     UUID        NOT NULL REFERENCES visits(id) ON DELETE CASCADE,
+    visit_id     UUID        REFERENCES visits(id) ON DELETE CASCADE,
     content      JSONB       NOT NULL DEFAULT '{}',
     generated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -296,5 +296,68 @@ INSERT INTO test_type_normalization (test_variant, canonical_type, source, versi
 ('High Density Lipoprotein', 'HDL', 'system_seed', 'v1', NOW()),
 ('Fasting Blood Sugar', 'FBS', 'system_seed', 'v1', NOW()),
 ('FBS', 'FBS', 'system_seed', 'v1', NOW()),
-('Fasting Glucose', 'FBS', 'system_seed', 'v1', NOW())
+('Fasting Glucose', 'FBS', 'system_seed', 'v1', NOW()),
+-- Seed new test types normalizations
+('Creatinine',       'Creatinine',     'system_seed', 'v1', NOW()),
+('Serum Creatinine', 'Creatinine',     'system_seed', 'v1', NOW()),
+('S.Creatinine',     'Creatinine',     'system_seed', 'v1', NOW()),
+('eGFR',             'eGFR',           'system_seed', 'v1', NOW()),
+('GFR',              'eGFR',           'system_seed', 'v1', NOW()),
+('INR',              'INR',            'system_seed', 'v1', NOW()),
+('Prothrombin INR',  'INR',            'system_seed', 'v1', NOW()),
+('PT/INR',           'INR',            'system_seed', 'v1', NOW()),
+('Platelet Count',   'Platelet Count', 'system_seed', 'v1', NOW()),
+('Platelets',        'Platelet Count', 'system_seed', 'v1', NOW()),
+('PLT',              'Platelet Count', 'system_seed', 'v1', NOW()),
+('ALT',              'ALT',            'system_seed', 'v1', NOW()),
+('SGPT',             'ALT',            'system_seed', 'v1', NOW()),
+('Alanine Transaminase', 'ALT',        'system_seed', 'v1', NOW())
 ON CONFLICT (test_variant, version) DO NOTHING;
+
+-- Lab-medicine safety rules (deterministic, append-only)
+CREATE TABLE IF NOT EXISTS lab_medicine_rules (
+    id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    generic_name   VARCHAR(255)         NOT NULL,
+    test_type      VARCHAR(100)         NOT NULL,
+    condition      VARCHAR(5)           NOT NULL,   -- '>' or '<'
+    threshold      DECIMAL(10,4)        NOT NULL,
+    unit           VARCHAR(30)          NOT NULL,
+    severity       interaction_severity NOT NULL,
+    rationale      TEXT                 NOT NULL,
+    source         VARCHAR(100)         NOT NULL DEFAULT 'system_seed',
+    version        VARCHAR(20)          NOT NULL DEFAULT 'v1',
+    effective_date TIMESTAMPTZ          NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_lab_rule_version UNIQUE (generic_name, test_type, version)
+);
+CREATE INDEX IF NOT EXISTS idx_lab_rules_generic ON lab_medicine_rules(generic_name);
+
+CREATE TRIGGER trg_lab_rules_no_update
+    BEFORE UPDATE ON lab_medicine_rules FOR EACH ROW
+    EXECUTE FUNCTION prevent_mutation();
+CREATE TRIGGER trg_lab_rules_no_delete
+    BEFORE DELETE ON lab_medicine_rules FOR EACH ROW
+    EXECUTE FUNCTION prevent_mutation();
+
+-- Lab-medicine alert flags
+CREATE TABLE IF NOT EXISTS lab_medicine_flags (
+    id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    patient_id    UUID          NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    medicine_id   UUID          NOT NULL REFERENCES medicines(id) ON DELETE CASCADE,
+    lab_value_id  UUID          NOT NULL REFERENCES lab_values(id) ON DELETE CASCADE,
+    rule_id       UUID          NOT NULL REFERENCES lab_medicine_rules(id),
+    severity      VARCHAR(50)   NOT NULL,
+    status        flag_status   NOT NULL DEFAULT 'shown',
+    created_at    TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_lab_med_flags_patient ON lab_medicine_flags(patient_id);
+CREATE INDEX IF NOT EXISTS idx_lab_med_flags_status  ON lab_medicine_flags(status);
+
+-- Seed lab-medicine rules
+INSERT INTO lab_medicine_rules (generic_name, test_type, condition, threshold, unit, severity, rationale) VALUES
+('Metformin',    'Creatinine',     '>', 1.5,    'mg/dL',      'monitor_closely',  'Elevated creatinine signals renal impairment; Metformin accumulation increases lactic acidosis risk.'),
+('Metformin',    'eGFR',           '<', 30,     'mL/min',     'avoid_combination','Metformin is contraindicated in severe renal failure (eGFR < 30).'),
+('Warfarin',     'INR',            '>', 4.0,    '',           'avoid_combination','Supratherapeutic INR indicates high bleeding risk requiring immediate clinical review.'),
+('Warfarin',     'Platelet Count', '<', 100,    '×10³/μL',    'monitor_closely',  'Low platelets compound anticoagulant bleeding risk.'),
+('Aspirin',      'Platelet Count', '<', 100,    '×10³/μL',    'monitor_closely',  'Antiplatelet effect on already-low platelets increases hemorrhage risk.'),
+('Atorvastatin', 'ALT',            '>', 120,    'U/L',        'monitor_closely',  'ALT > 3× upper limit suggests hepatotoxicity; statin review indicated.')
+ON CONFLICT (generic_name, test_type, version) DO NOTHING;
