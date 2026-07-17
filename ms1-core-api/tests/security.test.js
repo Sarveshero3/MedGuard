@@ -1,3 +1,8 @@
+// Mock the DB module to prevent loading real config in CI environments
+jest.mock('../src/config/db', () => ({
+  query: jest.fn(),
+}));
+
 const { sanitizeInput, validateUUID } = require('../src/middleware/security');
 const { enforceEmailVerified } = require('../src/middleware/auth');
 
