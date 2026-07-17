@@ -1,6 +1,7 @@
 from langchain_openai import ChatOpenAI
 from app.config import settings
 
+
 def get_client(model: str, temperature: float = 0.0) -> ChatOpenAI:
     """
     Returns a langchain-compatible ChatOpenAI client pointing to Groq's endpoint.

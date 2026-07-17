@@ -1,4 +1,3 @@
-import os
 import base64
 import json
 from typing import TypedDict, List, Dict, Any
@@ -8,6 +7,7 @@ from pypdf import PdfReader
 from app.services.client import get_client
 from langchain_core.messages import HumanMessage, SystemMessage
 from app.config import settings
+
 
 class PrescriptionState(TypedDict):
     photo_path: str
@@ -23,6 +23,7 @@ class PrescriptionState(TypedDict):
     needs_visit_link_resolution: bool
     candidate_visits: List[Dict[str, Any]]
 
+
 def resolve_brand_to_generic(brand_name: str) -> str | None:
     if not brand_name:
         return None
@@ -37,7 +38,7 @@ Examples of mapping:
 
 If the brand name is completely unrecognizable, invalid, or cannot be resolved, return "generic_unresolved".
 Otherwise, return ONLY the exact generic ingredient name (e.g. "Paracetamol", "Metformin") without any additional text, markdown, or punctuation."""
-        
+
         resolve_res = resolver_client.invoke([
             SystemMessage(content=resolve_prompt),
             HumanMessage(content=f"Brand: {brand_name}")
@@ -66,16 +67,17 @@ def parse_json_safely(text: str) -> Dict[str, Any]:
         end = text.rfind("}")
         if start != -1 and end != -1:
             try:
-                return json.loads(text[start:end+1])
+                return json.loads(text[start:end + 1])
             except Exception:
                 pass
         return {}
+
 
 def ocr_vlm_extraction_node(state: PrescriptionState) -> Dict[str, Any]:
     photo_path = state.get("photo_path", "")
     filename = state.get("filename", "").lower()
     is_pdf = filename.endswith(".pdf")
-    
+
     ocr_text = ""
     try:
         from docling.document_converter import DocumentConverter
@@ -100,7 +102,8 @@ def ocr_vlm_extraction_node(state: PrescriptionState) -> Dict[str, Any]:
                             img_b64 = base64.b64encode(img_data).decode("utf-8")
                             ocr_client = get_client(settings.vision_model)
                             ocr_response = ocr_client.invoke([
-                                SystemMessage(content="Perform raw character-level OCR on the uploaded document. Extract all text exactly as written, preserving layout if possible. Do not interpret or summarize."),
+                                SystemMessage(
+                                    content="Perform raw character-level OCR on the uploaded document. Extract all text exactly as written, preserving layout if possible. Do not interpret or summarize."),
                                 HumanMessage(content=[
                                     {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_b64}"}}
                                 ])
@@ -112,10 +115,11 @@ def ocr_vlm_extraction_node(state: PrescriptionState) -> Dict[str, Any]:
         else:
             with open(photo_path, "rb") as f:
                 img_b64 = base64.b64encode(f.read()).decode("utf-8")
-            
+
             ocr_client = get_client(settings.vision_model)
             ocr_response = ocr_client.invoke([
-                SystemMessage(content="Perform raw character-level OCR on the uploaded document. Extract all text exactly as written, preserving layout if possible. Do not interpret or summarize."),
+                SystemMessage(
+                    content="Perform raw character-level OCR on the uploaded document. Extract all text exactly as written, preserving layout if possible. Do not interpret or summarize."),
                 HumanMessage(content=[
                     {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_b64}"}}
                 ])
@@ -123,7 +127,7 @@ def ocr_vlm_extraction_node(state: PrescriptionState) -> Dict[str, Any]:
             ocr_text = ocr_response.content.strip()
 
     orchestrator = get_client(settings.orchestrator_model)
-    
+
     prompt = """
     Extract prescribing doctor and all medicines details from the raw OCR text. Return a JSON object with:
     - prescribing_doctor: string or null
@@ -135,7 +139,7 @@ def ocr_vlm_extraction_node(state: PrescriptionState) -> Dict[str, Any]:
 
     Return ONLY the raw JSON object. Do not include markdown code block formatting.
     """
-    
+
     struct_a_res = orchestrator.invoke([
         SystemMessage(content=prompt),
         HumanMessage(content=f"Raw OCR text:\n\n{ocr_text}")
@@ -143,7 +147,7 @@ def ocr_vlm_extraction_node(state: PrescriptionState) -> Dict[str, Any]:
     structured_a = parse_json_safely(struct_a_res.content)
 
     disambiguate_client = get_client(settings.disambiguation_model)
-    
+
     struct_b_res = disambiguate_client.invoke([
         SystemMessage(content=prompt),
         HumanMessage(content=f"Document text:\n\n{ocr_text}")
@@ -152,7 +156,7 @@ def ocr_vlm_extraction_node(state: PrescriptionState) -> Dict[str, Any]:
 
     fields = ["brand_name", "dosage", "frequency", "duration_text"]
     mismatch_fields = []
-    
+
     def clean_str(val):
         if not val:
             return ""
@@ -160,9 +164,11 @@ def ocr_vlm_extraction_node(state: PrescriptionState) -> Dict[str, Any]:
 
     meds_a = structured_a.get("medicines") or []
     meds_b = structured_b.get("medicines") or []
-    if not isinstance(meds_a, list): meds_a = [meds_a]
-    if not isinstance(meds_b, list): meds_b = [meds_b]
-    
+    if not isinstance(meds_a, list):
+        meds_a = [meds_a]
+    if not isinstance(meds_b, list):
+        meds_b = [meds_b]
+
     meds_a = [m for m in meds_a if isinstance(m, dict)]
     meds_b = [m for m in meds_b if isinstance(m, dict)]
 
@@ -196,7 +202,7 @@ def ocr_vlm_extraction_node(state: PrescriptionState) -> Dict[str, Any]:
         brands_a = [m.get("brand_name") or "Unknown" for m in meds_a]
         brands_b = [m.get("brand_name") or "Unknown" for m in meds_b]
         follow_up_question = f"Model disagreement detected on {', '.join(set(mismatch_fields))}. Model A extracted '{', '.join(brands_a)}' and Model B extracted '{', '.join(brands_b)}'. Please confirm correct values."
-        
+
         return {
             "raw_extraction": {
                 "prescribing_doctor": structured_b.get("prescribing_doctor") or structured_a.get("prescribing_doctor"),
@@ -217,7 +223,7 @@ def ocr_vlm_extraction_node(state: PrescriptionState) -> Dict[str, Any]:
         }
     else:
         all_resolved = all(m.get("generic_name") != "generic_unresolved" for m in raw_medicines)
-        
+
         return {
             "raw_extraction": {
                 "prescribing_doctor": structured_b.get("prescribing_doctor") or structured_a.get("prescribing_doctor"),

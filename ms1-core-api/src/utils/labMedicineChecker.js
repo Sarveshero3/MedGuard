@@ -1,6 +1,11 @@
 const { query } = require('../config/db');
 const logger = require('./logger');
 
+// Helper function for case-insensitive trim check
+function LOWER(str) {
+  return str ? str.toLowerCase().trim() : '';
+}
+
 /**
  * Checks for clinical safety conflicts between newly confirmed lab values and the patient's active medicines.
  * Supports primary name matching and fallback generic mapping via brand_generic_map.
@@ -90,11 +95,6 @@ async function checkLabMedicineConflicts(patientId, labValueIds) {
               matchedRules = rulesRes.rows;
             }
           }
-        }
-
-        // Helper function for case-insensitive trim check
-        function LOWER(str) {
-          return str ? str.toLowerCase().trim() : '';
         }
 
         // Process matched rules

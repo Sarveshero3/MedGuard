@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     groq_api_key: str = ""
     ms1_base_url: str = "http://ms1-core-api:4000"
     log_level: str = "info"
-    
+
     # Model configuration defaults (Groq)
     orchestrator_model: str = "llama-3.3-70b-versatile"
     vision_model: str = "meta-llama/llama-4-scout-17b-16e-instruct"

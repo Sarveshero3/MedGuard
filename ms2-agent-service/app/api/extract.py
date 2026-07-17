@@ -80,7 +80,8 @@ def _extract_text_from_file(file_path: str, filename: str) -> str:
                         img_b64 = base64.b64encode(img_data).decode("utf-8")
                         ocr_client = get_client(settings.vision_model)
                         ocr_response = invoke_with_retry(ocr_client, [
-                            SystemMessage(content="Perform raw character-level OCR on the uploaded document. Extract all text exactly as written, preserving layout if possible. Do not interpret or summarize."),
+                            SystemMessage(
+                                content="Perform raw character-level OCR on the uploaded document. Extract all text exactly as written, preserving layout if possible. Do not interpret or summarize."),
                             HumanMessage(content=[
                                 {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_b64}"}}
                             ])
@@ -99,7 +100,8 @@ def _extract_text_from_file(file_path: str, filename: str) -> str:
         # Use the separate vision model for OCR since the orchestrator (glm-5.2) is not a vision model
         ocr_client = get_client(settings.vision_model)
         ocr_response = invoke_with_retry(ocr_client, [
-            SystemMessage(content="Perform raw character-level OCR on the uploaded document. Extract all text exactly as written, preserving layout if possible. Do not interpret or summarize."),
+            SystemMessage(
+                content="Perform raw character-level OCR on the uploaded document. Extract all text exactly as written, preserving layout if possible. Do not interpret or summarize."),
             HumanMessage(content=[
                 {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_b64}"}}
             ])
@@ -130,7 +132,8 @@ async def extract_document(
         photo.file.seek(0)
         shutil.copyfileobj(photo.file, tmp)
         tmp_path = tmp.name
-        print(f"Created temp file for document extract: {tmp_path}, size: {os.path.getsize(tmp_path)} bytes", flush=True)
+        print(
+            f"Created temp file for document extract: {tmp_path}, size: {os.path.getsize(tmp_path)} bytes", flush=True)
 
     try:
         # Step 1: Extract raw text
@@ -178,11 +181,13 @@ Do not include markdown formatting. Return only the raw JSON object."""
             end = classify_text.rfind("}")
             if start != -1 and end != -1:
                 try:
-                    classification = json.loads(classify_text[start:end+1])
+                    classification = json.loads(classify_text[start:end + 1])
                 except Exception:
-                    classification = {"doc_type": "prescription", "confidence": 0.5, "reasoning": "Parse failed, defaulting"}
+                    classification = {"doc_type": "prescription",
+                                      "confidence": 0.5, "reasoning": "Parse failed, defaulting"}
             else:
-                classification = {"doc_type": "prescription", "confidence": 0.5, "reasoning": "Parse failed, defaulting"}
+                classification = {"doc_type": "prescription",
+                                  "confidence": 0.5, "reasoning": "Parse failed, defaulting"}
 
         doc_type = classification.get("doc_type", "prescription")
         classification_confidence = float(classification.get("confidence", 0.5))
@@ -235,7 +240,8 @@ async def extract_prescription(
         photo.file.seek(0)
         shutil.copyfileobj(photo.file, tmp)
         tmp_path = tmp.name
-        print(f"Created temp file for prescription extract: {tmp_path}, size: {os.path.getsize(tmp_path)} bytes", flush=True)
+        print(
+            f"Created temp file for prescription extract: {tmp_path}, size: {os.path.getsize(tmp_path)} bytes", flush=True)
 
     try:
         state_input = {
@@ -273,7 +279,10 @@ async def extract_lab_report(
         photo.file.seek(0)
         shutil.copyfileobj(photo.file, tmp)
         tmp_path = tmp.name
-        print(f"Created temp file for lab report extract: {tmp_path}, size: {os.path.getsize(tmp_path)} bytes", flush=True)
+        print(
+            f"Created temp file for lab report extract: {tmp_path}, "
+            f"size: {os.path.getsize(tmp_path)} bytes", flush=True
+        )
 
     try:
         state_input = {

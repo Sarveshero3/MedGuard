@@ -5,6 +5,7 @@ from app.config import settings
 from app.services.client import get_client
 from langchain_core.messages import HumanMessage, SystemMessage
 
+
 class CritiqueResearchState(TypedDict):
     generic_a: str
     generic_b: str
@@ -39,7 +40,7 @@ def research_generic_interactions_node(state: CritiqueResearchState) -> Dict[str
 
     # 2. If not found in interaction_kb, research it via GLM-5.2 (orchestrator_model)
     client = get_client(settings.orchestrator_model)
-    
+
     prompt = f"""
     Research the drug-drug interaction between the generic molecules '{gen_a}' and '{gen_b}' and write a structured summary.
     
@@ -59,19 +60,19 @@ def research_generic_interactions_node(state: CritiqueResearchState) -> Dict[str
     
     Do NOT include a "Summary and Recommendation" or "Pharmacokinetics and Pharmacodynamics" section.
     """
-    
+
     response = client.invoke([
         SystemMessage(content="You are a clinical pharmacologist. Research drug-drug interactions objectively based on scientific literature. Always use the specified 4 headers: **Introduction**, **Mechanism of Interaction**, **Clinically Significant Interactions**, and **Side Effects and Contraindications**."),
         HumanMessage(content=prompt)
     ])
-    
+
     explanation = response.content.strip()
-    
+
     return {
-        "severity": "unknown", # Flag as unknown: needs user confirmation rather than guessing severity
+        "severity": "unknown",  # Flag as unknown: needs user confirmation rather than guessing severity
         "explanation": explanation,
         "research_summary": f"Automated literature research completed for {gen_a} and {gen_b}.",
-        "is_valid": False # Force to critique first
+        "is_valid": False  # Force to critique first
     }
 
 
@@ -88,7 +89,7 @@ def critique_findings_node(state: CritiqueResearchState) -> Dict[str, Any]:
         }
 
     client = get_client(settings.orchestrator_model)
-    
+
     critique_prompt = f"""
     Analyze the following drug-drug interaction research finding between '{gen_a}' and '{gen_b}':
     
@@ -109,14 +110,14 @@ def critique_findings_node(state: CritiqueResearchState) -> Dict[str, Any]:
     If the findings are fully correct, accurate, and follow this structure exactly, respond with exactly: VALID.
     If there are inaccuracies or formatting/structural violations, provide a revised explanation correcting these details.
     """
-    
+
     response = client.invoke([
         SystemMessage(content="You are a senior medical reviewer auditing drug safety descriptions. Correct any inaccuracies or missing drug-class/mechanism details. Ensure the output strictly follows the 4 specified headers and length limits."),
         HumanMessage(content=critique_prompt)
     ])
-    
+
     res_text = response.content.strip()
-    
+
     if "VALID" in res_text:
         return {
             "is_valid": True,

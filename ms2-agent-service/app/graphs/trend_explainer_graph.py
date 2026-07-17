@@ -4,6 +4,7 @@ from app.config import settings
 from app.services.client import get_client
 from langchain_core.messages import HumanMessage, SystemMessage
 
+
 class TrendExplainerState(TypedDict):
     test_type: str
     values: List[float]
@@ -32,7 +33,7 @@ def explain_trend_node(state: TrendExplainerState) -> Dict[str, Any]:
         msg = f"Your {test_type} values have remained stable at {end_val}."
 
     client = get_client(settings.orchestrator_model)
-    
+
     prompt = f"""
     You are a clinical trend explainer. The system has calculated the following deterministic trend direction for the patient's lab test:
     
@@ -47,17 +48,18 @@ def explain_trend_node(state: TrendExplainerState) -> Dict[str, Any]:
     - Do not provide medical diagnosis or recommend specific therapy shifts.
     - Append exactly this disclaimer at the end of the explanation: "\n\n*Discuss this with your doctor — this is not a diagnosis.*"
     """
-    
+
     response = client.invoke([
-        SystemMessage(content="You are a clinical trend explainer describing laboratory panel trend directions in plain language."),
+        SystemMessage(
+            content="You are a clinical trend explainer describing laboratory panel trend directions in plain language."),
         HumanMessage(content=prompt)
     ])
-    
+
     explanation = response.content.strip()
-    
+
     if "*discuss this with your doctor" not in explanation.lower():
         explanation += disclaimer
-        
+
     return {"explanation": explanation}
 
 

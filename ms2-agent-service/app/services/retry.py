@@ -1,6 +1,7 @@
 import time
 from requests.exceptions import ReadTimeout, ConnectTimeout
 
+
 def invoke_with_retry(client, messages, max_retries=3, initial_delay=2):
     """
     Invokes client.invoke() with exponential backoff retries for transient timeouts.
@@ -13,7 +14,7 @@ def invoke_with_retry(client, messages, max_retries=3, initial_delay=2):
             if attempt == max_retries - 1:
                 print(f"Groq API invocation failed after {max_retries} attempts due to timeout: {e}", flush=True)
                 raise
-            print(f"Groq API timeout on attempt {attempt+1}. Retrying in {delay} seconds...", flush=True)
+            print(f"Groq API timeout on attempt {attempt + 1}. Retrying in {delay} seconds...", flush=True)
             time.sleep(delay)
             delay *= 2
         except Exception as e:
@@ -24,7 +25,10 @@ def invoke_with_retry(client, messages, max_retries=3, initial_delay=2):
                     print(f"Groq API invocation failed after {max_retries} attempts due to rate limit: {e}", flush=True)
                     raise
                 rate_limit_delay = delay + 5
-                print(f"Groq API rate limit detected on attempt {attempt+1}. Retrying in {rate_limit_delay} seconds...", flush=True)
+                print(
+                    f"Groq API rate limit detected on attempt {attempt + 1}. "
+                    f"Retrying in {rate_limit_delay} seconds...", flush=True
+                )
                 time.sleep(rate_limit_delay)
                 delay *= 2
             # Handle Timeout (HTTP 408 / Timeout)
@@ -32,7 +36,7 @@ def invoke_with_retry(client, messages, max_retries=3, initial_delay=2):
                 if attempt == max_retries - 1:
                     print(f"Groq API invocation failed after {max_retries} attempts due to timeout: {e}", flush=True)
                     raise
-                print(f"Groq API timeout exception on attempt {attempt+1}. Retrying in {delay} seconds...", flush=True)
+                print(f"Groq API timeout exception on attempt {attempt + 1}. Retrying in {delay} seconds...", flush=True)
                 time.sleep(delay)
                 delay *= 2
             else:
