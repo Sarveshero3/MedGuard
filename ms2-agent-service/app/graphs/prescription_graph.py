@@ -5,7 +5,7 @@ from typing import TypedDict, List, Dict, Any
 from langgraph.graph import StateGraph, END
 import datetime
 from pypdf import PdfReader
-from langchain_nvidia_ai_endpoints import ChatNVIDIA
+from app.services.client import get_client
 from langchain_core.messages import HumanMessage, SystemMessage
 from app.config import settings
 
@@ -27,11 +27,7 @@ def resolve_brand_to_generic(brand_name: str) -> str | None:
     if not brand_name:
         return None
     try:
-        resolver_client = ChatNVIDIA(
-            model=settings.orchestrator_model,
-            api_key=settings.nvidia_api_key,
-            temperature=0.0
-        )
+        resolver_client = get_client(settings.orchestrator_model)
         resolve_prompt = f"""You are an expert clinical pharmacist. Resolve the commercial medicine brand name "{brand_name}" to its active generic pharmaceutical ingredient (molecule name).
 Examples of mapping:
 - "Glycomet" -> "Metformin"
@@ -102,11 +98,7 @@ def ocr_vlm_extraction_node(state: PrescriptionState) -> Dict[str, Any]:
                         for img_file in page.images:
                             img_data = img_file.data
                             img_b64 = base64.b64encode(img_data).decode("utf-8")
-                            ocr_client = ChatNVIDIA(
-                                model=settings.vision_model,
-                                api_key=settings.nvidia_api_key,
-                                temperature=0.0
-                            )
+                            ocr_client = get_client(settings.vision_model)
                             ocr_response = ocr_client.invoke([
                                 SystemMessage(content="Perform raw character-level OCR on the uploaded document. Extract all text exactly as written, preserving layout if possible. Do not interpret or summarize."),
                                 HumanMessage(content=[
@@ -121,11 +113,7 @@ def ocr_vlm_extraction_node(state: PrescriptionState) -> Dict[str, Any]:
             with open(photo_path, "rb") as f:
                 img_b64 = base64.b64encode(f.read()).decode("utf-8")
             
-            ocr_client = ChatNVIDIA(
-                model=settings.vision_model,
-                api_key=settings.nvidia_api_key,
-                temperature=0.0
-            )
+            ocr_client = get_client(settings.vision_model)
             ocr_response = ocr_client.invoke([
                 SystemMessage(content="Perform raw character-level OCR on the uploaded document. Extract all text exactly as written, preserving layout if possible. Do not interpret or summarize."),
                 HumanMessage(content=[
@@ -134,11 +122,7 @@ def ocr_vlm_extraction_node(state: PrescriptionState) -> Dict[str, Any]:
             ])
             ocr_text = ocr_response.content.strip()
 
-    orchestrator = ChatNVIDIA(
-        model=settings.orchestrator_model,
-        api_key=settings.nvidia_api_key,
-        temperature=0.0
-    )
+    orchestrator = get_client(settings.orchestrator_model)
     
     prompt = """
     Extract prescribing doctor and all medicines details from the raw OCR text. Return a JSON object with:
@@ -158,26 +142,12 @@ def ocr_vlm_extraction_node(state: PrescriptionState) -> Dict[str, Any]:
     ])
     structured_a = parse_json_safely(struct_a_res.content)
 
-    disambiguate_client = ChatNVIDIA(
-        model=settings.disambiguation_model,
-        api_key=settings.nvidia_api_key,
-        temperature=0.0
-    )
+    disambiguate_client = get_client(settings.disambiguation_model)
     
-    if is_pdf:
-        struct_b_res = disambiguate_client.invoke([
-            SystemMessage(content=prompt),
-            HumanMessage(content=f"Document text:\n\n{ocr_text}")
-        ])
-    else:
-        with open(photo_path, "rb") as f:
-            img_b64 = base64.b64encode(f.read()).decode("utf-8")
-        struct_b_res = disambiguate_client.invoke([
-            SystemMessage(content=prompt),
-            HumanMessage(content=[
-                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_b64}"}}
-            ])
-        ])
+    struct_b_res = disambiguate_client.invoke([
+        SystemMessage(content=prompt),
+        HumanMessage(content=f"Document text:\n\n{ocr_text}")
+    ])
     structured_b = parse_json_safely(struct_b_res.content)
 
     fields = ["brand_name", "dosage", "frequency", "duration_text"]

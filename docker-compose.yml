@@ -63,11 +63,11 @@ services:
     restart: unless-stopped
     environment:
       MS2_PORT: 8000
-      NVIDIA_API_KEY: ${NVIDIA_API_KEY:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
       MS1_BASE_URL: http://ms1-core-api:4000
       LOG_LEVEL: ${LOG_LEVEL:-info}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
-      NVIDIA_TIMEOUT: "120"
+      GROQ_TIMEOUT: "120"
 
     ports:
       - "8000:8000"

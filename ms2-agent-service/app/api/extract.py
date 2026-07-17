@@ -7,7 +7,7 @@ from fastapi import APIRouter, UploadFile, File, Form
 from pydantic import BaseModel
 from typing import List, Dict, Any
 from pypdf import PdfReader
-from langchain_nvidia_ai_endpoints import ChatNVIDIA
+from app.services.client import get_client
 from langchain_core.messages import HumanMessage, SystemMessage
 from app.config import settings
 from app.services.retry import invoke_with_retry
@@ -78,11 +78,7 @@ def _extract_text_from_file(file_path: str, filename: str) -> str:
                     for img_file in page.images:
                         img_data = img_file.data
                         img_b64 = base64.b64encode(img_data).decode("utf-8")
-                        ocr_client = ChatNVIDIA(
-                            model=settings.vision_model,
-                            api_key=settings.nvidia_api_key,
-                            temperature=0.0
-                        )
+                        ocr_client = get_client(settings.vision_model)
                         ocr_response = invoke_with_retry(ocr_client, [
                             SystemMessage(content="Perform raw character-level OCR on the uploaded document. Extract all text exactly as written, preserving layout if possible. Do not interpret or summarize."),
                             HumanMessage(content=[
@@ -101,11 +97,7 @@ def _extract_text_from_file(file_path: str, filename: str) -> str:
             print(f"Reading file for OCR: {file_path}, size: {len(img_bytes)} bytes", flush=True)
             img_b64 = base64.b64encode(img_bytes).decode("utf-8")
         # Use the separate vision model for OCR since the orchestrator (glm-5.2) is not a vision model
-        ocr_client = ChatNVIDIA(
-            model=settings.vision_model,
-            api_key=settings.nvidia_api_key,
-            temperature=0.0
-        )
+        ocr_client = get_client(settings.vision_model)
         ocr_response = invoke_with_retry(ocr_client, [
             SystemMessage(content="Perform raw character-level OCR on the uploaded document. Extract all text exactly as written, preserving layout if possible. Do not interpret or summarize."),
             HumanMessage(content=[
@@ -145,11 +137,7 @@ async def extract_document(
         raw_text = _extract_text_from_file(tmp_path, photo.filename)
 
         # Step 2: Classify using the orchestrator model
-        classifier = ChatNVIDIA(
-            model=settings.orchestrator_model,
-            api_key=settings.nvidia_api_key,
-            temperature=0.0
-        )
+        classifier = get_client(settings.orchestrator_model)
         classify_prompt = """You are a medical document classifier. Given the text extracted from a medical document, classify it as either "prescription" or "lab_report".
 
 A prescription typically contains:
