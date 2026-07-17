@@ -18,6 +18,7 @@ jest.mock('../src/config/redis', () => ({
   get: jest.fn().mockResolvedValue(null),
   setex: jest.fn().mockResolvedValue('OK'),
   on: jest.fn(),
+  isMock: true,
 }));
 
 const authRouter = require('../src/routes/auth');

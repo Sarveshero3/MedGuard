@@ -1,11 +1,10 @@
 const express = require('express');
 const { query } = require('../config/db');
 const logger = require('../utils/logger');
-const { authenticateUser, enforcePatientAccess, enforceEmailVerified, verifyPatientAccess } = require('../middleware/auth');
-const { sanitizeInput, validateUUID } = require('../middleware/security');
+const { authenticateUser, enforcePatientAccess, enforceEmailVerified } = require('../middleware/auth');
+const { sanitizeInput } = require('../middleware/security');
 
 const router = express.Router();
-const MS2_BASE_URL = process.env.MS2_BASE_URL || 'http://ms2-agent-service:8000';
 
 /**
  * GET /api/calendar

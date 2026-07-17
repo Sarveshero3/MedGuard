@@ -99,7 +99,7 @@ function requireRoles(allowedRoles = []) {
 
 // Access validator helper (IDOR protection)
 // Checks if the logged-in user has permission to access patientId's data
-async function verifyPatientAccess(req, patientId, requiredAccessLevel = 'alerts_only') {
+async function verifyPatientAccess(req, patientId, _requiredAccessLevel = 'alerts_only') {
   if (!req.user) return false;
 
   // 1. Patient accessing their own data: always allowed

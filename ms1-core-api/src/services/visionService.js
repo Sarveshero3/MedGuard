@@ -1,5 +1,4 @@
 const fs = require('fs');
-const crypto = require('crypto');
 const logger = require('../utils/logger');
 
 const MS2_BASE_URL = process.env.MS2_BASE_URL || 'http://localhost:8000';

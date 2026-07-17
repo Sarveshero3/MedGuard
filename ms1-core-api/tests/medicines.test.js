@@ -15,6 +15,7 @@ jest.mock('../src/config/redis', () => ({
   get: jest.fn().mockResolvedValue(null),
   setex: jest.fn().mockResolvedValue('OK'),
   on: jest.fn(),
+  isMock: true,
 }));
 
 // Mock rateLimiter and security middlewares to bypass in tests

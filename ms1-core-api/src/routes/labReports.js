@@ -84,7 +84,7 @@ router.get('/lab-reports/:id', authenticateUser, enforceConsent('health_data_pro
  * POST /api/lab-reports/upload
  * Handle lab report photo upload and run extraction with visit context proximity linking.
  */
-router.post('/lab-reports/upload', authenticateUser, enforceConsent('health_data_processing'), enforceEmailVerified, uploadLimiter, upload.single('photo'), async (req, res, next) => {
+router.post('/lab-reports/upload', authenticateUser, enforceConsent('health_data_processing'), enforceEmailVerified, uploadLimiter, upload.single('photo'), async (req, res, _next) => {
   if (!req.file) {
     return res.status(400).json({
       success: false,

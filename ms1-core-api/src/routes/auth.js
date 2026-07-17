@@ -369,9 +369,8 @@ router.post('/auth/refresh', async (req, res, next) => {
 
   try {
     // Verify JWT signature and expiry
-    let decoded;
     try {
-      decoded = jwt.verify(refreshToken, JWT_SECRET);
+      jwt.verify(refreshToken, JWT_SECRET);
     } catch (err) {
       return res.status(401).json({
         success: false,

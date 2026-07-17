@@ -278,9 +278,7 @@ router.put('/briefs/:id', authenticateUser, validateUUID('id'), async (req, res,
 /**
  * Local fallback brief generator when ms2 is unreachable.
  */
-function generateLocalBrief(medicines, flags, labTrends, targetDate) {
-  const medSummary = medicines.map(m => `${m.brand_name} (${m.generic_name || 'generic unknown'}) — ${m.dosage}, ${m.frequency}`);
-
+function generateLocalBrief(medicines, flags, labTrends, _targetDate) {
   const warnings = flags
     .filter(f => f.severity === 'avoid_combination' || f.severity === 'monitor_closely')
     .map(f => `⚠️ ${f.generic_a} + ${f.generic_b}: ${f.explanation}`);

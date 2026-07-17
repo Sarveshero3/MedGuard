@@ -46,7 +46,7 @@ app.use('/api', jobRoutes);
 app.use('/api', briefRoutes);
 
 // Fallback path to log unusual traffic patterns (unknown endpoints)
-app.use((req, res, next) => {
+app.use((req, res, _next) => {
   logger.warn('UNKNOWN_ENDPOINT_ACCESS', `IP ${req.ip} requested non-existent endpoint: ${req.method} ${req.originalUrl}`, {
     ip: req.ip,
     method: req.method,

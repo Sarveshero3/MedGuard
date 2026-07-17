@@ -464,7 +464,7 @@ router.delete('/medicines/:id', authenticateUser, validateUUID('id'), enforceCon
  * Unified document upload endpoint. Accepts any image/PDF, hashes it,
  * checks Redis for idempotency, and queues it with job type 'auto'.
  */
-router.post('/documents/upload', authenticateUser, enforceConsent('health_data_processing'), enforceEmailVerified, uploadLimiter, upload.single('photo'), async (req, res, next) => {
+router.post('/documents/upload', authenticateUser, enforceConsent('health_data_processing'), enforceEmailVerified, uploadLimiter, upload.single('photo'), async (req, res, _next) => {
   if (!req.file) {
     return res.status(400).json({
       success: false,
@@ -584,8 +584,7 @@ router.post('/documents/upload', authenticateUser, enforceConsent('health_data_p
   }
 });
 
-const { extractPrescription } = require('../services/visionService');
-router.post('/medicines/upload', authenticateUser, enforceConsent('health_data_processing'), enforceEmailVerified, uploadLimiter, upload.single('photo'), async (req, res, next) => {
+router.post('/medicines/upload', authenticateUser, enforceConsent('health_data_processing'), enforceEmailVerified, uploadLimiter, upload.single('photo'), async (req, res, _next) => {
   // Multer runs first and populates req.file and req.body.patient_id.
   // Validate file exists.
   if (!req.file) {
