@@ -4,13 +4,14 @@ This document combines the user-facing journey (Section 7) with the system-level
 
 ---
 
-### Phase 0: Account Creation & Login (OTP via SES)
+### Phase 0: Account Creation & Login (Dual-Token Auth & OTP)
 
-*   **User Action**: Ramesh signs up with his email and phone, and later logs in.
+*   **User Action**: Ramesh signs up with his email and password, verifies his email via OTP, and later logs in.
 *   **System Action**:
-    1.  On signup, `ms1` generates a one-time code and triggers **AWS SES** to email it — the same SES setup used for alerts later in this flow, not a separate service.
-    2.  Ramesh enters the code in the React app; `ms1` verifies it, marks the account `is_email_verified = true`, and issues a JWT.
-    3.  Login can optionally re-use this OTP flow as a second factor (new device, or password reset), always via SES rather than SMS, keeping infra to one email provider.
+    1.  On signup, `ms1` generates a one-time code and triggers **AWS SES** to email it.
+    2.  Ramesh enters the code; `ms1` verifies it, marks the account `is_email_verified = true`, and issues an `accessToken` (15 min TTL) and a `refreshToken` (7 day TTL).
+    3.  On subsequent logins, successful MFA verification issues both tokens. The client stores the `refreshToken` in localStorage.
+    4.  An Axios response interceptor intercepts any 401 response and silently rotates the tokens via `POST /auth/refresh` using a shared-promise queue to prevent concurrent races.
 
 ---
 
@@ -18,7 +19,8 @@ This document combines the user-facing journey (Section 7) with the system-level
 
 *   **User Action**: Ramesh photographs his new prescription from his cardiologist and uploads it via the React app.
 *   **System Action**:
-    1.  The `frontend` sends the image to `ms1-core-api` at `/api/medicines/upload` (handling uploads up to 8MB).
+    1.  The `frontend` sends the image to `ms1-core-api` at `/api/documents/upload` or `/api/medicines/upload` (handling uploads up to 8MB).
+    2.  During saving/confirming, `ms1` starts a transaction (`BEGIN`) and locks the patient's existing medicines using `SELECT ... FOR UPDATE` to prevent concurrent write race conditions.
     2.  `ms1` stores the raw image and issues a request to the internal-only `ms2-agent-service` endpoint.
     3.  `ms2` runs the **Prescription Assessment Graph**:
         *   Pre-processes the image (contrast adjustment, resizing).

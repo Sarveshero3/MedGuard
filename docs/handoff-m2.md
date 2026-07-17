@@ -67,3 +67,30 @@ npm run test
 
 ### Simulating Low-Confidence
 To test the patient-facing verification form in the frontend, upload any image file with `"low"`, `"unresolved"`, or `"crocin"` in the filename (e.g. `crocin_prescription.png`). This triggers the mock vision service to return a `72%` confidence score and displays the editable form fields.
+
+---
+
+## Deployment Hardening Pass (M2+) — Completed
+
+A complete deployment hardening, verification, and visual polish pass has been executed.
+
+### Hardened Implementations
+1. **Refresh Token Flow**:
+   - Added `refresh_tokens` database table with indices on `user_id` and `token_hash`.
+   - Programmatically derived session lifetimes and created `POST /auth/refresh` (rotating token pairs inside a `FOR UPDATE` locked transaction) and `POST /auth/logout` (server-side token revocation).
+   - Standardized frontend `api.js` to queue multiple concurrent 401s using a shared `refreshTokenPromise` to prevent invalidation races.
+2. **Transactional Integrity**:
+   - Wrapped `POST /medicines` manual/confirmed additions in SQL transactions (`BEGIN`/`COMMIT`/`ROLLBACK`) with a `SELECT ... FOR UPDATE` lock on the patient's existing active medicines.
+   - Restructured codebase to perform side-effects (SES emails) strictly *after* transaction commits.
+   - Scaled database connection pool configurations via env-driven `DB_POOL_MAX` (default: `20`).
+3. **Agentic Test Case (John Doe)**:
+   - Generated high-resolution synthetic prescripitons and labs (`samples/1.png`, `samples/2a.png`, `samples/2b.png`, `samples/3.png`) using Pillow.
+   - Wrote comprehensive step-by-step instructions in `samples/README.md` and expected results in `samples/expected-results.md`.
+4. **Generate Brief button**:
+   - Created endpoint `/api/visits/:id/brief` that aggregates patient medicines, interaction flags, calculates lab trends, requests brief drafts from `ms2-agent-service`, and caches results in the `briefs` table.
+   - Added "📋 Generate Brief" button next to dashboard appointments, showing a beautiful, modal-driven overview (plain language summary, warnings, trends, suggested doctor questions, copy/print actions, and cache regeneration).
+5. **Production Wiring Overhaul**:
+   - Replaced development rate-limiting bypasses in `rateLimiter.js` with active, logger-linked rate limiters (Express-rate-limit).
+   - Replaced console-log email stubs in `email.js` with production AWS SES SDK integrations (`@aws-sdk/client-ses`), failing loudly if config details are missing in production.
+   - Added environment variable guidelines to `.env.example` and active `.env` files.
+

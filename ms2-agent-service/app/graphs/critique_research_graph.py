@@ -2,8 +2,9 @@ import httpx
 from typing import TypedDict, Dict, Any
 from langgraph.graph import StateGraph, END
 from app.config import settings
-from langchain_nvidia_ai_endpoints import ChatNVIDIA
+from app.services.client import get_client
 from langchain_core.messages import HumanMessage, SystemMessage
+
 
 class CritiqueResearchState(TypedDict):
     generic_a: str
@@ -38,30 +39,40 @@ def research_generic_interactions_node(state: CritiqueResearchState) -> Dict[str
         pass
 
     # 2. If not found in interaction_kb, research it via GLM-5.2 (orchestrator_model)
-    client = ChatNVIDIA(
-        model=settings.orchestrator_model,
-        api_key=settings.nvidia_api_key,
-        temperature=0.0
-    )
-    
+    client = get_client(settings.orchestrator_model)
+
     prompt = f"""
-    Research the drug-drug interaction between the generic molecules '{gen_a}' and '{gen_b}'.
-    Identify if there are any clinically significant interactions, side effects, or contraindications when taken together.
-    Provide a scientific, clinical explanation of the interaction mechanism (if any) and a summary of your findings.
-    """
+    Research the drug-drug interaction between the generic molecules '{gen_a}' and '{gen_b}' and write a structured summary.
     
+    You MUST format your output with EXACTLY these 4 sections in this exact order:
+    
+    **Introduction**
+    Provide a 1-line maximum introduction.
+    
+    **Mechanism of Interaction**
+    Provide a 1-2 lines maximum explanation of the interaction mechanism. Do not write a separate Pharmacokinetics/Pharmacodynamics section; fold any essential kinetics details into this section.
+    
+    **Clinically Significant Interactions**
+    List the key interaction warnings in short bullet points with tight, concise phrasing (no full paragraphs).
+    
+    **Side Effects and Contraindications**
+    List the key side effects and contraindications when taken together.
+    
+    Do NOT include a "Summary and Recommendation" or "Pharmacokinetics and Pharmacodynamics" section.
+    """
+
     response = client.invoke([
-        SystemMessage(content="You are a clinical pharmacologist. Research drug-drug interactions objectively based on scientific literature."),
+        SystemMessage(content="You are a clinical pharmacologist. Research drug-drug interactions objectively based on scientific literature. Always use the specified 4 headers: **Introduction**, **Mechanism of Interaction**, **Clinically Significant Interactions**, and **Side Effects and Contraindications**."),
         HumanMessage(content=prompt)
     ])
-    
+
     explanation = response.content.strip()
-    
+
     return {
-        "severity": "unknown", # Flag as unknown: needs user confirmation rather than guessing severity
+        "severity": "unknown",  # Flag as unknown: needs user confirmation rather than guessing severity
         "explanation": explanation,
         "research_summary": f"Automated literature research completed for {gen_a} and {gen_b}.",
-        "is_valid": False # Force to critique first
+        "is_valid": False  # Force to critique first
     }
 
 
@@ -77,12 +88,8 @@ def critique_findings_node(state: CritiqueResearchState) -> Dict[str, Any]:
             "critique_iterations": iterations + 1
         }
 
-    client = ChatNVIDIA(
-        model=settings.orchestrator_model,
-        api_key=settings.nvidia_api_key,
-        temperature=0.0
-    )
-    
+    client = get_client(settings.orchestrator_model)
+
     critique_prompt = f"""
     Analyze the following drug-drug interaction research finding between '{gen_a}' and '{gen_b}':
     
@@ -93,18 +100,24 @@ def critique_findings_node(state: CritiqueResearchState) -> Dict[str, Any]:
     1. Does it accurately identify the drug classes for both '{gen_a}' and '{gen_b}'?
     2. Did it miss any crucial synonyms or related warnings?
     3. Is the explanation clinically precise and clear?
+    4. Does it strictly follow the requested structure:
+       - **Introduction** (1 line max)
+       - **Mechanism of Interaction** (1-2 lines max)
+       - **Clinically Significant Interactions** (short concise bullet points)
+       - **Side Effects and Contraindications** (detailed)
+       With NO other sections?
     
-    If the findings are fully correct, accurate, and scientifically backed, respond with exactly: VALID.
-    If there are inaccuracies or missing drug-class context, provide a revised explanation correcting these details.
+    If the findings are fully correct, accurate, and follow this structure exactly, respond with exactly: VALID.
+    If there are inaccuracies or formatting/structural violations, provide a revised explanation correcting these details.
     """
-    
+
     response = client.invoke([
-        SystemMessage(content="You are a senior medical reviewer auditing drug safety descriptions. Correct any inaccuracies or missing drug-class/mechanism details."),
+        SystemMessage(content="You are a senior medical reviewer auditing drug safety descriptions. Correct any inaccuracies or missing drug-class/mechanism details. Ensure the output strictly follows the 4 specified headers and length limits."),
         HumanMessage(content=critique_prompt)
     ])
-    
+
     res_text = response.content.strip()
-    
+
     if "VALID" in res_text:
         return {
             "is_valid": True,

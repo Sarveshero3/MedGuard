@@ -25,6 +25,7 @@ export default function Login() {
   
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
   const { login } = useAuth()
   const navigate = useNavigate()
 
@@ -32,6 +33,37 @@ export default function Login() {
     e.preventDefault()
     setError('')
     setLoading(true)
+
+    // JS Validation to prevent silent failures on incorrect input formats
+    if (!showMfa) {
+      if (isSignup && !formData.name) {
+        setError('Full Name is required.')
+        setLoading(false)
+        return
+      }
+      if (!formData.email) {
+        setError('Email Address is required.')
+        setLoading(false)
+        return
+      }
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+      if (!emailRegex.test(formData.email)) {
+        setError('Please enter a valid email address (e.g., user@example.com).')
+        setLoading(false)
+        return
+      }
+      if (!formData.password) {
+        setError('Password is required.')
+        setLoading(false)
+        return
+      }
+      if (isSignup && !formData.consentGranted) {
+        setError('You must grant consent under the DPDP Act to register.')
+        setLoading(false)
+        return
+      }
+    }
+
     try {
       if (showMfa) {
         // MFA Verification Step
@@ -39,7 +71,7 @@ export default function Login() {
           mfaToken: mfaToken,
           otp: mfaOtp,
         })
-        login(res.data.data.token)
+        login(res.data.data.accessToken, res.data.data.refreshToken)
         navigate('/dashboard')
         return
       }
@@ -65,7 +97,7 @@ export default function Login() {
         setShowMfa(true)
       } else {
         // Normal login/register success
-        login(res.data.data.token)
+        login(res.data.data.accessToken, res.data.data.refreshToken)
         navigate('/dashboard')
       }
     } catch (err) {
@@ -113,7 +145,7 @@ export default function Login() {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4" noValidate>
           {showMfa ? (
             // MFA OTP verification form
             <div className="space-y-3 text-left">
@@ -295,15 +327,28 @@ export default function Login() {
               {/* Password */}
               <div className="space-y-1 text-left">
                 <Label htmlFor="password" className="text-xs">Password</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  required
-                  placeholder={isSignup ? "Create a password" : "Enter your password"}
-                  value={formData.password}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                  className="py-1.5 h-9 text-sm"
-                />
+                <div className="relative w-full">
+                  <Input
+                    id="password"
+                    type={showPassword ? "text" : "password"}
+                    required
+                    placeholder={isSignup ? "Create a password" : "Enter your password"}
+                    value={formData.password}
+                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                    className="py-1.5 pr-10 h-9 text-sm w-full"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-[#0F766E] transition-colors flex items-center justify-center cursor-pointer focus:outline-none"
+                    style={{ border: 'none', background: 'none', padding: 0, boxShadow: 'none' }}
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                  >
+                    <span className="material-symbols-outlined text-[16px] select-none">
+                      {showPassword ? 'visibility' : 'visibility_off'}
+                    </span>
+                  </button>
+                </div>
               </div>
 
               {/* Remember me or DPDP Consent Checkbox */}

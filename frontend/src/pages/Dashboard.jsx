@@ -25,6 +25,8 @@ export default function Dashboard() {
   const [otpExpiry, setOtpExpiry] = useState(null)
   const [generatingOtp, setGeneratingOtp] = useState(false)
 
+
+
   useEffect(() => {
     if (!authLoading && !user) {
       navigate('/login')
@@ -52,7 +54,11 @@ export default function Dashboard() {
           setLinkedCaregivers(res.data.data)
         }
       } catch (err) {
-        setError('Failed to load caregiver linkage details.')
+        // Only show error for actual HTTP failures, not empty results
+        if (err.response && err.response.status >= 400) {
+          setError('Failed to load caregiver linkage details.')
+        }
+        // If no response (network error), silently degrade — caregivers section will show empty
       }
     }
     initDashboard()
@@ -127,6 +133,8 @@ export default function Dashboard() {
     const patientObj = linkedPatients.find(p => p.patient_id === pId)
     setSelectedPatientName(patientObj ? patientObj.name : '')
   }
+
+
 
   if (authLoading || !user) {
     return (
@@ -305,7 +313,7 @@ export default function Dashboard() {
             {/* Action card for prescription upload */}
             <div 
               onClick={() => navigate('/upload')}
-              className="mb-16 bg-[#0F766E]/5 mg-grid-bg border border-[#0F766E]/20 rounded-xl p-8 md:p-12 flex flex-col md:flex-row items-center justify-between gap-6 cursor-pointer hover:bg-[#0F766E]/10 transition-colors"
+              className="mb-8 bg-[#0F766E]/5 mg-grid-bg border border-[#0F766E]/20 rounded-xl p-8 md:p-12 flex flex-col md:flex-row items-center justify-between gap-6 cursor-pointer hover:bg-[#0F766E]/10 transition-colors"
             >
               <div className="text-left">
                 <h3 className="text-lg font-bold text-slate-900 mb-2">Have a new prescription?</h3>
@@ -313,6 +321,21 @@ export default function Dashboard() {
               </div>
               <button className="bg-[#0F766E] text-white px-6 py-3 rounded-lg font-semibold text-sm hover:bg-[#0d645e] transition-colors shadow-sm cursor-pointer whitespace-nowrap">
                 Scan Prescription
+              </button>
+            </div>
+
+            {/* Write Brief Before Doctor Action Card */}
+            <div 
+              onClick={() => navigate('/brief/new')}
+              className="mb-16 bg-indigo-50/80 border border-indigo-200/40 rounded-xl p-8 md:p-12 flex flex-col md:flex-row items-center justify-between gap-6 cursor-pointer hover:bg-indigo-100/60 transition-colors"
+            >
+              <div className="text-left">
+                <h3 className="text-lg font-bold text-slate-900 mb-2">Write Brief Before Doctor</h3>
+                <p className="text-sm text-slate-600">Prepare a visit summary with your active medications, alerts, and questions for your doctor.</p>
+              </div>
+              <button className="bg-indigo-600 text-white px-6 py-3 rounded-lg font-semibold text-sm hover:bg-indigo-700 transition-colors shadow-sm cursor-pointer whitespace-nowrap flex items-center gap-2">
+                <span className="material-symbols-outlined text-lg">clinical_notes</span>
+                Write Brief
               </button>
             </div>
 
@@ -328,7 +351,16 @@ export default function Dashboard() {
                   <Skeleton className="h-12 w-full" />
                 </div>
               ) : stats.visits.length === 0 ? (
-                <p className="text-sm text-slate-500">No upcoming appointments scheduled.</p>
+                <div className="text-center py-6">
+                  <p className="text-sm text-slate-500 mb-4">No upcoming appointments scheduled.</p>
+                  <button
+                    onClick={() => navigate('/calendar')}
+                    className="text-xs font-semibold px-4 py-2 rounded-full border transition-colors"
+                    style={{ borderColor: 'var(--mg-accent)', color: 'var(--mg-accent)' }}
+                  >
+                    + Add a Visit
+                  </button>
+                </div>
               ) : (
                 <div className="flex flex-col gap-4">
                   {stats.visits.slice(0, 5).map((visit, index) => (
@@ -343,7 +375,7 @@ export default function Dashboard() {
                             {new Date(visit.scheduled_date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} &nbsp;•&nbsp; {visit.doctor_name || 'Clinician'}
                           </span>
                         </div>
-                        <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-3">
                           <span className="text-xs text-slate-500 px-3 py-1 bg-slate-100 rounded-md">
                             {new Date(visit.scheduled_date).toLocaleDateString([], { month: 'short', day: 'numeric' })}
                           </span>
@@ -430,6 +462,8 @@ export default function Dashboard() {
           </div>
         )}
       </main>
+
+
 
       {/* Footer */}
       <footer className="bg-[#f6fafa] border-t border-slate-200">

@@ -148,9 +148,9 @@ router.post('/medicines', authenticateUser, enforcePatientAccess('full_view'), e
         finalResolutionStatus = resolution_status;
       }
 
-      // Find existing active medicines for this patient to check interactions
+      // Lock existing active medicines for this patient to prevent concurrent races
       const existingMedsRes = await client.query(
-        "SELECT id, generic_name FROM medicines WHERE patient_id = $1 AND status = 'active'",
+        "SELECT id, generic_name FROM medicines WHERE patient_id = $1 AND status = 'active' FOR UPDATE",
         [patient_id]
       );
       const existingMeds = existingMedsRes.rows;
@@ -226,7 +226,7 @@ router.post('/medicines', authenticateUser, enforcePatientAccess('full_view'), e
                       const sorted = [resolvedGeneric.toLowerCase(), conflictingMed.generic_name.toLowerCase()].sort();
                       const kbRes = await bgClient.query(
                         `INSERT INTO interaction_kb (generic_a, generic_b, severity, explanation, source, version)
-                         VALUES ($1, $2, 'monitor_closely', $3, 'NVIDIA NIM Research Agent', 'v1')
+                         VALUES ($1, $2, 'monitor_closely', $3, 'Groq Research Agent', 'v1')
                          RETURNING id`,
                         [sorted[0], sorted[1], explanation]
                       );
@@ -253,13 +253,17 @@ router.post('/medicines', authenticateUser, enforcePatientAccess('full_view'), e
         })();
       }
 
-      // Fetch patient and caregiver emails for notification
+      await client.query('COMMIT');
+
+      // === Side effects run AFTER successful COMMIT ===
+
+      // Send alert emails outside the transaction
       if (flaggedInteractions.length > 0) {
         const { sendEmail } = require('../utils/email');
-        const patientEmailRes = await client.query("SELECT email, name FROM users WHERE id = $1", [patient_id]);
+        const patientEmailRes = await query("SELECT email, name FROM users WHERE id = $1", [patient_id]);
         const patient = patientEmailRes.rows[0];
 
-        const caregiversRes = await client.query(
+        const caregiversRes = await query(
           `SELECT u.email, u.name FROM caregiver_links cl
            JOIN users u ON cl.caregiver_id = u.id
            WHERE cl.patient_id = $1 AND cl.status = 'active'`,
@@ -290,8 +294,6 @@ The MedGuard Team`;
           await sendEmail({ to: cg.email, subject: alertSubject, body: alertBody });
         }
       }
-
-      await client.query('COMMIT');
 
       logger.audit('MEDICINE_CREATED', `User ${req.user.id} manually created medicine ${newMed.id} for patient ${patient_id}`, {
         userId: req.user.id,
@@ -462,7 +464,7 @@ router.delete('/medicines/:id', authenticateUser, validateUUID('id'), enforceCon
  * Unified document upload endpoint. Accepts any image/PDF, hashes it,
  * checks Redis for idempotency, and queues it with job type 'auto'.
  */
-router.post('/documents/upload', authenticateUser, enforceConsent('health_data_processing'), enforceEmailVerified, uploadLimiter, upload.single('photo'), async (req, res, next) => {
+router.post('/documents/upload', authenticateUser, enforceConsent('health_data_processing'), enforceEmailVerified, uploadLimiter, upload.single('photo'), async (req, res, _next) => {
   if (!req.file) {
     return res.status(400).json({
       success: false,
@@ -582,8 +584,7 @@ router.post('/documents/upload', authenticateUser, enforceConsent('health_data_p
   }
 });
 
-const { extractPrescription } = require('../services/visionService');
-router.post('/medicines/upload', authenticateUser, enforceConsent('health_data_processing'), enforceEmailVerified, uploadLimiter, upload.single('photo'), async (req, res, next) => {
+router.post('/medicines/upload', authenticateUser, enforceConsent('health_data_processing'), enforceEmailVerified, uploadLimiter, upload.single('photo'), async (req, res, _next) => {
   // Multer runs first and populates req.file and req.body.patient_id.
   // Validate file exists.
   if (!req.file) {
@@ -689,6 +690,251 @@ router.post('/medicines/upload', authenticateUser, enforceConsent('health_data_p
         details: [err.message],
       },
     });
+  }
+});
+
+/**
+ * POST /api/medicines/batch
+ * Add multiple medicines from a prescription in a single transaction.
+ */
+router.post('/medicines/batch', authenticateUser, enforcePatientAccess('full_view'), enforceConsent('health_data_processing'), enforceEmailVerified, sanitizeInput, async (req, res, next) => {
+  const { patient_id, medicines, visit_id } = req.body;
+
+  if (!patient_id) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'BAD_REQUEST', message: 'patient_id is required.' },
+    });
+  }
+
+  if (!Array.isArray(medicines) || medicines.length === 0) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'BAD_REQUEST', message: 'medicines must be a non-empty array.' },
+    });
+  }
+
+  try {
+    const client = await require('../config/db').pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // 1. Lock existing active medicines for this patient to prevent concurrent races
+      const existingMedsRes = await client.query(
+        "SELECT id, generic_name FROM medicines WHERE patient_id = $1 AND status = 'active' FOR UPDATE",
+        [patient_id]
+      );
+      const existingMeds = existingMedsRes.rows;
+      const existingGenerics = existingMeds.map(m => m.generic_name).filter(Boolean);
+
+      const savedMedicines = [];
+      const allFlaggedInteractions = [];
+
+      for (const med of medicines) {
+        const { brand_name, generic_name, dosage, frequency, duration_text, brand_mapping_correction, resolution_status, added_at, source_photo_id } = med;
+
+        // If user submitted a correction to brand generic map
+        if (brand_mapping_correction) {
+          const { brand_name: correctedBrand, generic_name: correctedGeneric } = brand_mapping_correction;
+          const versionResult = await client.query(
+            'SELECT version FROM brand_generic_map WHERE brand_name = $1 ORDER BY effective_date DESC LIMIT 1',
+            [correctedBrand]
+          );
+          let nextVersion = 'v1';
+          if (versionResult.rows.length > 0) {
+            const currentVersion = versionResult.rows[0].version;
+            const currentNum = parseInt(currentVersion.replace('v', ''), 10) || 1;
+            nextVersion = `v${currentNum + 1}`;
+          }
+          await client.query(
+            `INSERT INTO brand_generic_map (brand_name, generic_name, source, version, effective_date)
+             VALUES ($1, $2, 'user_confirmed', $3, NOW())
+             ON CONFLICT (brand_name, version) DO NOTHING`,
+            [correctedBrand, correctedGeneric, nextVersion]
+          );
+        }
+
+        // Compute course_end_date if duration_text is provided
+        let courseEndDate = null;
+        if (duration_text) {
+          courseEndDate = computeCourseEndDate(new Date(), duration_text);
+        }
+
+        const resolvedGeneric = generic_name || (brand_mapping_correction && brand_mapping_correction.generic_name) || null;
+        let finalResolutionStatus = resolvedGeneric ? 'resolved' : 'generic_unresolved';
+        if (resolution_status) {
+          finalResolutionStatus = resolution_status;
+        }
+
+        // Save the medicine
+        const result = await client.query(
+          `INSERT INTO medicines (patient_id, brand_name, generic_name, dosage, frequency, duration_text, course_end_date, resolution_status, status, visit_id, added_at, source_photo_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active', $9, $10, $11)
+           RETURNING *`,
+          [patient_id, brand_name, resolvedGeneric, dosage, frequency, duration_text || null, courseEndDate, finalResolutionStatus, visit_id || null, added_at ? new Date(added_at) : new Date(), source_photo_id || null]
+        );
+        const newMed = result.rows[0];
+        savedMedicines.push(newMed);
+
+        // Perform interaction check with existing generics + newly added generics in this batch
+        const currentActiveGenerics = [...existingGenerics, ...savedMedicines.filter(m => m.id !== newMed.id).map(m => m.generic_name).filter(Boolean)];
+        let flaggedInteractions = [];
+        if (resolvedGeneric && currentActiveGenerics.length > 0) {
+          const { checkInteractions } = require('../utils/interactionEngine');
+          flaggedInteractions = await checkInteractions(resolvedGeneric, currentActiveGenerics);
+        }
+
+        // Save flagged interactions
+        if (flaggedInteractions.length > 0) {
+          for (const interaction of flaggedInteractions) {
+            const existingGenName = [interaction.generic_a.toLowerCase(), interaction.generic_b.toLowerCase()]
+              .find(g => g !== resolvedGeneric.toLowerCase());
+
+            const conflictingMed = existingMeds.find(m => m.generic_name && m.generic_name.toLowerCase() === existingGenName) ||
+                                   savedMedicines.find(m => m.generic_name && m.generic_name.toLowerCase() === existingGenName);
+
+            if (conflictingMed) {
+              await client.query(
+                `INSERT INTO interaction_flags (patient_id, new_medicine_id, existing_medicine_id, kb_entry_id, severity, confidence, status)
+                 VALUES ($1, $2, $3, $4, $5, 1.0, 'shown')`,
+                [patient_id, newMed.id, conflictingMed.id, interaction.id, interaction.severity]
+              );
+              allFlaggedInteractions.push(interaction);
+            }
+          }
+        }
+      }
+
+      await client.query('COMMIT');
+
+      // Trigger background research loops for each resolved new medicine
+      for (const newMed of savedMedicines) {
+        if (newMed.generic_name) {
+          (async () => {
+            const { pool } = require('../config/db');
+            let bgClient;
+            try {
+              bgClient = await pool.connect();
+              const otherMeds = [...existingMeds, ...savedMedicines.filter(m => m.id !== newMed.id)];
+              for (const conflictingMed of otherMeds) {
+                if (!conflictingMed.generic_name) continue;
+                if (conflictingMed.generic_name.toLowerCase() === newMed.generic_name.toLowerCase()) continue;
+
+                // Check if already flagged in DB or transaction
+                const alreadyFlagged = allFlaggedInteractions.some(f => 
+                  (f.generic_a.toLowerCase() === newMed.generic_name.toLowerCase() && f.generic_b.toLowerCase() === conflictingMed.generic_name.toLowerCase()) ||
+                  (f.generic_b.toLowerCase() === newMed.generic_name.toLowerCase() && f.generic_a.toLowerCase() === conflictingMed.generic_name.toLowerCase())
+                );
+                
+                if (!alreadyFlagged) {
+                  try {
+                    logger.info('AGENT_RESEARCH_TRIGGER_BG', `Triggering background LLM research agent for ${newMed.generic_name} and ${conflictingMed.generic_name}`);
+                    const ms2Res = await axios.post(`${MS2_BASE_URL}/api/research-interaction`, {
+                      generic_a: newMed.generic_name,
+                      generic_b: conflictingMed.generic_name
+                    }, { timeout: 45000 });
+                    
+                    if (ms2Res.data && ms2Res.data.success) {
+                      const researchResult = ms2Res.data.data;
+                      const explanation = researchResult.explanation || '';
+                      const lowercaseExp = explanation.toLowerCase();
+                      const isNoInteraction = lowercaseExp.includes("no significant interaction") || 
+                                              lowercaseExp.includes("no known interaction") || 
+                                              (lowercaseExp.includes("no interaction") && lowercaseExp.includes("safe"));
+                      
+                      if (explanation && !isNoInteraction) {
+                        const sorted = [newMed.generic_name.toLowerCase(), conflictingMed.generic_name.toLowerCase()].sort();
+                        const kbRes = await bgClient.query(
+                          `INSERT INTO interaction_kb (generic_a, generic_b, severity, explanation, source, version)
+                           VALUES ($1, $2, 'monitor_closely', $3, 'Groq Research Agent', 'v1')
+                           RETURNING id`,
+                          [sorted[0], sorted[1], explanation]
+                        );
+                        const kbEntryId = kbRes.rows[0].id;
+                        
+                        await bgClient.query(
+                          `INSERT INTO interaction_flags (patient_id, new_medicine_id, existing_medicine_id, kb_entry_id, severity, confidence, status)
+                           VALUES ($1, $2, $3, $4, 'monitor_closely', 1.0, 'shown')`,
+                          [patient_id, newMed.id, conflictingMed.id, kbEntryId]
+                        );
+                        logger.info('AGENT_ALERT_CREATED_BG', `Researched and created custom interaction flag in background for ${newMed.generic_name} and ${conflictingMed.generic_name}`);
+                      }
+                    }
+                  } catch (agentErr) {
+                    logger.error('AGENT_RESEARCH_FAILED_BG', `Background research failed: ${agentErr.message}`);
+                  }
+                }
+              }
+            } catch (connErr) {
+              logger.error('BG_DB_CONNECTION_FAILED', `Failed to open connection for background research: ${connErr.message}`);
+            } finally {
+              if (bgClient) bgClient.release();
+            }
+          })();
+        }
+      }
+
+      // Send alert emails outside the transaction if interactions were flagged
+      if (allFlaggedInteractions.length > 0) {
+        const { sendEmail } = require('../utils/email');
+        const patientEmailRes = await query("SELECT email, name FROM users WHERE id = $1", [patient_id]);
+        const patient = patientEmailRes.rows[0];
+
+        const caregiversRes = await query(
+          `SELECT u.email, u.name FROM caregiver_links cl
+           JOIN users u ON cl.caregiver_id = u.id
+           WHERE cl.patient_id = $1 AND cl.status = 'active'`,
+          [patient_id]
+        );
+        const caregivers = caregiversRes.rows;
+
+        const alertSubject = `🛡️ MedGuard Safety Alert: Drug Interaction Flagged`;
+        const alertBody = `Hello,
+
+A drug interaction has been flagged in your MedGuard profile.
+
+Details of interactions:
+${allFlaggedInteractions.map(i => `  * Conflicting drugs: ${i.generic_a} & ${i.generic_b} (Severity: ${i.severity.replace('_', ' ').toUpperCase()})\n    Explanation: ${i.explanation}`).join('\n')}
+
+Please review your dashboard and discuss these details with your doctor.
+
+Best,
+The MedGuard Team`;
+
+        if (patient) {
+          await sendEmail({ to: patient.email, subject: alertSubject, body: alertBody });
+        }
+        for (const cg of caregivers) {
+          await sendEmail({ to: cg.email, subject: alertSubject, body: alertBody });
+        }
+      }
+
+      // Audit logs
+      for (const newMed of savedMedicines) {
+        logger.audit('MEDICINE_CREATED', `User ${req.user.id} manually created medicine ${newMed.id} for patient ${patient_id}`, {
+          userId: req.user.id,
+          patientId: patient_id,
+          medicineId: newMed.id,
+        });
+      }
+
+      res.status(201).json({
+        success: true,
+        data: {
+          medicines: savedMedicines,
+          interactions: allFlaggedInteractions
+        }
+      });
+
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    logger.error('MEDICINE_BATCH_ERROR', `Error saving medicine batch: ${err.message}`);
+    next(err);
   }
 });
 

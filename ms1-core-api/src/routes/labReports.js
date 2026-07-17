@@ -84,7 +84,7 @@ router.get('/lab-reports/:id', authenticateUser, enforceConsent('health_data_pro
  * POST /api/lab-reports/upload
  * Handle lab report photo upload and run extraction with visit context proximity linking.
  */
-router.post('/lab-reports/upload', authenticateUser, enforceConsent('health_data_processing'), enforceEmailVerified, uploadLimiter, upload.single('photo'), async (req, res, next) => {
+router.post('/lab-reports/upload', authenticateUser, enforceConsent('health_data_processing'), enforceEmailVerified, uploadLimiter, upload.single('photo'), async (req, res, _next) => {
   if (!req.file) {
     return res.status(400).json({
       success: false,
@@ -232,6 +232,7 @@ router.post('/lab-reports/confirm', authenticateUser, enforceConsent('health_dat
       );
       const reportId = reportRes.rows[0].id;
 
+      const savedLabValueIds = [];
       // 3. For each value, normalize canonical type, check trend, and save
       for (const val of values) {
         const canonicalType = await getCanonicalTestType(val.test_type);
@@ -252,14 +253,24 @@ router.post('/lab-reports/confirm', authenticateUser, enforceConsent('health_dat
         }
 
         // Save value
-        await client.query(
+        const insertRes = await client.query(
           `INSERT INTO lab_values (report_id, test_type, panel_name, value, unit, resolution_status, confidence, recorded_at)
-           VALUES ($1, $2, $3, $4, $5, 'resolved', $6, $7)`,
+           VALUES ($1, $2, $3, $4, $5, 'resolved', $6, $7)
+           RETURNING id`,
           [reportId, canonicalType, val.panel_name || null, val.value, val.unit || '', val.confidence || 1.0, val.recorded_at ? new Date(val.recorded_at) : new Date()]
         );
+        savedLabValueIds.push(insertRes.rows[0].id);
       }
 
       await client.query('COMMIT');
+
+      // Check for clinical conflicts with active medicines
+      try {
+        const { checkLabMedicineConflicts } = require('../utils/labMedicineChecker');
+        await checkLabMedicineConflicts(patient_id, savedLabValueIds);
+      } catch (checkErr) {
+        logger.error('LAB_MEDICINE_CHECK_TRIGGER_FAILED', `Failed to run safety check for patient ${patient_id}: ${checkErr.message}`);
+      }
 
       logger.audit('LAB_REPORT_CONFIRMED', `User ${req.user.id} confirmed lab report ${reportId} for patient ${patient_id}`, {
         userId: req.user.id,

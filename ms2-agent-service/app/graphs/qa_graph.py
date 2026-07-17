@@ -2,8 +2,9 @@ from typing import TypedDict, List, Dict, Any
 from langgraph.graph import StateGraph, END
 import json
 from app.config import settings
-from langchain_nvidia_ai_endpoints import ChatNVIDIA
+from app.services.client import get_client
 from langchain_core.messages import HumanMessage, SystemMessage
+
 
 class QaState(TypedDict):
     question: str
@@ -19,12 +20,8 @@ def answer_question_node(state: QaState) -> Dict[str, Any]:
 
     disclaimer = "\n\n*Discuss this with your doctor — this is not a diagnosis.*"
 
-    client = ChatNVIDIA(
-        model=settings.orchestrator_model,
-        api_key=settings.nvidia_api_key,
-        temperature=0.0
-    )
-    
+    client = get_client(settings.orchestrator_model)
+
     prompt = f"""
     You are a clinical Q&A safety assistant answering patient follow-up queries.
     
@@ -39,17 +36,18 @@ def answer_question_node(state: QaState) -> Dict[str, Any]:
     - Always instruct them to consult their physician for clinical decisions.
     - You MUST append exactly this disclaimer at the very end of your response: "\n\n*Discuss this with your doctor — this is not a diagnosis.*"
     """
-    
+
     response = client.invoke([
-        SystemMessage(content="You are a clinical Q&A assistant. You answer patient safety queries strictly without providing diagnosis or suggesting treatment changes."),
+        SystemMessage(
+            content="You are a clinical Q&A assistant. You answer patient safety queries strictly without providing diagnosis or suggesting treatment changes."),
         HumanMessage(content=prompt)
     ])
-    
+
     answer = response.content.strip()
-    
+
     if "*discuss this with your doctor" not in answer.lower():
         answer += disclaimer
-        
+
     return {"answer": answer}
 
 

@@ -1,6 +1,10 @@
 @import 'tailwindcss/theme' layer(theme);
 @import 'tailwindcss/utilities' layer(utilities);
 
+*, ::before, ::after {
+  box-sizing: border-box;
+}
+
 :root {
   /* Premium clinical editorial tokens */
   --mg-ink: #000000;

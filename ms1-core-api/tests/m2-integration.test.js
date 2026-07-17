@@ -12,6 +12,7 @@ jest.mock('../src/config/redis', () => ({
   get: jest.fn().mockResolvedValue(null),
   setex: jest.fn().mockResolvedValue('OK'),
   on: jest.fn(),
+  isMock: true,
 }));
 
 describe('Milestone 2 — Consent & Interaction Safety Engine Tests', () => {

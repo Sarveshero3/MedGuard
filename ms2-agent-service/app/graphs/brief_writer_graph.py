@@ -2,8 +2,9 @@ from typing import TypedDict, List, Dict, Any
 from langgraph.graph import StateGraph, END
 import json
 from app.config import settings
-from langchain_nvidia_ai_endpoints import ChatNVIDIA
+from app.services.client import get_client
 from langchain_core.messages import HumanMessage, SystemMessage
+
 
 class BriefWriterState(TypedDict):
     active_medicines: List[Dict[str, Any]]
@@ -29,7 +30,7 @@ def parse_json_safely(text: str) -> Dict[str, Any]:
         end = text.rfind("}")
         if start != -1 and end != -1:
             try:
-                return json.loads(text[start:end+1])
+                return json.loads(text[start:end + 1])
             except Exception:
                 pass
         return {}
@@ -41,12 +42,8 @@ def write_visit_brief_node(state: BriefWriterState) -> Dict[str, Any]:
     trends = state.get("lab_trends", [])
     reason = state.get("reason_for_visit", "")
 
-    client = ChatNVIDIA(
-        model=settings.orchestrator_model,
-        api_key=settings.nvidia_api_key,
-        temperature=0.0
-    )
-    
+    client = get_client(settings.orchestrator_model)
+
     prompt = f"""
     You are a clinical preparation assistant. Write a doctor visit preparation brief for a patient.
     
@@ -66,14 +63,15 @@ def write_visit_brief_node(state: BriefWriterState) -> Dict[str, Any]:
     
     Return ONLY the raw JSON object. Do not include markdown code block formatting.
     """
-    
+
     response = client.invoke([
-        SystemMessage(content="You are a clinical preparation writer. You structure patient briefs with concern-framed, non-actionable questions for their doctor."),
+        SystemMessage(
+            content="You are a clinical preparation writer. You structure patient briefs with concern-framed, non-actionable questions for their doctor."),
         HumanMessage(content=prompt)
     ])
-    
+
     parsed = parse_json_safely(response.content)
-    
+
     questions = parsed.get("questions", [])
     if not isinstance(questions, list) or len(questions) < 3:
         questions = [
@@ -81,7 +79,7 @@ def write_visit_brief_node(state: BriefWriterState) -> Dict[str, Any]:
             "Is the recent change in my lab test values something to be concerned about?",
             "What indicators should we monitor closely before my next appointment?"
         ]
-        
+
     return {
         "brief_output": {
             "summary": parsed.get("summary") or "Active regimen review complete.",

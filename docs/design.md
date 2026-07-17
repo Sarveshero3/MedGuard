@@ -120,24 +120,45 @@ The API will return standard HTTP statuses accompanied by structured JSON error 
 
 ### 2b. Authentication Token Schema
 
-JWT tokens issued by `ms1-core-api` contain the following payload:
+`ms1-core-api` issues a dual-token pair upon successful registration, login, and MFA verification:
 
-```json
-{
-  "userId": "uuid-v4",
-  "email": "user@example.com",
-  "role": "patient | caregiver",
-  "iat": 1720000000,
-  "exp": 1720003600
-}
-```
+#### 1. Access Token (`accessToken`)
+Signed JWT containing full authorization claims for the request lifecycle.
+- **Access token TTL**: 15 minutes (configured via `JWT_ACCESS_TTL`).
+- **Format**:
+  ```json
+  {
+    "sub": "user-uuid-v4",
+    "userId": "user-uuid-v4",
+    "email": "user@example.com",
+    "role": "patient | caregiver",
+    "name": "John Doe",
+    "iat": 1720000000,
+    "exp": 1720000900
+  }
+  ```
+
+#### 2. Refresh Token (`refreshToken`)
+Minimal-claim JWT used solely to rotate and request new token pairs.
+- **Refresh token TTL**: 7 days (configured via `JWT_REFRESH_TTL`).
+- **Format**:
+  ```json
+  {
+    "userId": "user-uuid-v4",
+    "jti": "random-uuid-v4",
+    "iat": 1720000000,
+    "exp": 1720604800
+  }
+  ```
+
+#### 3. Database Hash Gating (`refresh_tokens` table)
+- To prevent replay attacks and secure the refresh flow, the SHA-256 hash of the `refreshToken` is saved in the `refresh_tokens` table.
+- A database-level transaction (`BEGIN` / `SELECT ... FOR UPDATE` / `COMMIT`) gates the rotation endpoint (`POST /auth/refresh`). On rotation, the old refresh token is marked revoked (`revoked_at = NOW()`) and a fresh token pair is issued.
 
 | Property | Notes |
 |:---|:---|
 | Signing algorithm | HS256 |
 | Secret | `JWT_SECRET` env var (minimum 64 chars, never committed) |
-| Access token TTL | 1 hour |
-| Refresh token | Not yet implemented (planned) |
 | `is_email_verified` | Re-checked against DB on every `enforceEmailVerified` call, not trusted from the token |
 
 ---

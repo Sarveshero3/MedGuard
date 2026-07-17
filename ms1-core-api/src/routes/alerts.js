@@ -15,11 +15,15 @@ router.get('/alerts', authenticateUser, enforcePatientAccess('alerts_only'), asy
   const patientId = req.query.patient_id;
 
   try {
-    const result = await query(
+    // Drug-drug interaction alerts
+    const drugDrugResult = await query(
       `SELECT f.id, f.patient_id, f.severity, f.confidence, f.status, f.created_at,
               nm.brand_name as new_medicine_brand, nm.generic_name as new_medicine_generic,
               em.brand_name as existing_medicine_brand, em.generic_name as existing_medicine_generic,
-              kb.explanation
+              COALESCE(em.generic_name, em.brand_name) as drug_name_a,
+              COALESCE(nm.generic_name, nm.brand_name) as drug_name_b,
+              kb.explanation,
+              'drug_drug' as alert_type
        FROM interaction_flags f
        JOIN medicines nm ON f.new_medicine_id = nm.id
        JOIN medicines em ON f.existing_medicine_id = em.id
@@ -29,9 +33,35 @@ router.get('/alerts', authenticateUser, enforcePatientAccess('alerts_only'), asy
       [patientId]
     );
 
+    // Lab-medicine safety alerts
+    let labMedResult = { rows: [] };
+    try {
+      labMedResult = await query(
+        `SELECT lmf.id, lmf.patient_id, lmf.severity, 1.0 as confidence, lmf.status, lmf.created_at,
+                COALESCE(m.generic_name, m.brand_name) as drug_name_a,
+                (lv.test_type || ' = ' || lv.value || ' ' || lv.unit) as drug_name_b,
+                r.rationale as explanation,
+                'lab_medicine' as alert_type
+         FROM lab_medicine_flags lmf
+         JOIN medicines m ON lmf.medicine_id = m.id
+         JOIN lab_values lv ON lmf.lab_value_id = lv.id
+         JOIN lab_medicine_rules r ON lmf.rule_id = r.id
+         WHERE lmf.patient_id = $1
+         ORDER BY lmf.created_at DESC`,
+        [patientId]
+      );
+    } catch (labErr) {
+      // Table may not exist yet (pre-migration) — gracefully degrade
+      logger.warn('LAB_MED_FLAGS_QUERY_SKIP', `lab_medicine_flags query skipped: ${labErr.message}`);
+    }
+
+    // Merge both alert types and sort by created_at DESC
+    const allAlerts = [...drugDrugResult.rows, ...labMedResult.rows]
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
     res.json({
       success: true,
-      data: result.rows,
+      data: allAlerts,
     });
   } catch (err) {
     logger.error('ALERTS_FETCH_ERROR', `Error fetching alerts for patient ${patientId}: ${err.message}`);
@@ -40,15 +70,25 @@ router.get('/alerts', authenticateUser, enforcePatientAccess('alerts_only'), asy
 });
 
 /**
- * POST /api/alerts/:id/acknowledge
- * Acknowledge an alert by a patient or their caregiver.
+ * Acknowledge an alert by a patient or their caregiver (POST, PUT, or PATCH).
  */
-router.post('/alerts/:id/acknowledge', authenticateUser, validateUUID('id'), async (req, res, next) => {
+const acknowledgeAlertHandler = async (req, res, next) => {
   const alertId = req.params.id;
 
   try {
-    const flagResult = await query('SELECT patient_id FROM interaction_flags WHERE id = $1', [alertId]);
-    if (flagResult.rows.length === 0) {
+    let targetTable = null;
+    let flagResult = await query('SELECT patient_id FROM interaction_flags WHERE id = $1', [alertId]);
+    
+    if (flagResult.rows.length > 0) {
+      targetTable = 'interaction_flags';
+    } else {
+      flagResult = await query('SELECT patient_id FROM lab_medicine_flags WHERE id = $1', [alertId]);
+      if (flagResult.rows.length > 0) {
+        targetTable = 'lab_medicine_flags';
+      }
+    }
+
+    if (!targetTable) {
       return res.status(404).json({
         success: false,
         error: { code: 'NOT_FOUND', message: 'Alert flag not found.' },
@@ -77,11 +117,11 @@ router.post('/alerts/:id/acknowledge', authenticateUser, validateUUID('id'), asy
     }
 
     const result = await query(
-      'UPDATE interaction_flags SET status = $1 WHERE id = $2 RETURNING *',
+      `UPDATE ${targetTable} SET status = $1 WHERE id = $2 RETURNING *`,
       [statusUpdate, alertId]
     );
 
-    logger.audit('ALERT_ACKNOWLEDGED', `User ${req.user.id} (${req.user.role}) acknowledged alert ${alertId}`, {
+    logger.audit('ALERT_ACKNOWLEDGED', `User ${req.user.id} (${req.user.role}) acknowledged alert ${alertId} in ${targetTable}`, {
       userId: req.user.id,
       role: req.user.role,
       alertId,
@@ -97,6 +137,10 @@ router.post('/alerts/:id/acknowledge', authenticateUser, validateUUID('id'), asy
     logger.error('ALERT_ACKNOWLEDGE_ERROR', `Error acknowledging alert ${alertId}: ${err.message}`);
     next(err);
   }
-});
+};
+
+router.post('/alerts/:id/acknowledge', authenticateUser, validateUUID('id'), acknowledgeAlertHandler);
+router.put('/alerts/:id/acknowledge', authenticateUser, validateUUID('id'), acknowledgeAlertHandler);
+router.patch('/alerts/:id/acknowledge', authenticateUser, validateUUID('id'), acknowledgeAlertHandler);
 
 module.exports = router;

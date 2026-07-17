@@ -11,6 +11,7 @@ import NotFound from './pages/NotFound.jsx'
 import Home from './pages/Home.jsx'
 import Layout from './components/Layout.jsx'
 import ProtectedRoute from './components/ProtectedRoute.jsx'
+import WriteBrief from './pages/WriteBrief.jsx'
 
 // Static clinical content pages (Step 12)
 import Terms from './pages/Terms.jsx'
@@ -42,6 +43,8 @@ function App() {
           <Route path="/alerts" element={<Alerts />} />
           <Route path="/calendar" element={<Calendar />} />
           <Route path="/privacy" element={<PrivacySettings />} />
+          <Route path="/brief/new" element={<WriteBrief />} />
+          <Route path="/brief/:id" element={<WriteBrief />} />
         </Route>
       </Route>
       <Route path="*" element={<NotFound />} />

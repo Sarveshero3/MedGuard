@@ -9,14 +9,14 @@ class Settings(BaseSettings):
     """ms2-agent-service configuration."""
 
     ms2_port: int = 8000
-    nvidia_api_key: str = ""
+    groq_api_key: str = ""
     ms1_base_url: str = "http://ms1-core-api:4000"
     log_level: str = "info"
-    
-    # Model configuration defaults (NVIDIA NIM)
-    orchestrator_model: str = "meta/llama-3.1-8b-instruct"
-    vision_model: str = "nvidia/nemotron-nano-12b-v2-vl"
-    disambiguation_model: str = "minimaxai/minimax-m3"
+
+    # Model configuration defaults (Groq)
+    orchestrator_model: str = "llama-3.3-70b-versatile"
+    vision_model: str = "meta-llama/llama-4-scout-17b-16e-instruct"
+    disambiguation_model: str = "qwen/qwen3-32b"
 
     class Config:
         env_file = (".env", "../.env")

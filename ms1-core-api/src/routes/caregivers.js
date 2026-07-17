@@ -2,7 +2,7 @@ const express = require('express');
 const { query } = require('../config/db');
 const logger = require('../utils/logger');
 const { authenticateUser, requireRoles } = require('../middleware/auth');
-const { sanitizeInput, validateUUID } = require('../middleware/security');
+const { validateUUID } = require('../middleware/security');
 
 const router = express.Router();
 

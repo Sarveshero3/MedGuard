@@ -77,11 +77,10 @@ router.get('/calendar', authenticateUser, enforcePatientAccess('full_view'), asy
 });
 
 /**
- * POST /api/calendar/visits
- * Add a new user doctor appointment manually.
+ * Add a new user doctor appointment manually (supports both /calendar/visits and /appointments).
  */
-router.post('/calendar/visits', authenticateUser, enforcePatientAccess('full_view'), enforceEmailVerified, sanitizeInput, async (req, res, next) => {
-  const { patient_id, doctor_name, specialty, scheduled_date, disease_type } = req.body;
+const createVisitHandler = async (req, res, next) => {
+  const { patient_id, doctor_name, specialty, visit_type, scheduled_date, disease_type } = req.body;
 
   if (!scheduled_date) {
     return res.status(400).json({
@@ -91,11 +90,12 @@ router.post('/calendar/visits', authenticateUser, enforcePatientAccess('full_vie
   }
 
   try {
+    const finalSpecialty = specialty || visit_type || null;
     const result = await query(
       `INSERT INTO visits (patient_id, doctor_name, specialty, scheduled_date, disease_type, visit_type)
        VALUES ($1, $2, $3, $4, $5, 'user_added')
        RETURNING *`,
-      [patient_id, doctor_name || null, specialty || null, scheduled_date, disease_type || null]
+      [patient_id, doctor_name || null, finalSpecialty, scheduled_date, disease_type || null]
     );
 
     logger.audit('VISIT_CREATED', `User ${req.user.id} manually created doctor visit ${result.rows[0].id} for patient ${patient_id}`, {
@@ -112,6 +112,9 @@ router.post('/calendar/visits', authenticateUser, enforcePatientAccess('full_vie
     logger.error('VISIT_CREATE_ERROR', `Error creating doctor visit: ${err.message}`);
     next(err);
   }
-});
+};
+
+router.post('/calendar/visits', authenticateUser, enforcePatientAccess('full_view'), enforceEmailVerified, sanitizeInput, createVisitHandler);
+router.post('/appointments', authenticateUser, enforcePatientAccess('full_view'), enforceEmailVerified, sanitizeInput, createVisitHandler);
 
 module.exports = router;

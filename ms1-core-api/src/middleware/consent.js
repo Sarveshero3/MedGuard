@@ -5,7 +5,7 @@ const logger = require('../utils/logger');
  * Middleware to enforce active DPDP consent.
  * Gated actions return 403 Forbidden with code INSUFFICIENT_CONSENT if consent is missing or revoked.
  */
-function enforceConsent(consentType = 'health_data_processing') {
+function enforceConsent(_consentType = 'health_data_processing') {
   return async (req, res, next) => {
     if (!req.user) {
       return res.status(401).json({

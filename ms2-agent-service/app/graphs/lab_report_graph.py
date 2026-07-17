@@ -1,13 +1,13 @@
-import os
 import base64
 import json
 from typing import TypedDict, List, Dict, Any
 from langgraph.graph import StateGraph, END
 import datetime
 from pypdf import PdfReader
-from langchain_nvidia_ai_endpoints import ChatNVIDIA
+from app.services.client import get_client
 from langchain_core.messages import HumanMessage, SystemMessage
 from app.config import settings
+
 
 class LabReportState(TypedDict):
     photo_path: str
@@ -21,6 +21,7 @@ class LabReportState(TypedDict):
     visit_link_confidence: float
     needs_visit_link_resolution: bool
     candidate_visits: List[Dict[str, Any]]
+
 
 def parse_json_safely(text: str) -> Dict[str, Any]:
     text = text.strip()
@@ -38,16 +39,17 @@ def parse_json_safely(text: str) -> Dict[str, Any]:
         end = text.rfind("}")
         if start != -1 and end != -1:
             try:
-                return json.loads(text[start:end+1])
+                return json.loads(text[start:end + 1])
             except Exception:
                 pass
         return {}
+
 
 def ocr_vlm_lab_extraction_node(state: LabReportState) -> Dict[str, Any]:
     photo_path = state.get("photo_path", "")
     filename = state.get("filename", "").lower()
     is_pdf = filename.endswith(".pdf")
-    
+
     ocr_text = ""
     try:
         from docling.document_converter import DocumentConverter
@@ -70,13 +72,10 @@ def ocr_vlm_lab_extraction_node(state: LabReportState) -> Dict[str, Any]:
                         for img_file in page.images:
                             img_data = img_file.data
                             img_b64 = base64.b64encode(img_data).decode("utf-8")
-                            ocr_client = ChatNVIDIA(
-                                model=settings.vision_model,
-                                api_key=settings.nvidia_api_key,
-                                temperature=0.0
-                            )
+                            ocr_client = get_client(settings.vision_model)
                             ocr_response = ocr_client.invoke([
-                                SystemMessage(content="Perform raw character-level OCR on the uploaded document. Extract all text exactly as written, preserving layout if possible. Do not interpret or summarize."),
+                                SystemMessage(
+                                    content="Perform raw character-level OCR on the uploaded document. Extract all text exactly as written, preserving layout if possible. Do not interpret or summarize."),
                                 HumanMessage(content=[
                                     {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_b64}"}}
                                 ])
@@ -88,26 +87,19 @@ def ocr_vlm_lab_extraction_node(state: LabReportState) -> Dict[str, Any]:
         else:
             with open(photo_path, "rb") as f:
                 img_b64 = base64.b64encode(f.read()).decode("utf-8")
-            
-            ocr_client = ChatNVIDIA(
-                model=settings.vision_model,
-                api_key=settings.nvidia_api_key,
-                temperature=0.0
-            )
+
+            ocr_client = get_client(settings.vision_model)
             ocr_response = ocr_client.invoke([
-                SystemMessage(content="Perform raw character-level OCR on the uploaded document. Extract all text exactly as written, preserving layout if possible. Do not interpret or summarize."),
+                SystemMessage(
+                    content="Perform raw character-level OCR on the uploaded document. Extract all text exactly as written, preserving layout if possible. Do not interpret or summarize."),
                 HumanMessage(content=[
                     {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_b64}"}}
                 ])
             ])
             ocr_text = ocr_response.content.strip()
 
-    orchestrator = ChatNVIDIA(
-        model=settings.orchestrator_model,
-        api_key=settings.nvidia_api_key,
-        temperature=0.0
-    )
-    
+    orchestrator = get_client(settings.orchestrator_model)
+
     prompt = """
     Extract laboratory test details from the provided document text or image.
     You must return a JSON object with the following fields:
@@ -118,38 +110,24 @@ def ocr_vlm_lab_extraction_node(state: LabReportState) -> Dict[str, Any]:
 
     Return ONLY the raw JSON object. Do not include markdown code block formatting.
     """
-    
+
     struct_a_res = orchestrator.invoke([
         SystemMessage(content=prompt),
         HumanMessage(content=f"Raw OCR text:\n\n{ocr_text}")
     ])
     structured_a = parse_json_safely(struct_a_res.content)
 
-    disambiguate_client = ChatNVIDIA(
-        model=settings.disambiguation_model,
-        api_key=settings.nvidia_api_key,
-        temperature=0.0
-    )
-    
-    if is_pdf:
-        struct_b_res = disambiguate_client.invoke([
-            SystemMessage(content=prompt),
-            HumanMessage(content=f"Document text:\n\n{ocr_text}")
-        ])
-    else:
-        with open(photo_path, "rb") as f:
-            img_b64 = base64.b64encode(f.read()).decode("utf-8")
-        struct_b_res = disambiguate_client.invoke([
-            SystemMessage(content=prompt),
-            HumanMessage(content=[
-                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_b64}"}}
-            ])
-        ])
+    disambiguate_client = get_client(settings.disambiguation_model)
+
+    struct_b_res = disambiguate_client.invoke([
+        SystemMessage(content=prompt),
+        HumanMessage(content=f"Document text:\n\n{ocr_text}")
+    ])
     structured_b = parse_json_safely(struct_b_res.content)
 
     fields = ["test_type", "value"]
     mismatch_fields = []
-    
+
     def clean_str(val):
         if not val:
             return ""
@@ -166,9 +144,9 @@ def ocr_vlm_lab_extraction_node(state: LabReportState) -> Dict[str, Any]:
         type_b = structured_b.get("test_type") or "Unknown"
         val_a = structured_a.get("value") or "Unknown"
         val_b = structured_b.get("value") or "Unknown"
-        
+
         follow_up_question = f"Model disagreement detected on {', '.join(mismatch_fields)}. Model A extracted '{type_a}: {val_a}' and Model B extracted '{type_b}: {val_b}'. Please confirm correct values."
-        
+
         return {
             "raw_extraction": {
                 "test_type": structured_b.get("test_type") or structured_a.get("test_type"),

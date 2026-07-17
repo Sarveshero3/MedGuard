@@ -24,7 +24,8 @@ The MedGuard Core API runs on port 4000 (`http://localhost:4000/api`) and expose
   {
     "success": true,
     "data": {
-      "token": "JWT_TOKEN_STRING",
+      "accessToken": "JWT_ACCESS_TOKEN_STRING",
+      "refreshToken": "JWT_REFRESH_TOKEN_STRING",
       "user": {
         "id": "1",
         "name": "John Doe",
@@ -46,7 +47,46 @@ The MedGuard Core API runs on port 4000 (`http://localhost:4000/api`) and expose
     "password": "securePassword123!"
   }
   ```
-- **Response**: Same as registration.
+- **Response**: Same as registration (or returns `requiresMfa: true` and `mfaToken` if 2FA is pending).
+
+### 3. Refresh Access Token
+- **Endpoint**: `POST /auth/refresh`
+- **Description**: Rotates the refresh token and issues a new access + refresh token pair.
+- **Request Body**:
+  ```json
+  {
+    "refreshToken": "JWT_REFRESH_TOKEN_STRING"
+  }
+  ```
+- **Response**:
+  ```json
+  {
+    "success": true,
+    "data": {
+      "accessToken": "NEW_JWT_ACCESS_TOKEN_STRING",
+      "refreshToken": "NEW_JWT_REFRESH_TOKEN_STRING"
+    }
+  }
+  ```
+
+### 4. Logout / Revoke Token
+- **Endpoint**: `POST /auth/logout`
+- **Description**: Explicitly revokes the refresh token on the server side.
+- **Request Body**:
+  ```json
+  {
+    "refreshToken": "JWT_REFRESH_TOKEN_STRING"
+  }
+  ```
+- **Response**:
+  ```json
+  {
+    "success": true,
+    "data": {
+      "message": "Logged out successfully."
+    }
+  }
+  ```
 
 ---
 
@@ -161,6 +201,41 @@ The MedGuard Core API runs on port 4000 (`http://localhost:4000/api`) and expose
   ```json
   {
     "success": true
+  }
+  ```
+
+### 5. Generate Visit Prep Brief
+- **Endpoint**: `GET /visits/:id/brief`
+- **Description**: Generates or retrieves a cached clinical prep brief for the given visit. Pass `?regenerate=true` to bypass cache.
+- **Response**:
+  ```json
+  {
+    "success": true,
+    "data": {
+      "brief": {
+        "id": "brief-uuid-string",
+        "patient_id": "patient-uuid-string",
+        "visit_id": "visit-uuid-string",
+        "content": {
+          "visit_type": "Cardiology",
+          "generated_at": "2026-07-16T21:37:34.000Z",
+          "active_medicines": [
+            "Glycomet 500mg (Metformin) — 500mg, Twice daily after meals",
+            "Coumadin 5mg (Warfarin) — 5mg, Once daily at bedtime"
+          ],
+          "warnings": [],
+          "lab_trends": [
+            "📈 HbA1c: 7.2 → 7.6 %",
+            "📈 Creatinine: 1.1 → 1.5 mg/dL"
+          ],
+          "suggested_questions": [
+            "My HbA1c and Creatinine values have been rising — what could be causing this?"
+          ],
+          "disclaimer": "Discuss this with your doctor — this is not a diagnosis."
+        }
+      },
+      "cached": false
+    }
   }
   ```
 

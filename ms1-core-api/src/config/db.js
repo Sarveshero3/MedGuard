@@ -8,8 +8,13 @@ if (!DATABASE_URL) {
   throw new Error('DATABASE_URL environment variable is missing. PostgreSQL is required.');
 }
 
+// Connection pool max size — configurable via env var, scaled for
+// concurrent transactions (medicines locking, token rotation, etc.)
+const dbPoolMax = parseInt(process.env.DB_POOL_MAX || '20', 10);
+
 const pool = new Pool({
   connectionString: DATABASE_URL,
+  max: dbPoolMax,
 });
 
 const logger = require('../utils/logger');
