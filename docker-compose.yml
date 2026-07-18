@@ -40,6 +40,7 @@ services:
       REDIS_URL: redis://redis:6379
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
       CLEAN_DB: "true"
+      NODE_ENV: "development"
     ports:
       - "4000:4000"
     volumes:
@@ -64,6 +65,8 @@ services:
     environment:
       MS2_PORT: 8000
       GROQ_API_KEY: ${GROQ_API_KEY:-}
+      TAVILY_API_KEY: ${TAVILY:-}
+      BRAND_RESOLUTION_MODEL: ${BRAND_RESOLUTION_MODEL:-llama-3.3-70b-versatile}
       MS1_BASE_URL: http://ms1-core-api:4000
       LOG_LEVEL: ${LOG_LEVEL:-info}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317

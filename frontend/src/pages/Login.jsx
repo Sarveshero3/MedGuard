@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { useGoogleReCaptcha } from 'react-google-recaptcha-v3'
 import api from '../services/api'
 import { MgTabs } from '../components/ui/MgTabs'
 import { Input } from '../components/ui/input'
@@ -27,6 +28,7 @@ export default function Login() {
   const [loading, setLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const { login } = useAuth()
+  const { executeRecaptcha } = useGoogleReCaptcha()
   const navigate = useNavigate()
 
   const handleSubmit = async (e) => {
@@ -76,6 +78,11 @@ export default function Login() {
         return
       }
 
+      let recaptchaToken = 'mock_token'
+      if (executeRecaptcha) {
+        recaptchaToken = await executeRecaptcha(isSignup ? 'register' : 'login')
+      }
+
       const endpoint = isSignup ? '/auth/register' : '/auth/login'
       const payload = isSignup ? {
         name: formData.name || formData.email.split('@')[0],
@@ -84,19 +91,21 @@ export default function Login() {
         role: formData.role,
         consentGranted: formData.consentGranted,
         linking_otp: formData.role === 'caregiver' ? formData.linking_otp : undefined,
+        recaptchaToken,
       } : {
         email: formData.email,
         password: formData.password,
+        recaptchaToken,
       }
 
       const res = await api.post(endpoint, payload)
 
-      if (!isSignup && res.data.data.requiresMfa) {
-        // Login returned MFA requirement
+      if (res.data.data.requiresMfa) {
+        // Login/Register returned MFA requirement
         setMfaToken(res.data.data.mfaToken)
         setShowMfa(true)
       } else {
-        // Normal login/register success
+        // Normal login/register success (legacy/fallback)
         login(res.data.data.accessToken, res.data.data.refreshToken)
         navigate('/dashboard')
       }
@@ -181,7 +190,7 @@ export default function Login() {
                 {loading ? 'Verifying...' : 'Verify Code'}
               </button>
 
-              <div className="flex justify-between items-center mt-3 px-1">
+              <div className="flex justify-between items-center mt-4 gap-2">
                 <button
                   type="button"
                   onClick={async () => {
@@ -202,7 +211,7 @@ export default function Login() {
                     }
                   }}
                   disabled={loading}
-                  className="text-xs font-semibold text-[#0F766E] hover:underline cursor-pointer"
+                  className="text-xs font-semibold text-[#0F766E] border border-[#0F766E]/20 hover:border-[#0F766E]/40 rounded-lg px-3 py-1.5 hover:bg-slate-50/50 transition-colors cursor-pointer disabled:opacity-50"
                 >
                   Resend Code
                 </button>
@@ -214,7 +223,7 @@ export default function Login() {
                     setMfaToken('')
                     setError('')
                   }}
-                  className="text-xs font-semibold text-slate-500 hover:text-slate-700 cursor-pointer"
+                  className="text-xs font-semibold text-slate-500 border border-slate-200 hover:border-slate-300 rounded-lg px-3 py-1.5 hover:bg-slate-50 transition-colors cursor-pointer"
                 >
                   Back to Sign In
                 </button>

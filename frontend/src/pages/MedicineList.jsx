@@ -4,15 +4,18 @@ import { useAuth } from '../context/AuthContext'
 import api from '../services/api'
 import { MgTabs } from '../components/ui/MgTabs'
 import { Skeleton } from '../components/ui/skeleton'
-import { MgNavbar } from '../components/MgNavbar'
 
 export default function MedicineList() {
-  const { user, loading: authLoading, logout } = useAuth()
+  const { user, loading: authLoading } = useAuth()
   const navigate = useNavigate()
+  
   const [medicines, setMedicines] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
   const [filter, setFilter] = useState('active') // 'active' | 'discontinued'
+  const [selectedIds, setSelectedIds] = useState([])
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -25,11 +28,17 @@ export default function MedicineList() {
     fetchMedicines()
   }, [user])
 
+  // Clear selection whenever filter tab changes
+  useEffect(() => {
+    setSelectedIds([])
+  }, [filter])
+
   const fetchMedicines = async () => {
     setLoading(true)
+    setError('')
     try {
       const res = await api.get('/medicines', { params: { patient_id: user.id } })
-      setMedicines(res.data.data)
+      setMedicines(res.data.data || [])
     } catch (err) {
       setError(err.response?.data?.error?.message || 'Failed to fetch medicines')
     } finally {
@@ -38,16 +47,61 @@ export default function MedicineList() {
   }
 
   const toggleStatus = async (id, currentStatus) => {
+    setError('')
+    setSuccess('')
     try {
       const newStatus = currentStatus === 'active' ? 'discontinued' : 'active'
       await api.put(`/medicines/${id}/status`, { status: newStatus })
+      setSuccess(`Medicine ${newStatus === 'active' ? 'reactivated' : 'discontinued'} successfully.`)
       fetchMedicines()
     } catch (err) {
       setError(err.response?.data?.error?.message || 'Failed to update medicine status')
     }
   }
 
+  const handleSelectToggle = (id) => {
+    setSelectedIds(prev => 
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    )
+  }
+
   const filteredMeds = medicines.filter(m => m.status === filter)
+
+  const handleSelectAllToggle = () => {
+    if (selectedIds.length === filteredMeds.length) {
+      // Unselect all
+      setSelectedIds([])
+    } else {
+      // Select all in current filter
+      setSelectedIds(filteredMeds.map(m => m.id))
+    }
+  }
+
+  const handleBatchDelete = async () => {
+    if (selectedIds.length === 0) return
+    if (!window.confirm(`Are you sure you want to permanently delete the ${selectedIds.length} selected medicine(s)? This will also remove any related adherence logs and safety flags.`)) {
+      return
+    }
+
+    setDeleting(true)
+    setError('')
+    setSuccess('')
+    
+    try {
+      const res = await api.post('/medicines/batch-delete', {
+        ids: selectedIds,
+        patient_id: user.id
+      })
+      
+      setSuccess(res.data.message || `Successfully deleted ${selectedIds.length} medicine(s).`)
+      setSelectedIds([])
+      fetchMedicines()
+    } catch (err) {
+      setError(err.response?.data?.error?.message || 'Failed to delete selected medicines')
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   const tabList = [
     { value: 'active', label: 'Active Prescriptions' },
@@ -57,102 +111,187 @@ export default function MedicineList() {
   return (
     <>
       {/* Main Content */}
-      <main className="flex-grow w-full px-6 md:px-16 max-w-[1200px] mx-auto py-12 animate-fade-in">
+      <main className="flex-grow w-full px-6 md:px-12 max-w-[1200px] mx-auto py-12 animate-fade-in text-left">
         
         {/* Header Section */}
-        <div className="mb-12 text-left">
-          <h1 className="font-sans text-5xl font-bold text-slate-900 mb-4">Medications</h1>
-          <p className="text-sm text-slate-500 max-w-2xl">Manage your active prescriptions and review clinical history.</p>
+        <div className="mb-8 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+          <div>
+            <h1 className="font-sans text-4xl font-bold text-slate-900 mb-2">Medications</h1>
+            <p className="text-sm text-slate-500 max-w-2xl font-medium">
+              Manage your active prescriptions, review clinical history, and perform batch deletions.
+            </p>
+          </div>
+          <div>
+            <Link 
+              to="/upload" 
+              className="bg-[#0f766e] hover:bg-[#0d645c] text-white font-semibold text-xs px-5 py-3 rounded-xl transition-all inline-flex items-center shadow-sm shadow-teal-700/10 hover:scale-[1.02] active:scale-[0.98]"
+            >
+              <span className="material-symbols-outlined mr-1.5 text-[18px]">cloud_upload</span>
+              Upload Prescription
+            </Link>
+          </div>
         </div>
 
         {error && (
-          <div className="error-banner mb-8 p-4 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm text-left">
+          <div className="mb-6 p-4 rounded-xl bg-rose-50 border border-rose-100 text-rose-700 text-xs font-semibold animate-fade-in flex items-center gap-2">
+            <span className="material-symbols-outlined text-sm font-bold">error</span>
             {error}
           </div>
         )}
 
-        {/* Shared MgTabs Component */}
-        <MgTabs 
-          value={filter}
-          onValueChange={setFilter}
-          tabs={tabList}
-        />
+        {success && (
+          <div className="mb-6 p-4 rounded-xl bg-emerald-50 border border-emerald-100 text-emerald-805 text-xs font-semibold animate-fade-in flex items-center gap-2">
+            <span className="material-symbols-outlined text-sm font-bold">check_circle</span>
+            {success}
+          </div>
+        )}
+
+        {/* Navigation Tabs */}
+        <div className="mb-6">
+          <MgTabs 
+            value={filter}
+            onValueChange={setFilter}
+            tabs={tabList}
+          />
+        </div>
+
+        {/* Bulk Actions Header Control Bar */}
+        {filteredMeds.length > 0 && (
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 mb-4 rounded-xl bg-slate-50 border border-slate-200 text-sm">
+            <div className="flex items-center gap-3 font-semibold text-slate-700">
+              <input 
+                type="checkbox"
+                checked={filteredMeds.length > 0 && selectedIds.length === filteredMeds.length}
+                onChange={handleSelectAllToggle}
+                className="w-4 h-4 text-[#0f766e] border-slate-350 rounded focus:ring-[#0f766e] cursor-pointer"
+              />
+              <span className="text-xs uppercase font-bold tracking-wider text-slate-500">
+                Select All {filteredMeds.length > 0 ? `(${filteredMeds.length})` : ''}
+              </span>
+            </div>
+            
+            {selectedIds.length > 0 && (
+              <div className="flex items-center gap-3">
+                <span className="text-slate-600 font-bold text-xs bg-slate-200 px-2 py-0.5 rounded-md">
+                  {selectedIds.length} Selected
+                </span>
+                <button
+                  onClick={handleBatchDelete}
+                  disabled={deleting}
+                  className="bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs px-4 py-2 rounded-lg flex items-center gap-1.5 cursor-pointer shadow-sm shadow-rose-700/10 transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
+                >
+                  <span className="material-symbols-outlined text-sm font-bold">delete</span>
+                  Delete Selected
+                </button>
+                <button
+                  onClick={() => setSelectedIds([])}
+                  className="text-slate-500 hover:text-slate-800 text-xs font-bold px-2 py-2 cursor-pointer transition-colors"
+                >
+                  Clear Selection
+                </button>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Medicine List Grid */}
         {loading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <Skeleton className="h-48 w-full rounded-xl" />
-            <Skeleton className="h-48 w-full rounded-xl" />
-            <Skeleton className="h-48 w-full rounded-xl" />
-            <Skeleton className="h-48 w-full rounded-xl" />
+          <div className="flex flex-col gap-3">
+            <Skeleton className="h-20 w-full rounded-xl" />
+            <Skeleton className="h-20 w-full rounded-xl" />
+            <Skeleton className="h-20 w-full rounded-xl" />
+            <Skeleton className="h-20 w-full rounded-xl" />
           </div>
         ) : filteredMeds.length === 0 ? (
-          <div className="text-left py-12 border border-slate-200 border-dashed rounded-xl bg-white p-8">
-            <p className="text-sm text-slate-500">No {filter} medications found.</p>
+          <div className="text-center py-12 border border-slate-200 border-dashed rounded-xl bg-slate-50/50 p-8">
+            <span className="material-symbols-outlined text-slate-300 text-4xl mb-2">medication</span>
+            <p className="text-xs text-slate-400 italic">No {filter} medications found.</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-left">
+          <div className="flex flex-col gap-3">
             {filteredMeds.map((med) => {
               const isActive = med.status === 'active'
+              const isChecked = selectedIds.includes(med.id)
+              
               return (
                 <div 
                   key={med.id} 
-                  className={`border border-slate-200/80 rounded-xl p-6 flex flex-col justify-between hover:border-slate-400 transition-colors shadow-sm ${
-                    isActive ? 'bg-white' : 'bg-slate-50/70 opacity-75'
+                  className={`border rounded-xl p-4 flex items-center justify-between gap-4 hover:border-slate-400 transition-all shadow-sm ${
+                    isChecked 
+                      ? 'bg-teal-50/10 border-teal-350' 
+                      : isActive 
+                        ? 'bg-white border-slate-200/80' 
+                        : 'bg-slate-50/70 border-slate-200/50 opacity-75'
                   }`}
                 >
-                  <div>
-                    <div className="flex justify-between items-start mb-4">
-                      <h2 className={`text-xl font-bold ${isActive ? 'text-slate-900' : 'text-slate-400 line-through'}`}>
-                        {med.brand_name}
-                      </h2>
-                      <span className={`text-xs font-bold px-3 py-1 rounded-full uppercase ${
-                        isActive 
-                          ? 'bg-teal-50 border border-teal-200 text-teal-800' 
-                          : 'bg-slate-100 border border-slate-200 text-slate-500'
-                      }`}>
-                        {med.status}
-                      </span>
-                    </div>
+                  {/* Row Checkbox & Info */}
+                  <div className="flex items-center gap-3.5 flex-grow min-w-0">
+                    <input 
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={() => handleSelectToggle(med.id)}
+                      className="w-4 h-4 text-[#0f766e] border-slate-300 rounded focus:ring-[#0f766e] cursor-pointer flex-shrink-0"
+                    />
 
-                    <div className="space-y-2 mb-6">
-                      <p className="text-sm text-slate-500 flex items-center gap-2">
-                        <span className="material-symbols-outlined text-slate-400 text-lg">medication</span>
-                        Dosage: {med.dosage}
-                      </p>
-                      <p className="text-sm text-slate-500 flex items-center gap-2">
-                        <span className="material-symbols-outlined text-slate-400 text-lg">schedule</span>
-                        Frequency: {med.frequency}
-                      </p>
-                      {isActive ? (
-                        <p className="text-sm text-slate-500 flex items-center gap-2">
-                          <span className="material-symbols-outlined text-slate-400 text-lg">calendar_today</span>
-                          Since: {new Date(med.added_at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
+                    <div className="flex-grow flex flex-col md:flex-row md:items-center gap-4 md:gap-8 min-w-0">
+                      <div className="min-w-[180px] max-w-[240px] truncate">
+                        <h2 className={`text-base font-bold truncate ${isActive ? 'text-slate-900' : 'text-slate-400 line-through'}`} title={med.brand_name || med.generic_name}>
+                          {med.brand_name || med.generic_name}
+                        </h2>
+                        {med.brand_name && med.generic_name && med.brand_name.toLowerCase() !== med.generic_name.toLowerCase() && (
+                          <p className="text-[10px] text-slate-500 font-semibold truncate mt-0.5" title={med.generic_name}>
+                            {med.generic_name}
+                          </p>
+                        )}
+                        <span className={`inline-block mt-1.5 text-[8px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider ${
+                          isActive 
+                            ? 'bg-teal-50 border border-teal-200 text-teal-800' 
+                            : 'bg-slate-100 border border-slate-200 text-slate-500'
+                        }`}>
+                          {med.status}
+                        </span>
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-6 text-xs text-slate-500">
+                        <p className="flex items-center gap-1.5 font-medium">
+                          <span className="material-symbols-outlined text-slate-400 text-[18px]">medication</span>
+                          <span className="font-bold text-slate-700">Dosage:</span> {med.dosage}
                         </p>
-                      ) : (
-                        <p className="text-sm text-slate-500 flex items-center gap-2">
-                          <span className="material-symbols-outlined text-slate-400 text-lg">history</span>
-                          Ended: {med.course_end_date ? new Date(med.course_end_date).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A'}
+                        <p className="flex items-center gap-1.5 font-medium">
+                          <span className="material-symbols-outlined text-slate-400 text-[18px]">schedule</span>
+                          <span className="font-bold text-slate-700">Frequency:</span> {med.frequency}
                         </p>
-                      )}
+                        {isActive ? (
+                          <p className="flex items-center gap-1.5 font-medium">
+                            <span className="material-symbols-outlined text-slate-400 text-[18px]">calendar_today</span>
+                            <span className="font-bold text-slate-700">Since:</span> {new Date(med.added_at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
+                          </p>
+                        ) : (
+                          <p className="flex items-center gap-1.5 font-medium">
+                            <span className="material-symbols-outlined text-slate-400 text-[18px]">history</span>
+                            <span className="font-bold text-slate-700">Ended:</span> {med.course_end_date ? new Date(med.course_end_date).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A'}
+                          </p>
+                        )}
+                      </div>
                     </div>
                   </div>
 
-                  <div className="flex justify-end mt-4 pt-4 border-t border-slate-100">
+                  {/* Actions Column */}
+                  <div className="flex items-center justify-end md:border-l md:border-slate-100 md:pl-4">
                     {isActive ? (
                       <button 
                         onClick={() => toggleStatus(med.id, med.status)}
-                        className="text-[#ba1a1a] hover:text-white hover:bg-[#ba1a1a] border border-[#ba1a1a] font-semibold text-xs px-4 py-2 rounded-lg transition-colors flex items-center gap-2 cursor-pointer"
+                        className="text-[#ba1a1a] hover:bg-[#ba1a1a]/5 font-semibold text-xs px-3.5 py-2 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer w-full md:w-auto justify-center"
                       >
-                        <span className="material-symbols-outlined text-sm">block</span>
+                        <span className="material-symbols-outlined text-[16px]">block</span>
                         Discontinue
                       </button>
                     ) : (
                       <button 
                         onClick={() => toggleStatus(med.id, med.status)}
-                        className="text-[#0f766e] border border-[#0f766e] hover:bg-[#0f766e] hover:text-white font-semibold text-xs px-4 py-2 rounded-lg transition-colors flex items-center gap-2 cursor-pointer"
+                        className="text-[#0f766e] hover:bg-[#0f766e]/5 font-semibold text-xs px-3.5 py-2 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer w-full md:w-auto justify-center"
                       >
-                        <span className="material-symbols-outlined text-sm">restart_alt</span>
+                        <span className="material-symbols-outlined text-[16px]">restart_alt</span>
                         Reactivate
                       </button>
                     )}

@@ -796,8 +796,8 @@ footer span.font-serif.text-lg {
 /* Site-wide Teal grid background for empty regions */
 .mg-grid-bg {
   background-image: 
-    linear-gradient(rgba(15, 118, 110, 0.12) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(15, 118, 110, 0.12) 1px, transparent 1px) !important;
+    linear-gradient(rgba(15, 118, 110, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 118, 110, 0.03) 1px, transparent 1px) !important;
   background-size: 40px 40px !important;
 }
 

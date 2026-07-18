@@ -117,4 +117,73 @@ const createVisitHandler = async (req, res, next) => {
 router.post('/calendar/visits', authenticateUser, enforcePatientAccess('full_view'), enforceEmailVerified, sanitizeInput, createVisitHandler);
 router.post('/appointments', authenticateUser, enforcePatientAccess('full_view'), enforceEmailVerified, sanitizeInput, createVisitHandler);
 
+// --- Adherence Tracking Endpoints ---
+
+// Auto-run migration for adherence logs
+(async () => {
+  try {
+    await query(`
+      CREATE TABLE IF NOT EXISTS adherence_logs (
+          id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+          patient_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          medicine_id UUID NOT NULL REFERENCES medicines(id) ON DELETE CASCADE,
+          scheduled_date DATE NOT NULL,
+          status VARCHAR(50) NOT NULL DEFAULT 'taken',
+          logged_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          CONSTRAINT uq_adherence_log UNIQUE (patient_id, medicine_id, scheduled_date)
+      );
+      CREATE INDEX IF NOT EXISTS idx_adherence_patient_date ON adherence_logs(patient_id, scheduled_date);
+    `);
+    logger.info('DB_MIGRATION', 'Adherence logs table initialized');
+  } catch (err) {
+    logger.error('DB_MIGRATION', 'Failed to initialize adherence logs: ' + err.message);
+  }
+})();
+
+/**
+ * GET /api/adherence
+ * Fetch adherence logs for a patient within an optional date range.
+ */
+router.get('/adherence', authenticateUser, enforcePatientAccess('full_view'), async (req, res, next) => {
+  const patientId = req.query.patient_id;
+  try {
+    const result = await query(
+      `SELECT id, medicine_id, scheduled_date, status, logged_at 
+       FROM adherence_logs 
+       WHERE patient_id = $1
+       ORDER BY scheduled_date ASC`,
+      [patientId]
+    );
+    res.json({ success: true, data: result.rows });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/adherence
+ * Log adherence for a specific medicine on a specific date.
+ */
+router.post('/adherence', authenticateUser, enforcePatientAccess('full_view'), enforceEmailVerified, sanitizeInput, async (req, res, next) => {
+  const { patient_id, medicine_id, scheduled_date, status } = req.body;
+  
+  if (!medicine_id || !scheduled_date || !status) {
+    return res.status(400).json({ success: false, error: { message: 'Missing required fields' } });
+  }
+
+  try {
+    const result = await query(
+      `INSERT INTO adherence_logs (patient_id, medicine_id, scheduled_date, status, logged_at)
+       VALUES ($1, $2, $3, $4, NOW())
+       ON CONFLICT (patient_id, medicine_id, scheduled_date) 
+       DO UPDATE SET status = EXCLUDED.status, logged_at = NOW()
+       RETURNING *`,
+      [patient_id, medicine_id, scheduled_date, status]
+    );
+    res.json({ success: true, data: result.rows[0] });
+  } catch (err) {
+    next(err);
+  }
+});
+
 module.exports = router;

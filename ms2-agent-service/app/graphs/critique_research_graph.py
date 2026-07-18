@@ -38,8 +38,8 @@ def research_generic_interactions_node(state: CritiqueResearchState) -> Dict[str
         # If the ms1 API connection fails, continue to LLM research fallback
         pass
 
-    # 2. If not found in interaction_kb, research it via GLM-5.2 (orchestrator_model)
-    client = get_client(settings.orchestrator_model)
+    # 2. If not found in interaction_kb, research it via GLM-5.2 (disambiguation_model)
+    client = get_client(settings.disambiguation_model)
 
     prompt = f"""
     Research the drug-drug interaction between the generic molecules '{gen_a}' and '{gen_b}' and write a structured summary.
@@ -88,7 +88,7 @@ def critique_findings_node(state: CritiqueResearchState) -> Dict[str, Any]:
             "critique_iterations": iterations + 1
         }
 
-    client = get_client(settings.orchestrator_model)
+    client = get_client(settings.disambiguation_model)
 
     critique_prompt = f"""
     Analyze the following drug-drug interaction research finding between '{gen_a}' and '{gen_b}':

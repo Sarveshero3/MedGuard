@@ -5,7 +5,7 @@ const jwt = require('jsonwebtoken');
 const { query } = require('../config/db');
 const logger = require('../utils/logger');
 const { sanitizeInput, validateBody } = require('../middleware/security');
-const { authLimiter, registerLimiter } = require('../middleware/rateLimiter');
+const { authLimiter, registerLimiter, otpCooldownLimiter, otpLockoutLimiter } = require('../middleware/rateLimiter');
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'change-me-to-a-random-64-char-string';
@@ -65,7 +65,7 @@ async function issueTokenPair(user, dbClient) {
  * POST /api/auth/register
  * Registers a new user (patient or caregiver) and records DPDP consent.
  */
-router.post('/auth/register', registerLimiter, sanitizeInput, validateBody('register'), async (req, res, next) => {
+router.post('/auth/register', registerLimiter, otpCooldownLimiter, otpLockoutLimiter, sanitizeInput, validateBody('register'), async (req, res, next) => {
   const { name, email, password, role, linking_otp } = req.body;
 
   try {
@@ -86,8 +86,9 @@ router.post('/auth/register', registerLimiter, sanitizeInput, validateBody('regi
     const salt = await bcrypt.genSalt(12);
     const passwordHash = await bcrypt.hash(password, salt);
     
-    // Generate secure email verification token
-    const verificationToken = crypto.randomBytes(16).toString('hex');
+    // Generate secure 6-digit OTP for email verification
+    const mfaCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const mfaExpiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15-minute expiry
 
     // Create user and caregiver link (if caregiver) in a transaction
     const client = await require('../config/db').pool.connect();
@@ -135,11 +136,11 @@ router.post('/auth/register', registerLimiter, sanitizeInput, validateBody('regi
 
       // Create user and write consent_given_at directly (Step 3)
       const userInsertQuery = `
-        INSERT INTO users (name, email, password_hash, role, email_verification_token, consent_given_at)
-        VALUES ($1, $2, $3, $4, $5, NOW())
+        INSERT INTO users (name, email, password_hash, role, mfa_code, mfa_expires_at, consent_given_at)
+        VALUES ($1, $2, $3, $4, $5, $6, NOW())
         RETURNING id, name, email, role, is_email_verified
       `;
-      const userRes = await client.query(userInsertQuery, [name, email, passwordHash, role, verificationToken]);
+      const userRes = await client.query(userInsertQuery, [name, email, passwordHash, role, mfaCode, mfaExpiresAt]);
       const newUser = userRes.rows[0];
 
       // If caregiver, create the caregiver link
@@ -163,27 +164,27 @@ router.post('/auth/register', registerLimiter, sanitizeInput, validateBody('regi
 
       // Mock Send Email Verification or Production AWS SES Integration
       if (process.env.NODE_ENV === 'development') {
-        logger.info('EMAIL_DISPATCHED', `[MOCK EMAIL] To: ${newUser.email} | Verification link: http://localhost:3000/verify-email?token=${verificationToken}`, {
+        logger.info('EMAIL_DISPATCHED', `[MOCK EMAIL] To: ${newUser.email} | Verification OTP: ${mfaCode}`, {
           email: newUser.email,
         });
       } else {
-        logger.info('EMAIL_DISPATCHED', `[AWS SES] Production email dispatch initiated for: ${newUser.email} (token redacted)`, {
+        logger.info('EMAIL_DISPATCHED', `[AWS SES] Production OTP dispatch initiated for: ${newUser.email}`, {
           email: newUser.email,
         });
       }
 
+      // Generate temporary 15-minute pending token for OTP verification
+      const mfaToken = jwt.sign(
+        { sub: newUser.id, userId: newUser.id, isMfaPending: true },
+        JWT_SECRET,
+        { expiresIn: '15m' }
+      );
+
       res.status(201).json({
         success: true,
         data: {
-          accessToken,
-          refreshToken,
-          user: {
-            id: newUser.id,
-            name: newUser.name,
-            email: newUser.email,
-            role: newUser.role,
-            isEmailVerified: newUser.is_email_verified,
-          },
+          requiresMfa: true,
+          mfaToken
         },
       });
 
@@ -204,7 +205,7 @@ router.post('/auth/register', registerLimiter, sanitizeInput, validateBody('regi
  * POST /api/auth/login
  * Standard user credentials verification, issuing temporary MFA token.
  */
-router.post('/auth/login', authLimiter, sanitizeInput, validateBody('login'), async (req, res, next) => {
+router.post('/auth/login', authLimiter, otpCooldownLimiter, otpLockoutLimiter, sanitizeInput, validateBody('login'), async (req, res, next) => {
   const { email, password } = req.body;
 
   try {
@@ -320,13 +321,13 @@ router.post('/auth/verify-mfa', sanitizeInput, async (req, res, next) => {
       });
     }
 
-    // Clear MFA columns upon successful verification
+    // Clear MFA columns upon successful verification and set is_email_verified
     await query(
-      'UPDATE users SET mfa_code = NULL, mfa_expires_at = NULL WHERE id = $1',
+      'UPDATE users SET mfa_code = NULL, mfa_expires_at = NULL, is_email_verified = TRUE WHERE id = $1',
       [user.id]
     );
 
-    logger.audit('LOGIN_SUCCESS', `User ${user.id} logged in successfully via MFA`, { userId: user.id, role: user.role });
+    logger.audit('LOGIN_SUCCESS', `User ${user.id} logged in/verified successfully via OTP`, { userId: user.id, role: user.role });
 
     // Issue token pair (access + refresh)
     const { accessToken, refreshToken } = await issueTokenPair(user);

@@ -3,10 +3,9 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import api from '../services/api'
 import { Skeleton } from '../components/ui/skeleton'
-import { MgNavbar } from '../components/MgNavbar'
 
 export default function Calendar() {
-  const { user, loading: authLoading, logout } = useAuth()
+  const { user, loading: authLoading } = useAuth()
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -14,10 +13,21 @@ export default function Calendar() {
       navigate('/login')
     }
   }, [user, authLoading, navigate])
-  const [timelineItems, setTimelineItems] = useState([])
+
+  const [appointments, setAppointments] = useState([])
+  const [courseEnds, setCourseEnds] = useState([])
+  const [activeMedicines, setActiveMedicines] = useState([])
+  const [adherenceLogs, setAdherenceLogs] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [successMsg, setSuccessMsg] = useState('')
+  const [infoMsg, setInfoMsg] = useState('')
+  const [safetyChecking, setSafetyChecking] = useState(false)
   
+  // Date State for Monthly Grid
+  const [currentMonth, setCurrentMonth] = useState(new Date())
+  const [selectedDate, setSelectedDate] = useState(new Date())
+
   // Appointment Form State
   const [showForm, setShowForm] = useState(false)
   const [formData, setFormData] = useState({
@@ -53,24 +63,34 @@ export default function Calendar() {
     setLoading(true)
     setError('')
     try {
-      const res = await api.get('/calendar', { params: { patient_id: user.id } })
-      const appointments = (res.data.data?.visits || []).map(v => ({
-        ...v,
-        type: 'appointment',
-        sortDate: new Date(v.scheduled_date),
-      }))
-      const courseEnds = (res.data.data?.course_ends || []).map(c => ({
-        ...c,
-        type: 'course_end',
-        sortDate: new Date(c.course_end_date),
-      }))
-
-      const merged = [...appointments, ...courseEnds].sort((a, b) => a.sortDate - b.sortDate)
-      setTimelineItems(merged)
+      const [calRes, adhRes] = await Promise.all([
+        api.get('/calendar', { params: { patient_id: user.id } }),
+        api.get('/adherence', { params: { patient_id: user.id } }).catch(() => ({ data: { data: [] } }))
+      ])
+      
+      setAppointments(calRes.data.data?.visits || [])
+      setCourseEnds(calRes.data.data?.course_ends || [])
+      setActiveMedicines(calRes.data.data?.medicines || [])
+      setAdherenceLogs(adhRes.data.data || [])
     } catch (err) {
-      setError(err.response?.data?.error?.message || 'Failed to fetch calendar timeline')
+      setError(err.response?.data?.error?.message || 'Failed to fetch calendar data')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleAdherenceToggle = async (medicineId, dateStr, currentStatus) => {
+    const newStatus = currentStatus === 'taken' ? 'missed' : 'taken'
+    try {
+      await api.post('/adherence', {
+        patient_id: user.id,
+        medicine_id: medicineId,
+        scheduled_date: dateStr,
+        status: newStatus
+      })
+      fetchCalendarData()
+    } catch (err) {
+      console.error('Failed to log adherence', err)
     }
   }
 
@@ -94,64 +114,230 @@ export default function Calendar() {
     }
   }
 
-  const getTimelineIcon = (item) => {
-    if (item.type === 'course_end') return 'medication'
-    if (item.visit_type === 'cardiology') return 'stethoscope'
-    if (item.visit_type === 'orthopedics') return 'bone'
-    if (item.visit_type === 'neurology') return 'psychology'
+  const handleTriggerSafetyCheck = async () => {
+    setSafetyChecking(true)
+    setError('')
+    setSuccessMsg('')
+    setInfoMsg('')
+    
+    try {
+      const res = await api.post('/alerts/safety-check', { patient_id: user.id })
+      if (res.data.success) {
+        setSuccessMsg(`✔ ${res.data.message}`)
+        fetchCalendarData() // refresh the calendar to show new alerts/milestones
+      } else if (res.data.code === 'UP_TO_DATE') {
+        setInfoMsg(`ℹ ${res.data.message}`)
+      } else {
+        setError(res.data.message || 'Safety check completed, but with errors.')
+      }
+    } catch (err) {
+      setError(err.response?.data?.error?.message || 'Failed to trigger safety check.')
+    } finally {
+      setSafetyChecking(false)
+    }
+  }
+
+  // --- Calendar Math ---
+  const year = currentMonth.getFullYear()
+  const month = currentMonth.getMonth()
+
+  const firstDayOfMonth = new Date(year, month, 1)
+  const lastDayOfMonth = new Date(year, month + 1, 0)
+  
+  const startDayOfWeek = firstDayOfMonth.getDay() // 0 = Sunday, 6 = Saturday
+  const daysInMonth = lastDayOfMonth.getDate()
+
+  const daysGrid = []
+  
+  // Padding cells before the 1st of the month
+  for (let i = 0; i < startDayOfWeek; i++) {
+    daysGrid.push(null)
+  }
+  
+  // Real day cells
+  for (let d = 1; d <= daysInMonth; d++) {
+    daysGrid.push(new Date(year, month, d))
+  }
+
+  const handlePrevMonth = () => {
+    setCurrentMonth(new Date(year, month - 1, 1))
+  }
+
+  const handleNextMonth = () => {
+    setCurrentMonth(new Date(year, month + 1, 1))
+  }
+
+  const isToday = (date) => {
+    if (!date) return false
+    const today = new Date()
+    return date.getDate() === today.getDate() &&
+      date.getMonth() === today.getMonth() &&
+      date.getFullYear() === today.getFullYear()
+  }
+
+  const isSelected = (date) => {
+    if (!date) return false
+    return date.getDate() === selectedDate.getDate() &&
+      date.getMonth() === selectedDate.getMonth() &&
+      date.getFullYear() === selectedDate.getFullYear()
+  }
+
+  // Check if a medicine is active on a given date
+  const isMedicineActiveOnDate = (med, date) => {
+    if (!med.added_at) return false
+    const start = new Date(med.added_at)
+    start.setHours(0, 0, 0, 0)
+    
+    const current = new Date(date)
+    current.setHours(0, 0, 0, 0)
+    
+    if (current < start) return false
+    
+    if (med.course_end_date) {
+      const end = new Date(med.course_end_date)
+      end.setHours(23, 59, 59, 999)
+      if (current > end) return false
+    }
+    
+    return med.status === 'active'
+  }
+
+  // Sort and assign tracks to active medicines to prevent overlapping lines
+  const sortedMedicines = [...activeMedicines].sort((a, b) => new Date(a.added_at) - new Date(b.added_at))
+
+  // Filter items for a specific date cell
+  const getDayAppointments = (date) => {
+    if (!date) return []
+    return appointments.filter(v => {
+      const vDate = new Date(v.scheduled_date)
+      return vDate.getDate() === date.getDate() &&
+        vDate.getMonth() === date.getMonth() &&
+        vDate.getFullYear() === date.getFullYear()
+    })
+  }
+
+  // Active medicines for the selected day checklist
+  const selectedDateStr = selectedDate.toISOString().split('T')[0]
+  const selectedDayMeds = activeMedicines.filter(med => isMedicineActiveOnDate(med, selectedDate))
+  const selectedDayLogs = adherenceLogs.filter(log => log.scheduled_date.startsWith(selectedDateStr))
+
+  const getSpecialtyColor = (type) => {
+    if (type === 'cardiology') return 'bg-rose-50 text-rose-750 border border-rose-100 hover:bg-rose-100/50'
+    if (type === 'neurology') return 'bg-purple-50 text-purple-750 border border-purple-100 hover:bg-purple-100/50'
+    if (type === 'orthopedics') return 'bg-amber-50 text-amber-755 border border-amber-100 hover:bg-amber-100/50'
+    if (type === 'pediatrics') return 'bg-blue-50 text-blue-750 border border-blue-100 hover:bg-blue-100/50'
+    return 'bg-teal-50 text-teal-750 border border-teal-100 hover:bg-teal-100/50'
+  }
+
+  const getSpecialtyIcon = (type) => {
+    if (type === 'cardiology') return 'favorite'
+    if (type === 'neurology') return 'psychology'
+    if (type === 'orthopedics') return 'bone'
+    if (type === 'pediatrics') return 'child_care'
     return 'medical_services'
   }
+
+  // Configured list of soft colors for medicine visual spans (Google/Period Tracker style)
+  const trackColors = [
+    'bg-teal-100/80 text-teal-900 border-y border-teal-200/50',
+    'bg-purple-100/80 text-purple-900 border-y border-purple-200/50',
+    'bg-amber-100/80 text-amber-900 border-y border-amber-200/50',
+    'bg-rose-100/80 text-[#881337] border-y border-rose-200/50',
+    'bg-sky-100/80 text-sky-900 border-y border-sky-200/50',
+  ]
 
   return (
     <>
       {/* Main Content Area */}
-      <main className="flex-grow px-6 md:px-16 py-12 max-w-[1200px] mx-auto w-full animate-fade-in">
+      <main className="flex-grow px-4 md:px-12 py-8 max-w-[1400px] mx-auto w-full animate-fade-in">
         
         {/* Header Section */}
-        <header className="flex flex-col md:flex-row justify-between items-start md:items-end mb-16 text-left">
+        <header className="flex flex-col md:flex-row justify-between items-start md:items-end mb-8 text-left">
           <div>
-            <h1 className="font-sans text-5xl font-bold text-slate-900 mb-2">Health Timeline</h1>
-            <p className="text-sm text-slate-500 max-w-2xl">
-              A chronological record of your upcoming clinical appointments and medication milestones.
+            <h1 className="font-sans text-4xl font-bold text-slate-900 mb-2">Health Calendar</h1>
+            <p className="text-sm text-slate-505 max-w-2xl font-medium">
+              Track appointments, visualize medicine courses, and log daily medication adherence.
             </p>
           </div>
-          <button 
-            onClick={() => setShowForm(!showForm)}
-            className="mt-6 md:mt-0 bg-[#0F766E] text-white font-semibold text-sm px-6 py-3 rounded-lg hover:bg-accent-hover transition-colors flex items-center shadow-sm cursor-pointer"
-          >
-            <span className="material-symbols-outlined mr-2 text-[20px]">add</span>
-            Add Appointment
-          </button>
+          <div className="mt-4 md:mt-0 flex flex-wrap items-center gap-3">
+            {/* Run Safety Check Button */}
+            <button
+              onClick={handleTriggerSafetyCheck}
+              disabled={safetyChecking}
+              className="bg-white border border-slate-200 hover:border-slate-350 hover:bg-slate-50 text-slate-700 font-semibold text-xs px-5 py-3 rounded-xl transition-all flex items-center shadow-sm cursor-pointer disabled:opacity-50 hover:scale-[1.02] active:scale-[0.98]"
+              title="Manually verify interactions and update safety checks"
+            >
+              <span className={`material-symbols-outlined mr-1.5 text-[18px] text-[#0F766E] ${safetyChecking ? 'animate-spin' : ''}`}>
+                shield_heart
+              </span>
+              {safetyChecking ? 'Running Check...' : 'Run Safety Check'}
+            </button>
+
+            {/* Schedule Appointment Button */}
+            <button 
+              onClick={() => {
+                // Pre-populate scheduled date with selected date if form is shown
+                const localDateTime = new Date(selectedDate.getTime() - selectedDate.getTimezoneOffset() * 60000)
+                  .toISOString().slice(0, 16);
+                setFormData(prev => ({ ...prev, scheduled_date: localDateTime }))
+                setShowForm(!showForm)
+              }}
+              className="bg-[#0F766E] hover:bg-[#0d645c] text-white font-semibold text-xs px-5 py-3 rounded-xl transition-all flex items-center shadow-sm cursor-pointer shadow-teal-700/10 hover:scale-[1.02] active:scale-[0.98]"
+            >
+              <span className="material-symbols-outlined mr-1.5 text-[18px]">add</span>
+              Schedule Appointment
+            </button>
+          </div>
         </header>
 
         {error && (
-          <div className="error-banner mb-8 p-4 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm text-left">
+          <div className="error-banner mb-6 p-4 rounded-xl bg-rose-50 border border-rose-100 text-rose-700 text-xs text-left font-semibold animate-fade-in flex items-center gap-2">
+            <span className="material-symbols-outlined text-sm font-bold">error</span>
             {error}
           </div>
         )}
 
-        {/* Appointment Booking Form Dropdown */}
+        {successMsg && (
+          <div className="mb-6 p-4 rounded-xl bg-emerald-50 border border-emerald-100 text-emerald-800 text-xs text-left font-semibold animate-fade-in flex items-center gap-2">
+            <span className="material-symbols-outlined text-sm font-bold">check_circle</span>
+            {successMsg}
+          </div>
+        )}
+
+        {infoMsg && (
+          <div className="mb-6 p-4 rounded-xl bg-sky-50 border border-sky-100 text-sky-800 text-xs text-left font-semibold animate-fade-in flex items-center gap-2">
+            <span className="material-symbols-outlined text-sm font-bold">info</span>
+            {infoMsg}
+          </div>
+        )}
+
+        {/* Appointment Booking Form Modal */}
         {showForm && (
-          <div className="mb-12 bg-white border border-slate-200 rounded-xl p-8 text-left shadow-sm max-w-2xl mx-auto">
-            <h3 className="text-xl font-bold text-slate-900 mb-6">Schedule New Appointment</h3>
+          <div className="mb-8 bg-white border border-slate-200 rounded-2xl p-6 md:p-8 text-left shadow-md max-w-2xl mx-auto animate-fade-in">
+            <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-1.5">
+              <span className="material-symbols-outlined text-[#0F766E]">edit_calendar</span>
+              New Appointment
+            </h3>
             
             <form onSubmit={handleBookAppointment} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="form-group">
-                  <label htmlFor="doctor_name">Doctor's Name</label>
+                <div className="flex flex-col gap-1.5">
+                  <label htmlFor="doctor_name" className="text-xs font-bold text-slate-550 uppercase tracking-wider">Doctor's Name</label>
                   <input
                     id="doctor_name"
                     type="text"
                     required
                     placeholder="Dr. Sarah Jenkins"
+                    className="border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#0F766E] bg-slate-50/50 hover:bg-slate-50 transition-colors"
                     value={formData.doctor_name}
                     onChange={(e) => setFormData({ ...formData, doctor_name: e.target.value })}
                   />
                 </div>
-                <div className="form-group">
-                  <label htmlFor="visit_type">Specialty</label>
+                <div className="flex flex-col gap-1.5">
+                  <label htmlFor="visit_type" className="text-xs font-bold text-slate-555 uppercase tracking-wider">Specialty / Clinic</label>
                   <select
                     id="visit_type"
+                    className="border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#0F766E] bg-slate-50/50 hover:bg-slate-50 transition-colors"
                     value={formData.visit_type}
                     onChange={(e) => setFormData({ ...formData, visit_type: e.target.value })}
                   >
@@ -164,23 +350,25 @@ export default function Calendar() {
                 </div>
               </div>
 
-              <div className="form-group">
-                <label htmlFor="scheduled_date">Appointment Date &amp; Time</label>
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor="scheduled_date" className="text-xs font-bold text-slate-550 uppercase tracking-wider">Date &amp; Time</label>
                 <input
                   id="scheduled_date"
                   type="datetime-local"
                   required
+                  className="border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#0F766E] bg-slate-50/50 hover:bg-slate-50 transition-colors"
                   value={formData.scheduled_date}
                   onChange={(e) => setFormData({ ...formData, scheduled_date: e.target.value })}
                 />
               </div>
 
-              <div className="form-group">
-                <label htmlFor="notes">Notes / Instructions</label>
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor="notes" className="text-xs font-bold text-slate-550 uppercase tracking-wider">Notes / Instructions</label>
                 <textarea
                   id="notes"
-                  rows={3}
+                  rows={2}
                   placeholder="Fasting required 12 hours prior, bring prescription records..."
+                  className="border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#0F766E] bg-slate-50/50 hover:bg-slate-50 transition-colors"
                   value={formData.notes}
                   onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
                 />
@@ -190,181 +378,377 @@ export default function Calendar() {
                 <button
                   type="button"
                   onClick={() => setShowForm(false)}
-                  className="bg-transparent text-slate-500 hover:text-slate-900 font-semibold text-sm px-6 py-2.5 rounded-lg transition-colors cursor-pointer"
+                  className="bg-transparent hover:bg-slate-50 text-slate-500 hover:text-slate-900 font-semibold text-xs px-5 py-2.5 rounded-xl transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="bg-[#0F766E] hover:bg-accent-hover text-white font-semibold text-sm px-6 py-2.5 rounded-lg transition-colors cursor-pointer"
+                  className="bg-[#0F766E] hover:bg-[#0d645c] text-white font-semibold text-xs px-5 py-2.5 rounded-xl transition-all cursor-pointer shadow-sm shadow-teal-700/5 hover:scale-[1.02]"
                 >
-                  Book Appointment
+                  Create Appointment
                 </button>
               </div>
             </form>
           </div>
         )}
 
-        {/* Grid containing Timeline and Briefs */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+        {/* Calendar Workspace Grid */}
+        <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
           
-          {/* Timeline Container */}
-          <div className="lg:col-span-2 bg-white border border-slate-200/80 rounded-2xl p-6 md:p-12 relative overflow-hidden text-left shadow-sm">
-            {loading ? (
-              <div className="space-y-6">
-                <Skeleton className="h-28 w-full rounded-xl" />
-                <Skeleton className="h-28 w-full rounded-xl" />
-                <Skeleton className="h-28 w-full rounded-xl" />
-              </div>
-            ) : timelineItems.length === 0 ? (
-              <p className="text-sm text-slate-500">No events or appointments scheduled.</p>
-            ) : (
-              <div className="relative">
-                {timelineItems.map((item, index) => {
-                  const isAppt = item.type === 'appointment'
-                  return (
-                    <div key={item.id || index} className="relative flex items-start mb-12 last:mb-0 group">
-                      
-                      {/* Vertical connecting line */}
-                      {index < timelineItems.length - 1 && (
-                        <div className="absolute left-[23px] top-[48px] bottom-[-48px] w-0.5 bg-slate-200 z-0"></div>
-                      )}
-
-                      {/* Circle Node icon */}
-                      <div className="flex-shrink-0 flex flex-col items-center mr-8 z-10 w-12">
-                        <div className={`w-12 h-12 rounded-full border bg-white flex items-center justify-center transition-all duration-300 ${
-                          isAppt 
-                            ? 'border-[#0F766E] text-[#0F766E] group-hover:bg-[#f0f9f8]' 
-                            : 'border-slate-300 text-slate-400 group-hover:bg-slate-100'
-                        }`}>
-                          <span className="material-symbols-outlined text-xl">
-                            {getTimelineIcon(item)}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Content Card */}
-                      <div className={`flex-grow border border-slate-200/80 rounded-xl p-6 transition-all duration-300 relative bg-white shadow-sm ${
-                        isAppt ? 'hover:border-[#0F766E]' : 'hover:border-slate-400'
-                      }`}>
-                        {/* Left border indicator cue */}
-                        <div className={`absolute left-0 top-0 bottom-0 w-1 rounded-l-lg opacity-80 ${
-                          isAppt ? 'bg-[#0F766E]' : 'bg-slate-300'
-                        }`}></div>
-
-                        <div className="flex flex-col md:flex-row justify-between md:items-start gap-4">
-                          <div>
-                            <div className="flex items-center gap-3 mb-2">
-                              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                                {new Date(item.sortDate).toLocaleDateString([], { month: 'short', day: 'numeric' })}
-                                {isAppt && ` • ${new Date(item.sortDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
-                              </span>
-                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md uppercase ${
-                                isAppt ? 'bg-teal-50 text-teal-800' : 'bg-slate-100 text-slate-600'
-                              }`}>
-                                {isAppt ? 'Appointment' : 'Medicine Course End'}
-                              </span>
-                            </div>
-                            
-                            <h3 className="text-2xl font-bold text-slate-900 mb-1">
-                              {isAppt 
-                                ? (item.visit_type ? `${item.visit_type.toUpperCase()} Consult` : 'General Consult') 
-                                : `${item.brand_name} Course End`
-                              }
-                            </h3>
-                            <p className="text-sm text-slate-500">
-                              {isAppt 
-                                ? `Dr. ${item.doctor_name || 'Clinician'}${item.notes ? ` • ${item.notes}` : ''}` 
-                                : `Check clinical panel or consult physician before refill.`
-                              }
-                            </p>
-                          </div>
-
-                          <div className="flex items-center gap-2">
-                            <button className="text-slate-400 hover:text-[#0F766E] p-2 transition-colors border border-transparent hover:border-slate-100 rounded-lg cursor-pointer">
-                              <span className="material-symbols-outlined text-lg">edit</span>
-                            </button>
-                            <button className="text-slate-400 hover:text-[#0F766E] p-2 transition-colors border border-transparent hover:border-slate-100 rounded-lg cursor-pointer">
-                              <span className="material-symbols-outlined text-lg">more_vert</span>
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* Recent Briefs Container */}
-          <div className="lg:col-span-1 bg-white border border-slate-200/80 rounded-2xl p-6 relative overflow-hidden text-left shadow-sm">
-            <h2 className="text-xl font-bold text-slate-900 mb-6 flex items-center gap-2">
-              <span className="material-symbols-outlined text-indigo-650">article</span>
-              Recent Briefs
-            </h2>
+          {/* Left Area: Visual Monthly Calendar Grid (Span 8) */}
+          <div className="xl:col-span-8 bg-white border border-slate-200 rounded-2xl p-5 md:p-8 shadow-sm text-left">
             
-            {briefsLoading ? (
-              <div className="space-y-4">
-                <Skeleton className="h-24 w-full rounded-xl" />
-                <Skeleton className="h-24 w-full rounded-xl" />
-              </div>
-            ) : briefs.length === 0 ? (
-              <div className="text-center py-10 border border-slate-100 border-dashed rounded-xl bg-slate-50/50 p-4">
-                <p className="text-xs text-slate-400 mb-4">No doctor prep briefs found.</p>
-                <Link 
-                  to="/brief/new" 
-                  className="inline-flex items-center text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition-colors uppercase tracking-wider"
+            {/* Calendar Controller Header */}
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-lg font-bold text-slate-800 flex items-center gap-1.5 capitalize">
+                <span className="material-symbols-outlined text-[#0F766E]">calendar_month</span>
+                {currentMonth.toLocaleDateString([], { month: 'long', year: 'numeric' })}
+              </h2>
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={handlePrevMonth}
+                  className="p-2 border border-slate-200 hover:border-slate-350 rounded-xl bg-white hover:bg-slate-50 text-slate-650 transition-all cursor-pointer"
+                  title="Previous month"
                 >
-                  Create Brief
-                  <span className="material-symbols-outlined text-xs ml-1 font-bold">arrow_forward</span>
-                </Link>
+                  <span className="material-symbols-outlined text-lg block">chevron_left</span>
+                </button>
+                <button 
+                  onClick={() => setCurrentMonth(new Date())}
+                  className="px-3 py-2 border border-slate-200 hover:border-slate-350 rounded-xl bg-white hover:bg-slate-50 text-xs font-bold text-slate-650 transition-all cursor-pointer"
+                >
+                  Today
+                </button>
+                <button 
+                  onClick={handleNextMonth}
+                  className="p-2 border border-slate-200 hover:border-slate-350 rounded-xl bg-white hover:bg-slate-50 text-slate-650 transition-all cursor-pointer"
+                  title="Next month"
+                >
+                  <span className="material-symbols-outlined text-lg block">chevron_right</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Weekdays Labels */}
+            <div className="grid grid-cols-7 gap-2 mb-2 text-center text-xs font-bold text-slate-400 uppercase tracking-wider">
+              <div>Sun</div>
+              <div>Mon</div>
+              <div>Tue</div>
+              <div>Wed</div>
+              <div>Thu</div>
+              <div>Fri</div>
+              <div>Sat</div>
+            </div>
+
+            {/* Days Grid */}
+            {loading ? (
+              <div className="grid grid-cols-7 gap-2">
+                {Array.from({ length: 35 }).map((_, idx) => (
+                  <Skeleton key={idx} className="h-28 w-full rounded-xl" />
+                ))}
               </div>
             ) : (
-              <div className="space-y-4">
-                {briefs.map((brief) => {
-                  const forDate = brief.content?.for_date || new Date(brief.generated_at).toISOString().split('T')[0]
-                  const excerpt = brief.content?.summary 
-                    ? (brief.content.summary.length > 80 ? brief.content.summary.substring(0, 80) + '...' : brief.content.summary)
-                    : 'No summary available.'
+              <div className="grid grid-cols-7 gap-2">
+                {daysGrid.map((date, index) => {
+                  if (!date) {
+                    return <div key={`empty-${index}`} className="h-28 bg-slate-50/30 border border-slate-100 rounded-xl opacity-30"></div>
+                  }
+
+                  const dayAppts = getDayAppointments(date)
+                  const dayIsToday = isToday(date)
+                  const dayIsSelected = isSelected(date)
 
                   return (
                     <div 
-                      key={brief.id}
-                      className="border border-slate-100 rounded-xl p-5 bg-slate-50/50 hover:bg-slate-50 transition-colors relative group"
+                      key={date.toISOString()}
+                      onClick={() => setSelectedDate(date)}
+                      className={`h-28 border rounded-xl p-1.5 flex flex-col justify-between cursor-pointer transition-all duration-155 text-left relative overflow-hidden select-none hover:shadow-sm ${
+                        dayIsSelected 
+                          ? 'border-[#0F766E] ring-1 ring-[#0F766E] bg-teal-50/5' 
+                          : dayIsToday
+                            ? 'border-teal-350 bg-teal-50/15'
+                            : 'border-slate-200 hover:border-slate-350 bg-white'
+                      }`}
                     >
-                      <div className="flex justify-between items-start gap-2 mb-2">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                          For: {forDate}
+                      {/* Day Number Row */}
+                      <div className="flex justify-between items-center w-full">
+                        <span className={`text-[11px] font-bold w-5 h-5 rounded-full flex items-center justify-center ${
+                          dayIsToday 
+                            ? 'bg-[#0F766E] text-white font-black' 
+                            : dayIsSelected
+                              ? 'text-[#0F766E] bg-teal-100/50'
+                              : 'text-slate-650'
+                        }`}>
+                          {date.getDate()}
                         </span>
-                        <Link 
-                          to={`/brief/${brief.id}`}
-                          className="text-xs font-semibold text-indigo-600 hover:underline"
-                        >
-                          Edit Brief
-                        </Link>
+                        
+                        {/* Tiny appointment notification badge */}
+                        {dayAppts.length > 0 && (
+                          <span className="w-1.5 h-1.5 rounded-full bg-rose-500 mr-1 animate-pulse"></span>
+                        )}
                       </div>
-                      
-                      <h4 className="text-sm font-bold text-slate-800 mb-1">
-                        Prep Brief
-                      </h4>
-                      <p className="text-xs text-slate-500 leading-relaxed line-clamp-2">
-                        {excerpt}
-                      </p>
+
+                      {/* Visual Multi-Day Medicine Tracks (Gantt/Period Tracker flow) */}
+                      <div className="flex flex-col gap-0.5 w-full flex-grow mt-1.5 overflow-hidden">
+                        {sortedMedicines.slice(0, 3).map((med, trackIdx) => {
+                          const isActive = isMedicineActiveOnDate(med, date)
+                          
+                          if (!isActive) {
+                            return <div key={med.id} className="h-[14px] bg-transparent"></div>
+                          }
+
+                          // Calculate edges for periods continuous flow
+                          const isStart = new Date(med.added_at).toDateString() === date.toDateString()
+                          const isEnd = med.course_end_date && new Date(med.course_end_date).toDateString() === date.toDateString()
+                          const isSunday = date.getDay() === 0
+                          const isSaturday = date.getDay() === 6
+
+                          return (
+                            <div 
+                              key={med.id}
+                              className={`h-[14px] text-[8px] font-bold px-1 py-0 flex items-center overflow-hidden truncate transition-all leading-none ${
+                                trackColors[trackIdx % trackColors.length]
+                              } ${
+                                isStart || isSunday ? 'rounded-l-md border-l border-current/25 pl-1.5' : 'border-l-0 pl-0.5'
+                              } ${
+                                isEnd || isSaturday ? 'rounded-r-md border-r border-current/25 pr-1.5' : 'border-r-0 pr-0.5'
+                              }`}
+                              title={`${med.brand_name || med.generic_name} (${med.dosage})`}
+                            >
+                              {(isStart || isSunday) ? (med.brand_name || med.generic_name) : ''}
+                            </div>
+                          )
+                        })}
+                      </div>
+
+                      {/* Bottom row displaying Doctor Consults if any */}
+                      {dayAppts.length > 0 && (
+                        <div className="text-[7.5px] font-extrabold text-[#0F766E] uppercase tracking-wider flex items-center gap-0.5 pl-0.5 pb-0.5">
+                          <span className="material-symbols-outlined text-[9px] font-bold">medical_services</span>
+                          Dr. {dayAppts[0].doctor_name?.split(' ').slice(-1)[0] || 'Consult'}
+                        </div>
+                      )}
                     </div>
                   )
                 })}
               </div>
             )}
+
+            {/* Visual Medicine Color Code Legend */}
+            {sortedMedicines.length > 0 && (
+              <div className="mt-6 pt-4 border-t border-slate-100 flex flex-wrap gap-4 text-xs font-semibold text-slate-500">
+                <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 mr-2 flex items-center">Active Course Spans:</span>
+                {sortedMedicines.slice(0, 5).map((med, idx) => (
+                  <div key={med.id} className="flex items-center gap-1.5">
+                    <span className={`w-3 h-3 rounded-md ${trackColors[idx % trackColors.length].split(' ')[0]} border border-current/20`}></span>
+                    <span>{med.brand_name || med.generic_name}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          
+          {/* Right Area: Selected Day Adherence Checklist + Appointments Detail (Span 4) */}
+          <div className="xl:col-span-4 space-y-6">
+            
+            {/* Daily Adherence Checklist Panel */}
+            <div className="bg-white border border-slate-200 rounded-2xl p-6 text-left shadow-sm">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
+                <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-[#0F766E]">task_alt</span>
+                  Medication Log
+                </h3>
+                <span className="text-xs font-bold text-[#0F766E] bg-teal-50 px-2 py-0.5 rounded-md">
+                  {selectedDate.toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                </span>
+              </div>
+              
+              {loading ? (
+                <div className="space-y-3">
+                  <Skeleton className="h-14 w-full rounded-xl" />
+                  <Skeleton className="h-14 w-full rounded-xl" />
+                </div>
+              ) : selectedDayMeds.length === 0 ? (
+                <div className="text-center py-8 text-slate-400 italic text-xs border border-dashed border-slate-150 rounded-xl bg-slate-50/50 p-4">
+                  No medication courses scheduled for this date.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {selectedDayMeds.map(med => {
+                    const log = selectedDayLogs.find(l => l.medicine_id === med.id)
+                    const isTaken = log?.status === 'taken'
+                    
+                    return (
+                      <div 
+                        key={med.id} 
+                        className={`flex items-center justify-between p-3.5 rounded-xl border transition-all ${
+                          isTaken 
+                            ? 'bg-emerald-50/40 border-emerald-100' 
+                            : 'bg-slate-50/50 border-slate-100 hover:bg-slate-50'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <button 
+                            onClick={() => handleAdherenceToggle(med.id, selectedDateStr, log?.status)}
+                            className={`w-6 h-6 rounded-lg border flex items-center justify-center transition-all cursor-pointer ${
+                              isTaken 
+                                ? 'bg-emerald-600 border-emerald-600 text-white shadow-sm' 
+                                : 'bg-white border-slate-350 text-transparent hover:border-[#0F766E]'
+                            }`}
+                          >
+                            <span className="material-symbols-outlined text-[15px] font-bold">check</span>
+                          </button>
+                          <div>
+                            <div className="font-bold text-slate-800 text-sm truncate max-w-[150px]" title={med.brand_name || med.generic_name}>
+                              {med.brand_name || med.generic_name}
+                            </div>
+                            <div className="text-xs text-slate-500 font-medium">
+                              {med.dosage} • {med.frequency}
+                            </div>
+                          </div>
+                        </div>
+                        {isTaken ? (
+                          <span className="text-[10px] font-bold text-emerald-805 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-md uppercase tracking-wider">
+                            Taken
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-semibold text-slate-400">
+                            Pending
+                          </span>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Selected Day Appointments Panel */}
+            <div className="bg-white border border-slate-200 rounded-2xl p-6 text-left shadow-sm">
+              <h3 className="text-sm font-bold text-slate-900 border-b border-slate-100 pb-3 mb-4 flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-[#0F766E]">stethoscope</span>
+                Appointments &amp; Milestones
+              </h3>
+              
+              {loading ? (
+                <div className="space-y-3">
+                  <Skeleton className="h-16 w-full rounded-xl" />
+                </div>
+              ) : (
+                (() => {
+                  const dayAppts = getDayAppointments(selectedDate)
+                  const dayEnds = courseEnds.filter(c => {
+                    const cDate = new Date(c.course_end_date)
+                    return cDate.getDate() === selectedDate.getDate() &&
+                      cDate.getMonth() === selectedDate.getMonth() &&
+                      cDate.getFullYear() === selectedDate.getFullYear()
+                  })
+
+                  if (dayAppts.length === 0 && dayEnds.length === 0) {
+                    return (
+                      <div className="text-center py-8 text-slate-400 italic text-xs border border-dashed border-slate-150 rounded-xl bg-slate-50/50 p-4">
+                        No appointments or course ends on this date.
+                      </div>
+                    )
+                  }
+
+                  return (
+                    <div className="space-y-4">
+                      {/* Show Appointments */}
+                      {dayAppts.map(appt => (
+                        <div 
+                          key={appt.id}
+                          className={`border rounded-xl p-4 transition-all relative overflow-hidden bg-white shadow-sm hover:border-[#0F766E]`}
+                        >
+                          <div className={`absolute left-0 top-0 bottom-0 w-1 rounded-l-lg ${
+                            appt.visit_type === 'cardiology' ? 'bg-rose-500' :
+                            appt.visit_type === 'neurology' ? 'bg-purple-500' :
+                            appt.visit_type === 'orthopedics' ? 'bg-amber-500' : 'bg-[#0F766E]'
+                          }`}></div>
+                          <div className="flex justify-between items-start mb-2">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                              {new Date(appt.scheduled_date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                            <span className={`text-[9px] font-bold px-2 py-0.5 rounded-md uppercase ${getSpecialtyColor(appt.visit_type)}`}>
+                              {appt.visit_type}
+                            </span>
+                          </div>
+                          <h4 className="text-sm font-bold text-slate-800 mb-1">
+                            Dr. {appt.doctor_name || 'Clinician'}
+                          </h4>
+                          {appt.notes && (
+                            <p className="text-xs text-slate-500 leading-relaxed font-medium">
+                              {appt.notes}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+
+                      {/* Show Course Ends */}
+                      {dayEnds.map(end => (
+                        <div 
+                          key={end.id}
+                          className="border border-amber-100 rounded-xl p-4 bg-amber-50/20 relative overflow-hidden shadow-sm"
+                        >
+                          <div className="absolute left-0 top-0 bottom-0 w-1 rounded-l-lg bg-amber-400"></div>
+                          <div className="flex justify-between items-start mb-1.5">
+                            <span className="text-[10px] font-bold text-amber-600 uppercase tracking-wider">
+                              Course End
+                            </span>
+                            <span className="material-symbols-outlined text-amber-500 text-base font-bold animate-pulse">medication</span>
+                          </div>
+                          <h4 className="text-xs font-bold text-slate-800 mb-0.5">
+                            {end.brand_name} (Course Complete)
+                          </h4>
+                          <p className="text-[10px] text-slate-500 font-semibold leading-relaxed">
+                            Check clinical indicators or consult with your physician before refilling.
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )
+                })()
+              )}
+            </div>
+
+            {/* Recent Briefs Link */}
+            <div className="bg-white border border-slate-200 rounded-2xl p-6 text-left shadow-sm">
+              <h3 className="text-sm font-bold text-slate-900 mb-4 flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-[#0F766E]">article</span>
+                Clinician Prep Briefs
+              </h3>
+              
+              {briefsLoading ? (
+                <Skeleton className="h-16 w-full rounded-xl" />
+              ) : briefs.length === 0 ? (
+                <div className="text-center py-6 text-slate-400 italic text-xs border border-dashed border-slate-150 rounded-xl bg-slate-50/50 p-4">
+                  No briefs created yet.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {briefs.slice(0, 2).map(brief => (
+                    <div key={brief.id} className="border border-slate-100 rounded-xl p-3 bg-slate-50/50 flex justify-between items-center">
+                      <div className="truncate max-w-[150px]">
+                        <span className="text-[9px] font-bold text-slate-400 block uppercase">For Date: {brief.content?.for_date || 'N/A'}</span>
+                        <span className="text-xs font-bold text-slate-700 block truncate">{brief.content?.summary || 'Prep Brief'}</span>
+                      </div>
+                      <Link to={`/brief/${brief.id}`} className="text-[10px] font-bold text-teal-700 hover:text-teal-900 border border-teal-200 hover:border-teal-400 bg-white px-2 py-1 rounded-md transition-all">
+                        View Brief
+                      </Link>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
           </div>
 
         </div>
       </main>
 
       {/* Footer */}
-      <footer className="bg-[#f6fafa] border-t border-slate-200">
-        <div className="w-full py-12 px-6 md:px-16 flex flex-col md:flex-row justify-between items-center gap-4 max-w-[1200px] mx-auto text-sm text-slate-500">
+      <footer className="bg-[#f6fafa] border-t border-slate-200 mt-16">
+        <div className="w-full py-12 px-6 md:px-16 flex flex-col md:flex-row justify-between items-center gap-4 max-w-[1400px] mx-auto text-sm text-slate-500">
           <div className="font-serif text-lg font-bold text-slate-900 mb-4 md:mb-0">
             MedGuard
           </div>

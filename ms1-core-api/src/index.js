@@ -99,6 +99,10 @@ async function start() {
       }
     }
 
+    // Run tracked schema migrations
+    const { runMigrations } = require('./migrations');
+    await runMigrations();
+
     app.listen(PORT, '0.0.0.0', () => {
       console.log(`🚀 ms1-core-api running on port ${PORT}`);
     });

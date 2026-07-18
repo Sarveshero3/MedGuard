@@ -1,6 +1,7 @@
 import json
 import shutil
 import tempfile
+import logging
 import os
 import base64
 from fastapi import APIRouter, UploadFile, File, Form
@@ -136,8 +137,9 @@ async def extract_document(
             f"Created temp file for document extract: {tmp_path}, size: {os.path.getsize(tmp_path)} bytes", flush=True)
 
     try:
+        import asyncio
         # Step 1: Extract raw text
-        raw_text = _extract_text_from_file(tmp_path, photo.filename)
+        raw_text = await asyncio.to_thread(_extract_text_from_file, tmp_path, photo.filename)
 
         # Step 2: Classify using the orchestrator model
         classifier = get_client(settings.orchestrator_model)
@@ -160,7 +162,7 @@ Return ONLY a JSON object with:
 
 Do not include markdown formatting. Return only the raw JSON object."""
 
-        classify_res = classifier.invoke([
+        classify_res = await asyncio.to_thread(classifier.invoke, [
             SystemMessage(content=classify_prompt),
             HumanMessage(content=f"Document text:\n\n{raw_text[:4000]}")
         ])
@@ -205,20 +207,36 @@ Do not include markdown formatting. Return only the raw JSON object."""
         else:
             result = await prescription_graph.ainvoke(state_input)
 
+        return {
+            "success": True,
+            "data": {
+                "docType": doc_type,
+                "classification_confidence": classification_confidence,
+                "classification_reasoning": classification.get("reasoning", ""),
+                "needs_classification_confirmation": needs_confirmation,
+                **result,
+            },
+        }
+
+    except Exception as e:
+        logger.error(f"Error during document extraction: {str(e)}")
+        # Check if rate limit error
+        error_msg = str(e)
+        if "rate_limit" in error_msg.lower() or "429" in error_msg:
+            friendly_message = "The AI service is temporarily busy (API Rate Limit). Please wait 1-2 minutes and try again."
+        else:
+            friendly_message = f"Analysis failed: {error_msg}. You can skip to manual entry."
+        
+        # Return success=False with friendly error details
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=400,
+            detail={"message": friendly_message}
+        )
+
     finally:
         if os.path.exists(tmp_path):
             os.unlink(tmp_path)
-
-    return {
-        "success": True,
-        "data": {
-            "docType": doc_type,
-            "classification_confidence": classification_confidence,
-            "classification_reasoning": classification.get("reasoning", ""),
-            "needs_classification_confirmation": needs_confirmation,
-            **result,
-        },
-    }
 
 
 @router.post("/extract/prescription")
@@ -366,8 +384,240 @@ async def research_interaction_route(req: InteractionRequest):
         "explanation": "",
         "research_summary": "",
     }
-    result = await critique_research_graph.ainvoke(state_input)
+    try:
+        result = await critique_research_graph.ainvoke(state_input)
+        return {
+            "success": True,
+            "data": result,
+        }
+    except Exception as e:
+        logger.error(f"Error researching interaction between '{req.generic_a}' and '{req.generic_b}': {str(e)}")
+        # Graceful fallback response to prevent pipeline crash
+        return {
+            "success": True,
+            "data": {
+                "generic_a": req.generic_a,
+                "generic_b": req.generic_b,
+                "severity": "unknown",
+                "explanation": f"Research could not be completed at this time due to temporary API rate limits or network issues. Please monitor patient symptoms closely.",
+                "research_summary": "Fallback generated due to research API exception.",
+                "critique_iterations": 0,
+                "is_valid": True
+            }
+        }
+
+
+class ResolveBrandRequest(BaseModel):
+    brand_name: str
+
+
+logger = logging.getLogger("ms2")
+
+RESOLUTION_METRICS = {
+    "resolved": 0,
+    "not_found": 0,
+    "unresolved_error": 0
+}
+
+def clean_brand_name(brand: str) -> str:
+    import re
+    # Remove common dosage form prefixes (case-insensitive)
+    cleaned = re.sub(r'^(tab\b|cap\b|syp\b|tablet\b|capsule\b|syrup\b|inj\b|injection\b)\.?\s*', '', brand, flags=re.IGNORECASE)
+    # Remove trailing open parenthesis and common punctuation symbols
+    cleaned = re.sub(r'\s*\(\s*$', '', cleaned)
+    cleaned = re.sub(r'[\(\[\{\-\:\;\,\.\+\*\/]+$', '', cleaned)
+    return cleaned.strip()
+
+async def _search_web_grounding(query: str) -> str:
+    """Run one Tavily basic search and format its agent-ready evidence using standard urllib."""
+    if not settings.tavily_api_key:
+        logger.error("TAVILY_API_KEY is not configured; web grounding is unavailable.")
+        return "No results found."
+
+    import urllib.request
+    import urllib.parse
+    import asyncio
+
+    url = "https://api.tavily.com/search"
+    payload = {
+        "api_key": settings.tavily_api_key,
+        "query": query,
+        "search_depth": "basic",
+        "include_answer": False,
+        "max_results": 5
+    }
+    
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"}
+    )
+    
+    try:
+        def fetch():
+            with urllib.request.urlopen(req, timeout=8.0) as response:
+                return json.loads(response.read().decode("utf-8"))
+        res_data = await asyncio.to_thread(fetch)
+        
+        results = res_data.get("results", [])
+        evidence = []
+        for result in results:
+            title = str(result.get("title", "Untitled result")).strip()
+            url = str(result.get("url", "")).strip()
+            content = str(result.get("content", "")).strip()
+            evidence.append(f"Title: {title}\nURL: {url}\nEvidence: {content}")
+        return "\n\n".join(evidence) if evidence else "No results found."
+    except Exception as exc:
+        logger.error(f"Tavily search failed for query '{query}': {exc}")
+        return "No results found."
+
+
+@router.post("/extract/resolve-brand")
+async def resolve_brand(req: ResolveBrandRequest):
+    """
+    Resolves a brand name to its generic ingredient(s) using VLM/LLM research with search engine grounding.
+    """
+    from app.services.client import get_client
+    from langchain_core.messages import SystemMessage, HumanMessage
+    
+    brand = req.brand_name.strip()
+    logger.info(f"Resolving brand: '{brand}'")
+    if not brand:
+        return {"success": True, "generic_name": "no such medicine found", "exists": False}
+        
+    # Explicit safety decision: brand resolution uses the 70B model by default.
+    # Do not replace it with the faster 8B disambiguation model without rerunning
+    # and documenting the scored medication benchmark.
+    client = get_client(settings.brand_resolution_model)
+    
+    def parse_llm_json(content_str: str) -> dict:
+        cleaned = content_str.strip()
+        start_idx = cleaned.find('{')
+        end_idx = cleaned.rfind('}')
+        if start_idx != -1 and end_idx != -1:
+            json_str = cleaned[start_idx:end_idx + 1]
+            return json.loads(json_str)
+        return json.loads(cleaned)
+
+    # 1. Ask LLM directly
+    direct_prompt = f"""
+    You are a clinical pharmacist assistant. Resolve the active pharmaceutical ingredient (generic name) of the brand medicine name: '{brand}'.
+    
+    Based on your clinical knowledge, resolve the active ingredient (generic name) of '{brand}'.
+    
+    You must answer in a JSON format with exactly two keys:
+    1. "generic_name": The lowercase canonical generic name (active ingredient) of this medicine (e.g. "cefixime", "paracetamol", "atorvastatin"). If it's a combination medicine, list the main ingredients separated by " + " (e.g. "amoxicillin + clavulanic acid"). If there is NO such medicine or it is a generic name already, write "no such medicine found".
+    2. "exists": boolean (true if it's a real medicine brand, false if it's not a real medicine brand or not found).
+    
+    Example:
+    {{
+        "generic_name": "cefixime",
+        "exists": true
+    }}
+    """
+    
+    parsed = {}
+    try:
+        messages = [
+            SystemMessage(content="You are a clinical pharmacist assistant who resolves brand names to their active generic ingredients. Be extremely precise and objective. Return ONLY valid JSON."),
+            HumanMessage(content=direct_prompt)
+        ]
+        response = client.invoke(messages)
+        content = response.content.strip()
+        logger.info(f"Direct LLM response: {content}")
+        
+        try:
+            parsed = parse_llm_json(content)
+        except Exception as parse_err:
+            logger.warning(f"Initial JSON parsing failed: {str(parse_err)}. Retrying once with strict instructions.")
+            retry_prompt = direct_prompt + "\n\nCRITICAL: Return ONLY valid JSON. Your previous response failed to parse as valid JSON. Ensure your output is strict JSON-only format with no extra text or markdown code blocks."
+            retry_messages = [
+                SystemMessage(content="You are a clinical pharmacist assistant. Be extremely precise and objective. Return ONLY valid JSON."),
+                HumanMessage(content=retry_prompt)
+            ]
+            retry_response = client.invoke(retry_messages)
+            retry_content = retry_response.content.strip()
+            logger.info(f"Retry direct LLM response: {retry_content}")
+            parsed = parse_llm_json(retry_content)
+            
+    except Exception as e:
+        logger.error(f"Direct LLM resolution call failed: {str(e)}")
+
+    generic_name = parsed.get("generic_name")
+    exists = parsed.get("exists", False)
+    
+    generic_name_str = str(generic_name or "no such medicine found").lower()
+    is_confident = (exists is True) and (generic_name_str != "no such medicine found")
+    
+    # 2. Fallback to Search if not confident
+    if not is_confident:
+        logger.info(f"Direct LLM was not confident for '{brand}'. Falling back to one Tavily search.")
+        cleaned_brand = clean_brand_name(brand)
+        if cleaned_brand:
+            query = f"{cleaned_brand} medicine active ingredient composition"
+            search_context = await _search_web_grounding(query)
+            logger.info(f"Search results context for '{brand}': {search_context}")
+            
+            search_prompt = f"""
+            You are a clinical pharmacist assistant. Resolve the active pharmaceutical ingredient (generic name) of the brand medicine name: '{brand}'.
+            
+            To help you, we performed a real-time web search for '{brand} medicine generic name composition' and found these results:
+            ---
+            {search_context}
+            ---
+            
+            Based on the search results and your clinical knowledge, resolve the active ingredient (generic name) of '{brand}'.
+            
+            You must answer in a JSON format with exactly two keys:
+            1. "generic_name": The lowercase canonical generic name (active ingredient) of this medicine (e.g. "cefixime", "paracetamol", "atorvastatin"). If it's a combination medicine, list the main ingredients separated by " + " (e.g. "amoxicillin + clavulanic acid"). If there is NO such medicine or it is a generic name already, write "no such medicine found".
+            2. "exists": boolean (true if it's a real medicine brand, false if it's not a real medicine brand or not found).
+            """
+            
+            try:
+                messages = [
+                    SystemMessage(content="You are a clinical pharmacist assistant who resolves brand names using web search grounding. Be extremely precise and objective. Return ONLY valid JSON."),
+                    HumanMessage(content=search_prompt)
+                ]
+                response = client.invoke(messages)
+                content = response.content.strip()
+                logger.info(f"Search-grounded LLM response: {content}")
+                
+                try:
+                    parsed = parse_llm_json(content)
+                except Exception as parse_err:
+                    logger.warning(f"Search-grounded JSON parsing failed: {str(parse_err)}. Retrying once with strict instructions.")
+                    retry_prompt = search_prompt + "\n\nCRITICAL: Return ONLY valid JSON. Your previous response failed to parse as valid JSON. Ensure your output is strict JSON-only format with no extra text or markdown code blocks."
+                    retry_messages = [
+                        SystemMessage(content="You are a clinical pharmacist assistant. Be extremely precise and objective. Return ONLY valid JSON."),
+                        HumanMessage(content=retry_prompt)
+                    ]
+                    retry_response = client.invoke(retry_messages)
+                    retry_content = retry_response.content.strip()
+                    logger.info(f"Retry search-grounded LLM response: {retry_content}")
+                    parsed = parse_llm_json(retry_content)
+                    
+            except Exception as e:
+                logger.error(f"Search-grounded LLM call failed: {str(e)}")
+                
+            generic_name = parsed.get("generic_name")
+            exists = parsed.get("exists", False)
+            generic_name_str = str(generic_name or "no such medicine found").lower()
+
+    # Final validation & metrics update
+    if generic_name_str == "no such medicine found" or not exists:
+        final_generic_name = "no such medicine found"
+        final_exists = False
+        RESOLUTION_METRICS["not_found"] += 1
+    else:
+        final_generic_name = generic_name_str
+        final_exists = True
+        RESOLUTION_METRICS["resolved"] += 1
+        
+    logger.info(f"Final resolution for '{brand}': generic_name='{final_generic_name}', exists={final_exists}")
+    logger.info(f"Metrics -> Resolved: {RESOLUTION_METRICS['resolved']}, Not Found: {RESOLUTION_METRICS['not_found']}, Errors: {RESOLUTION_METRICS['unresolved_error']}")
+        
     return {
         "success": True,
-        "data": result,
+        "generic_name": final_generic_name,
+        "exists": final_exists
     }

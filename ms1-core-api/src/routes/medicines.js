@@ -8,6 +8,7 @@ const { sanitizeInput, validateBody, validateUUID, upload } = require('../middle
 const { enforceConsent } = require('../middleware/consent');
 const { uploadLimiter } = require('../middleware/rateLimiter');
 const { extractionQueue } = require('../services/queueService');
+const brandResolutionService = require('../services/brandResolutionService');
 
 const router = express.Router();
 
@@ -18,7 +19,15 @@ const router = express.Router();
 function computeCourseEndDate(addedAt, durationText) {
   if (!durationText) return null;
   const cleaned = durationText.trim().toLowerCase();
-  if (cleaned === 'ongoing' || cleaned === 'unresolved' || cleaned === '') return null;
+  
+  // For ongoing / chronic medicines, default to a 90-day course (standard medical refill period)
+  if (cleaned === 'ongoing') {
+    const date = new Date(addedAt);
+    date.setDate(date.getDate() + 90);
+    return date;
+  }
+
+  if (cleaned === 'unresolved' || cleaned === '') return null;
 
   const match = cleaned.match(/^(\d+)\s+(day|days|week|weeks|month|months|year|years)$/);
   if (!match) return null;
@@ -117,23 +126,13 @@ router.post('/medicines', authenticateUser, enforcePatientAccess('full_view'), e
 
       // If user submitted a correction to brand generic map during follow-up, write it append-only
       if (brand_mapping_correction) {
-        const { brand_name: correctedBrand, generic_name: correctedGeneric } = brand_mapping_correction;
-        const versionResult = await client.query(
-          'SELECT version FROM brand_generic_map WHERE brand_name = $1 ORDER BY effective_date DESC LIMIT 1',
-          [correctedBrand]
-        );
-        let nextVersion = 'v1';
-        if (versionResult.rows.length > 0) {
-          const currentVersion = versionResult.rows[0].version;
-          const currentNum = parseInt(currentVersion.replace('v', ''), 10) || 1;
-          nextVersion = `v${currentNum + 1}`;
-        }
-        await client.query(
-          `INSERT INTO brand_generic_map (brand_name, generic_name, source, version, effective_date)
-           VALUES ($1, $2, 'user_confirmed', $3, NOW())
-           ON CONFLICT (brand_name, version) DO NOTHING`,
-          [correctedBrand, correctedGeneric, nextVersion]
-        );
+        const { brand_name: correctedBrand, generic_name: correctedGeneric, is_correction } = brand_mapping_correction;
+        await brandResolutionService.saveCorrection({
+          brandName: correctedBrand,
+          genericName: correctedGeneric,
+          resolutionSource: is_correction ? 'user_correction' : 'user_confirmed',
+          client
+        });
       }
 
       // Compute course_end_date if duration_text is provided
@@ -142,7 +141,16 @@ router.post('/medicines', authenticateUser, enforcePatientAccess('full_view'), e
         courseEndDate = computeCourseEndDate(new Date(), duration_text);
       }
 
-      const resolvedGeneric = generic_name || (brand_mapping_correction && brand_mapping_correction.generic_name) || null;
+      // Deterministic fallback: if generic_name wasn't extracted, look it up in brand_generic_map (Phase 5 Architectural Rule)
+      let fallbackGeneric = generic_name;
+      if (!fallbackGeneric && brand_name) {
+        const cacheRow = await brandResolutionService.queryCache(brand_name);
+        if (cacheRow && cacheRow.resolution_status === 'resolved') {
+          fallbackGeneric = cacheRow.generic_name;
+        }
+      }
+
+      const resolvedGeneric = fallbackGeneric || (brand_mapping_correction && brand_mapping_correction.generic_name) || null;
       let finalResolutionStatus = resolvedGeneric ? 'resolved' : 'generic_unresolved';
       if (resolution_status) {
         finalResolutionStatus = resolution_status;
@@ -165,101 +173,18 @@ router.post('/medicines', authenticateUser, enforcePatientAccess('full_view'), e
       );
       const newMed = result.rows[0];
 
-      // Perform interaction check
-      let flaggedInteractions = [];
-      if (resolvedGeneric && existingGenerics.length > 0) {
-        const { checkInteractions } = require('../utils/interactionEngine');
-        flaggedInteractions = await checkInteractions(resolvedGeneric, existingGenerics);
-      }
-
-      // Save flagged interactions and send emails
-      if (flaggedInteractions.length > 0) {
-        for (const interaction of flaggedInteractions) {
-          // Identify which generic name is the existing one
-          const existingGenName = [interaction.generic_a.toLowerCase(), interaction.generic_b.toLowerCase()]
-            .find(g => g !== resolvedGeneric.toLowerCase());
-
-          const conflictingMed = existingMeds.find(m => m.generic_name && m.generic_name.toLowerCase() === existingGenName);
-          if (conflictingMed) {
-            await client.query(
-              `INSERT INTO interaction_flags (patient_id, new_medicine_id, existing_medicine_id, kb_entry_id, severity, confidence, status)
-               VALUES ($1, $2, $3, $4, $5, 1.0, 'shown')`,
-              [patient_id, newMed.id, conflictingMed.id, interaction.id, interaction.severity]
-            );
-          }
-        }
-      }
-
-      // Trigger LLM agent research in the background (asynchronous, fire-and-forget)
-      if (resolvedGeneric && existingMeds.length > 0) {
-        (async () => {
-          const { pool } = require('../config/db');
-          let bgClient;
-          try {
-            bgClient = await pool.connect();
-            for (const conflictingMed of existingMeds) {
-              if (!conflictingMed.generic_name) continue;
-              
-              const alreadyFlagged = flaggedInteractions.some(f => 
-                (f.generic_a.toLowerCase() === resolvedGeneric.toLowerCase() && f.generic_b.toLowerCase() === conflictingMed.generic_name.toLowerCase()) ||
-                (f.generic_b.toLowerCase() === resolvedGeneric.toLowerCase() && f.generic_a.toLowerCase() === conflictingMed.generic_name.toLowerCase())
-              );
-              
-              if (!alreadyFlagged) {
-                try {
-                  logger.info('AGENT_RESEARCH_TRIGGER_BG', `Triggering background LLM research agent for ${resolvedGeneric} and ${conflictingMed.generic_name}`);
-                  const ms2Res = await axios.post(`${MS2_BASE_URL}/api/research-interaction`, {
-                    generic_a: resolvedGeneric,
-                    generic_b: conflictingMed.generic_name
-                  }, { timeout: 45000 });
-                  
-                  if (ms2Res.data && ms2Res.data.success) {
-                    const researchResult = ms2Res.data.data;
-                    const explanation = researchResult.explanation || '';
-                    
-                    const lowercaseExp = explanation.toLowerCase();
-                    const isNoInteraction = lowercaseExp.includes("no significant interaction") || 
-                                            lowercaseExp.includes("no known interaction") || 
-                                            (lowercaseExp.includes("no interaction") && lowercaseExp.includes("safe"));
-                    
-                    if (explanation && !isNoInteraction) {
-                      const sorted = [resolvedGeneric.toLowerCase(), conflictingMed.generic_name.toLowerCase()].sort();
-                      const kbRes = await bgClient.query(
-                        `INSERT INTO interaction_kb (generic_a, generic_b, severity, explanation, source, version)
-                         VALUES ($1, $2, 'monitor_closely', $3, 'Groq Research Agent', 'v1')
-                         RETURNING id`,
-                        [sorted[0], sorted[1], explanation]
-                      );
-                      const kbEntryId = kbRes.rows[0].id;
-                      
-                      await bgClient.query(
-                        `INSERT INTO interaction_flags (patient_id, new_medicine_id, existing_medicine_id, kb_entry_id, severity, confidence, status)
-                         VALUES ($1, $2, $3, $4, 'monitor_closely', 1.0, 'shown')`,
-                        [patient_id, newMed.id, conflictingMed.id, kbEntryId]
-                      );
-                      logger.info('AGENT_ALERT_CREATED_BG', `Researched and created custom interaction flag in background for ${resolvedGeneric} and ${conflictingMed.generic_name}`);
-                    }
-                  }
-                } catch (agentErr) {
-                  logger.error('AGENT_RESEARCH_FAILED_BG', `Background research failed: ${agentErr.message}`);
-                }
-              }
-            }
-          } catch (connErr) {
-            logger.error('BG_DB_CONNECTION_FAILED', `Failed to open connection for background research: ${connErr.message}`);
-          } finally {
-            if (bgClient) bgClient.release();
-          }
-        })();
-      }
+      // Process interactions (RAG + db flags)
+      const { processInteractions } = require('../services/interactionService');
+      const flaggedInteractions = await processInteractions(patient_id, newMed, resolvedGeneric, existingMeds, client);
 
       await client.query('COMMIT');
 
       // === Side effects run AFTER successful COMMIT ===
-
       // Send alert emails outside the transaction
       if (flaggedInteractions.length > 0) {
         const { sendEmail } = require('../utils/email');
+        const { buildInteractionAlertEmail } = require('../templates/interactionAlertEmail');
+        
         const patientEmailRes = await query("SELECT email, name FROM users WHERE id = $1", [patient_id]);
         const patient = patientEmailRes.rows[0];
 
@@ -271,27 +196,13 @@ router.post('/medicines', authenticateUser, enforcePatientAccess('full_view'), e
         );
         const caregivers = caregiversRes.rows;
 
-        // Send alert emails
-        const alertSubject = `🛡️ MedGuard Safety Alert: Drug Interaction Flagged`;
-        const alertBody = `Hello,
-
-A drug interaction has been flagged in your MedGuard profile.
-
-Details:
-- New Medicine: ${newMed.brand_name} (${resolvedGeneric})
-- Flagged Interactions:
-${flaggedInteractions.map(i => `  * Conflicting drugs: ${i.generic_a} & ${i.generic_b} (Severity: ${i.severity.replace('_', ' ').toUpperCase()})\n    Explanation: ${i.explanation}`).join('\n')}
-
-Please review your dashboard and discuss these details with your doctor.
-
-Best,
-The MedGuard Team`;
+        const { subject, body } = buildInteractionAlertEmail(newMed, resolvedGeneric, flaggedInteractions);
 
         if (patient) {
-          await sendEmail({ to: patient.email, subject: alertSubject, body: alertBody });
+          await sendEmail({ to: patient.email, subject, body });
         }
         for (const cg of caregivers) {
-          await sendEmail({ to: cg.email, subject: alertSubject, body: alertBody });
+          await sendEmail({ to: cg.email, subject, body });
         }
       }
 
@@ -735,23 +646,13 @@ router.post('/medicines/batch', authenticateUser, enforcePatientAccess('full_vie
 
         // If user submitted a correction to brand generic map
         if (brand_mapping_correction) {
-          const { brand_name: correctedBrand, generic_name: correctedGeneric } = brand_mapping_correction;
-          const versionResult = await client.query(
-            'SELECT version FROM brand_generic_map WHERE brand_name = $1 ORDER BY effective_date DESC LIMIT 1',
-            [correctedBrand]
-          );
-          let nextVersion = 'v1';
-          if (versionResult.rows.length > 0) {
-            const currentVersion = versionResult.rows[0].version;
-            const currentNum = parseInt(currentVersion.replace('v', ''), 10) || 1;
-            nextVersion = `v${currentNum + 1}`;
-          }
-          await client.query(
-            `INSERT INTO brand_generic_map (brand_name, generic_name, source, version, effective_date)
-             VALUES ($1, $2, 'user_confirmed', $3, NOW())
-             ON CONFLICT (brand_name, version) DO NOTHING`,
-            [correctedBrand, correctedGeneric, nextVersion]
-          );
+          const { brand_name: correctedBrand, generic_name: correctedGeneric, is_correction } = brand_mapping_correction;
+          await brandResolutionService.saveCorrection({
+            brandName: correctedBrand,
+            genericName: correctedGeneric,
+            resolutionSource: is_correction ? 'user_correction' : 'user_confirmed',
+            client
+          });
         }
 
         // Compute course_end_date if duration_text is provided
@@ -760,7 +661,16 @@ router.post('/medicines/batch', authenticateUser, enforcePatientAccess('full_vie
           courseEndDate = computeCourseEndDate(new Date(), duration_text);
         }
 
-        const resolvedGeneric = generic_name || (brand_mapping_correction && brand_mapping_correction.generic_name) || null;
+        // Deterministic fallback: if generic_name wasn't extracted, look it up in brand_generic_map (Phase 5 Architectural Rule)
+        let fallbackGeneric = generic_name;
+        if (!fallbackGeneric && brand_name) {
+          const cacheRow = await brandResolutionService.queryCache(brand_name);
+          if (cacheRow && cacheRow.resolution_status === 'resolved') {
+            fallbackGeneric = cacheRow.generic_name;
+          }
+        }
+
+        const resolvedGeneric = fallbackGeneric || (brand_mapping_correction && brand_mapping_correction.generic_name) || null;
         let finalResolutionStatus = resolvedGeneric ? 'resolved' : 'generic_unresolved';
         if (resolution_status) {
           finalResolutionStatus = resolution_status;
@@ -964,6 +874,69 @@ router.get('/check-interaction', async (req, res, next) => {
       interaction: dbRes.rows[0] || null
     });
   } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/medicines/resolve-brand', authenticateUser, sanitizeInput, async (req, res, next) => {
+  try {
+    const { brand_name } = req.body;
+    if (!brand_name) {
+      return res.status(400).json({ success: false, error: 'brand_name is required.' });
+    }
+
+    const result = await brandResolutionService.resolveBrand(brand_name);
+    return res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/medicines/batch-delete
+ * Deletes multiple medicines in a single transaction.
+ */
+router.post('/medicines/batch-delete', authenticateUser, enforcePatientAccess('full_view'), async (req, res, next) => {
+  const { ids, patient_id } = req.body;
+
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'BAD_REQUEST', message: 'ids must be a non-empty array.' },
+    });
+  }
+
+  try {
+    const client = await require('../config/db').pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Delete the medicines (Postgres handles FK cascades for adherence_logs and interaction_flags automatically)
+      const result = await client.query(
+        `DELETE FROM medicines WHERE id = ANY($1) AND patient_id = $2 RETURNING *`,
+        [ids, patient_id]
+      );
+
+      await client.query('COMMIT');
+
+      logger.audit('MEDICINES_BATCH_DELETED', `Deleted ${result.rowCount} medicines for patient ${patient_id}`, {
+        patientId: patient_id,
+        deletedCount: result.rowCount,
+      });
+
+      res.json({
+        success: true,
+        message: `Successfully deleted ${result.rowCount} medicines.`,
+        data: result.rows,
+      });
+    } catch (dbErr) {
+      await client.query('ROLLBACK');
+      throw dbErr;
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    logger.error('BATCH_DELETE_MEDICINES_FAILED', `Failed to batch delete medicines: ${err.message}`);
     next(err);
   }
 });

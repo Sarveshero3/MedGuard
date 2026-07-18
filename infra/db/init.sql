@@ -58,13 +58,16 @@ CREATE INDEX idx_caregiver_links_caregiver ON caregiver_links(caregiver_id);
 -- 3. brand_generic_map  (append-only, versioned)
 -- ─────────────────────────────────────────────────────────────
 CREATE TABLE brand_generic_map (
-    id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    brand_name     VARCHAR(255)   NOT NULL,
-    generic_name   VARCHAR(255)   NOT NULL,
-    composition    TEXT,
-    source         VARCHAR(100)   NOT NULL DEFAULT 'kaggle_seed',
-    version        VARCHAR(20)    NOT NULL DEFAULT 'v1',
-    effective_date TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
+    id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    brand_name        VARCHAR(255)   NOT NULL,
+    generic_name      VARCHAR(255)   NOT NULL,
+    composition       TEXT,
+    source            VARCHAR(100)   NOT NULL DEFAULT 'kaggle_seed',
+    version           VARCHAR(20)    NOT NULL DEFAULT 'v1',
+    effective_date    TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
+    resolution_status VARCHAR(50)    NOT NULL DEFAULT 'resolved',
+    resolution_source VARCHAR(255)   NOT NULL DEFAULT 'seed',
+    resolved_at       TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
     CONSTRAINT uq_brand_version UNIQUE (brand_name, version)
 );
 CREATE INDEX idx_brand_generic_brand ON brand_generic_map(brand_name);
@@ -361,3 +364,18 @@ INSERT INTO lab_medicine_rules (generic_name, test_type, condition, threshold, u
 ('Aspirin',      'Platelet Count', '<', 100,    '×10³/μL',    'monitor_closely',  'Antiplatelet effect on already-low platelets increases hemorrhage risk.'),
 ('Atorvastatin', 'ALT',            '>', 120,    'U/L',        'monitor_closely',  'ALT > 3× upper limit suggests hepatotoxicity; statin review indicated.')
 ON CONFLICT (generic_name, test_type, version) DO NOTHING;
+
+-- ─────────────────────────────────────────────────────────────
+-- 13. adherence_logs
+-- ─────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS adherence_logs (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    patient_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    medicine_id UUID NOT NULL REFERENCES medicines(id) ON DELETE CASCADE,
+    scheduled_date DATE NOT NULL,
+    status VARCHAR(50) NOT NULL DEFAULT 'taken',
+    logged_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_adherence_log UNIQUE (patient_id, medicine_id, scheduled_date)
+);
+CREATE INDEX IF NOT EXISTS idx_adherence_patient_date ON adherence_logs(patient_id, scheduled_date);
+

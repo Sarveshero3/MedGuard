@@ -108,8 +108,9 @@ const upload = multer({
 // Common validation schemas
 const schemas = {
   register: (body) => {
-    const { name, email, password, role, consentGranted } = body;
+    const { name, email, password, role, consentGranted, recaptchaToken } = body;
     if (!name || name.trim().length < 2) return 'Name must be at least 2 characters long';
+    if (!recaptchaToken) return 'reCAPTCHA validation failed (token missing)';
     
     // Strict email check
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -129,8 +130,9 @@ const schemas = {
     return null; // Valid
   },
   login: (body) => {
-    const { email, password } = body;
+    const { email, password, recaptchaToken } = body;
     if (!email || !password) return 'Email and password are required';
+    if (!recaptchaToken) return 'reCAPTCHA validation failed (token missing)';
     return null;
   },
   forgotPassword: (body) => {

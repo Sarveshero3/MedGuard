@@ -1,0 +1,406 @@
+{
+  "models": [
+    "llama-3.1-8b-instant",
+    "llama-3.3-70b-versatile"
+  ],
+  "summary": {
+    "llama-3.1-8b-instant": {
+      "correct": 8,
+      "incorrect": 12,
+      "unknown": 0,
+      "api_error": 0,
+      "accuracy_on_completed": 0.4,
+      "unsafe_incorrect_rate_on_completed": 0.6
+    },
+    "llama-3.3-70b-versatile": {
+      "correct": 17,
+      "incorrect": 3,
+      "unknown": 0,
+      "api_error": 0,
+      "accuracy_on_completed": 0.85,
+      "unsafe_incorrect_rate_on_completed": 0.15
+    }
+  },
+  "rows": [
+    {
+      "category": "common_otc",
+      "brand": "Crocin",
+      "expected": "paracetamol",
+      "llama-3.1-8b-instant": {
+        "generic_name": "paracetamol+caffeine",
+        "exists": true,
+        "latency_seconds": 0.517,
+        "error": null,
+        "status": "incorrect"
+      },
+      "llama-3.3-70b-versatile": {
+        "generic_name": "paracetamol",
+        "exists": true,
+        "latency_seconds": 0.259,
+        "error": null,
+        "status": "correct"
+      }
+    },
+    {
+      "category": "common_otc",
+      "brand": "Dolo 650",
+      "expected": "paracetamol",
+      "llama-3.1-8b-instant": {
+        "generic_name": "paracetamol+caffeine",
+        "exists": true,
+        "latency_seconds": 0.123,
+        "error": null,
+        "status": "incorrect"
+      },
+      "llama-3.3-70b-versatile": {
+        "generic_name": "paracetamol",
+        "exists": true,
+        "latency_seconds": 0.349,
+        "error": null,
+        "status": "correct"
+      }
+    },
+    {
+      "category": "common_otc",
+      "brand": "Combiflam",
+      "expected": "ibuprofen + paracetamol",
+      "llama-3.1-8b-instant": {
+        "generic_name": "ibuprofen + paracetamol",
+        "exists": true,
+        "latency_seconds": 0.328,
+        "error": null,
+        "status": "correct"
+      },
+      "llama-3.3-70b-versatile": {
+        "generic_name": "ibuprofen+paracetamol",
+        "exists": true,
+        "latency_seconds": 0.38,
+        "error": null,
+        "status": "correct"
+      }
+    },
+    {
+      "category": "common_otc",
+      "brand": "Calpol 650",
+      "expected": "paracetamol",
+      "llama-3.1-8b-instant": {
+        "generic_name": "paracetamol+paracetamol",
+        "exists": true,
+        "latency_seconds": 0.126,
+        "error": null,
+        "status": "correct"
+      },
+      "llama-3.3-70b-versatile": {
+        "generic_name": "paracetamol",
+        "exists": true,
+        "latency_seconds": 0.255,
+        "error": null,
+        "status": "correct"
+      }
+    },
+    {
+      "category": "prescription",
+      "brand": "Amlong 5",
+      "expected": "amlodipine",
+      "llama-3.1-8b-instant": {
+        "generic_name": "amlodipine + valsartan",
+        "exists": true,
+        "latency_seconds": 0.133,
+        "error": null,
+        "status": "incorrect"
+      },
+      "llama-3.3-70b-versatile": {
+        "generic_name": "amlodipine",
+        "exists": true,
+        "latency_seconds": 0.248,
+        "error": null,
+        "status": "correct"
+      }
+    },
+    {
+      "category": "prescription",
+      "brand": "Rosuvas 10",
+      "expected": "rosuvastatin",
+      "llama-3.1-8b-instant": {
+        "generic_name": "amlodipine + valsartan",
+        "exists": true,
+        "latency_seconds": 0.12,
+        "error": null,
+        "status": "incorrect"
+      },
+      "llama-3.3-70b-versatile": {
+        "generic_name": "rosuvastatin",
+        "exists": true,
+        "latency_seconds": 0.169,
+        "error": null,
+        "status": "correct"
+      }
+    },
+    {
+      "category": "prescription",
+      "brand": "Omez",
+      "expected": "omeprazole",
+      "llama-3.1-8b-instant": {
+        "generic_name": "omeprazole + domperidone",
+        "exists": true,
+        "latency_seconds": 0.128,
+        "error": null,
+        "status": "incorrect"
+      },
+      "llama-3.3-70b-versatile": {
+        "generic_name": "omeprazole",
+        "exists": true,
+        "latency_seconds": 0.25,
+        "error": null,
+        "status": "correct"
+      }
+    },
+    {
+      "category": "prescription",
+      "brand": "Arkamin",
+      "expected": "clonidine",
+      "llama-3.1-8b-instant": {
+        "generic_name": "methylephedrine + naphazoline",
+        "exists": true,
+        "latency_seconds": 0.146,
+        "error": null,
+        "status": "incorrect"
+      },
+      "llama-3.3-70b-versatile": {
+        "generic_name": "clonidine",
+        "exists": true,
+        "latency_seconds": 0.166,
+        "error": null,
+        "status": "correct"
+      }
+    },
+    {
+      "category": "prescription",
+      "brand": "Udiliv 300",
+      "expected": "ursodeoxycholic acid",
+      "llama-3.1-8b-instant": {
+        "generic_name": "ursodiol+cholestyramine",
+        "exists": true,
+        "latency_seconds": 0.13,
+        "error": null,
+        "status": "incorrect"
+      },
+      "llama-3.3-70b-versatile": {
+        "generic_name": "ursodeoxycholic acid",
+        "exists": true,
+        "latency_seconds": 0.254,
+        "error": null,
+        "status": "correct"
+      }
+    },
+    {
+      "category": "combination",
+      "brand": "Augmentin 625",
+      "expected": "amoxicillin + clavulanic acid",
+      "llama-3.1-8b-instant": {
+        "generic_name": "amoxicillin + clavulanate",
+        "exists": true,
+        "latency_seconds": 0.222,
+        "error": null,
+        "status": "correct"
+      },
+      "llama-3.3-70b-versatile": {
+        "generic_name": "amoxicillin + clavulanic acid",
+        "exists": true,
+        "latency_seconds": 0.156,
+        "error": null,
+        "status": "correct"
+      }
+    },
+    {
+      "category": "combination",
+      "brand": "Pan-D",
+      "expected": "pantoprazole + domperidone",
+      "llama-3.1-8b-instant": {
+        "generic_name": "pancrelipase + pancreatin + lipase + amylase + trypsin",
+        "exists": true,
+        "latency_seconds": 0.143,
+        "error": null,
+        "status": "incorrect"
+      },
+      "llama-3.3-70b-versatile": {
+        "generic_name": "dexpanthenol",
+        "exists": true,
+        "latency_seconds": 0.153,
+        "error": null,
+        "status": "incorrect"
+      }
+    },
+    {
+      "category": "combination",
+      "brand": "Montek-LC",
+      "expected": "montelukast + levocetirizine",
+      "llama-3.1-8b-instant": {
+        "generic_name": "montelukast + levocetirizine",
+        "exists": true,
+        "latency_seconds": 0.127,
+        "error": null,
+        "status": "correct"
+      },
+      "llama-3.3-70b-versatile": {
+        "generic_name": "montelukast + levocetirizine",
+        "exists": true,
+        "latency_seconds": 0.177,
+        "error": null,
+        "status": "correct"
+      }
+    },
+    {
+      "category": "combination",
+      "brand": "Janumet 50/1000",
+      "expected": "sitagliptin + metformin",
+      "llama-3.1-8b-instant": {
+        "generic_name": "sitagliptin + metformin",
+        "exists": true,
+        "latency_seconds": 0.121,
+        "error": null,
+        "status": "correct"
+      },
+      "llama-3.3-70b-versatile": {
+        "generic_name": "sitagliptin + metformin",
+        "exists": true,
+        "latency_seconds": 0.166,
+        "error": null,
+        "status": "correct"
+      }
+    },
+    {
+      "category": "combination",
+      "brand": "Telma-H",
+      "expected": "telmisartan + hydrochlorothiazide",
+      "llama-3.1-8b-instant": {
+        "generic_name": "amlodipine + valsartan",
+        "exists": true,
+        "latency_seconds": 0.118,
+        "error": null,
+        "status": "incorrect"
+      },
+      "llama-3.3-70b-versatile": {
+        "generic_name": "telmisartan+hydrochlorothiazide",
+        "exists": true,
+        "latency_seconds": 0.255,
+        "error": null,
+        "status": "correct"
+      }
+    },
+    {
+      "category": "combination",
+      "brand": "Clavam 625",
+      "expected": "amoxicillin + clavulanic acid",
+      "llama-3.1-8b-instant": {
+        "generic_name": "amoxicillin + clavulanate",
+        "exists": true,
+        "latency_seconds": 0.122,
+        "error": null,
+        "status": "correct"
+      },
+      "llama-3.3-70b-versatile": {
+        "generic_name": "amoxicillin + clavulanic acid",
+        "exists": true,
+        "latency_seconds": 0.258,
+        "error": null,
+        "status": "correct"
+      }
+    },
+    {
+      "category": "combination",
+      "brand": "Glimisave M2",
+      "expected": "glimepiride + metformin",
+      "llama-3.1-8b-instant": {
+        "generic_name": "metformin + voglibose",
+        "exists": true,
+        "latency_seconds": 0.12,
+        "error": null,
+        "status": "incorrect"
+      },
+      "llama-3.3-70b-versatile": {
+        "generic_name": "metformin + gliclazide",
+        "exists": true,
+        "latency_seconds": 0.163,
+        "error": null,
+        "status": "incorrect"
+      }
+    },
+    {
+      "category": "combination",
+      "brand": "Ecosprin AV 75/10",
+      "expected": "aspirin + atorvastatin",
+      "llama-3.1-8b-instant": {
+        "generic_name": "aspirin + atorvastatin",
+        "exists": true,
+        "latency_seconds": 0.117,
+        "error": null,
+        "status": "correct"
+      },
+      "llama-3.3-70b-versatile": {
+        "generic_name": "aspirin+atorvastatin",
+        "exists": true,
+        "latency_seconds": 0.154,
+        "error": null,
+        "status": "correct"
+      }
+    },
+    {
+      "category": "combination",
+      "brand": "Foracort 200",
+      "expected": "budesonide + formoterol",
+      "llama-3.1-8b-instant": {
+        "generic_name": "fluticasone + formoterol",
+        "exists": true,
+        "latency_seconds": 0.13,
+        "error": null,
+        "status": "incorrect"
+      },
+      "llama-3.3-70b-versatile": {
+        "generic_name": "budesonide + formoterol",
+        "exists": true,
+        "latency_seconds": 0.149,
+        "error": null,
+        "status": "correct"
+      }
+    },
+    {
+      "category": "regional_or_obscure",
+      "brand": "Taxim-OF",
+      "expected": "cefixime + ofloxacin",
+      "llama-3.1-8b-instant": {
+        "generic_name": "ciprofloxacin + ofloxacin",
+        "exists": true,
+        "latency_seconds": 0.154,
+        "error": null,
+        "status": "incorrect"
+      },
+      "llama-3.3-70b-versatile": {
+        "generic_name": "cefixime",
+        "exists": true,
+        "latency_seconds": 0.146,
+        "error": null,
+        "status": "incorrect"
+      }
+    },
+    {
+      "category": "regional_or_obscure",
+      "brand": "Shelcal 500",
+      "expected": "calcium carbonate + vitamin d3",
+      "llama-3.1-8b-instant": {
+        "generic_name": "calcium carbonate + vitamin d3",
+        "exists": true,
+        "latency_seconds": 0.121,
+        "error": null,
+        "status": "correct"
+      },
+      "llama-3.3-70b-versatile": {
+        "generic_name": "calcium carbonate + vitamin d3",
+        "exists": true,
+        "latency_seconds": 0.266,
+        "error": null,
+        "status": "correct"
+      }
+    }
+  ]
+}
