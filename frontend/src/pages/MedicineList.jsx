@@ -16,6 +16,7 @@ export default function MedicineList() {
   const [filter, setFilter] = useState('active') // 'active' | 'discontinued'
   const [selectedIds, setSelectedIds] = useState([])
   const [deleting, setDeleting] = useState(false)
+  const [layout, setLayout] = useState(() => localStorage.getItem('meds_layout') || 'grid')
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -51,7 +52,7 @@ export default function MedicineList() {
     setSuccess('')
     try {
       const newStatus = currentStatus === 'active' ? 'discontinued' : 'active'
-      await api.put(`/medicines/${id}/status`, { status: newStatus })
+      await api.put(`/medicines/${id}`, { status: newStatus })
       setSuccess(`Medicine ${newStatus === 'active' ? 'reactivated' : 'discontinued'} successfully.`)
       fetchMedicines()
     } catch (err) {
@@ -146,13 +147,44 @@ export default function MedicineList() {
           </div>
         )}
 
-        {/* Navigation Tabs */}
-        <div className="mb-6">
+        {/* Navigation Tabs and Layout Toggle */}
+        <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <MgTabs 
             value={filter}
             onValueChange={setFilter}
             tabs={tabList}
           />
+          
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                setLayout('grid');
+                localStorage.setItem('meds_layout', 'grid');
+              }}
+              className={`p-2 rounded-xl border transition-all cursor-pointer ${
+                layout === 'grid' 
+                  ? 'bg-slate-105 border-slate-350 text-[#0f766e] font-black' 
+                  : 'bg-white border-slate-200 text-slate-505 hover:bg-slate-50'
+              }`}
+              title="Grid View"
+            >
+              <span className="material-symbols-outlined text-[18px] block">grid_view</span>
+            </button>
+            <button
+              onClick={() => {
+                setLayout('list');
+                localStorage.setItem('meds_layout', 'list');
+              }}
+              className={`p-2 rounded-xl border transition-all cursor-pointer ${
+                layout === 'list' 
+                  ? 'bg-slate-105 border-slate-350 text-[#0f766e] font-black' 
+                  : 'bg-white border-slate-200 text-slate-505 hover:bg-slate-50'
+              }`}
+              title="List View"
+            >
+              <span className="material-symbols-outlined text-[18px] block">view_list</span>
+            </button>
+          </div>
         </div>
 
         {/* Bulk Actions Header Control Bar */}
@@ -165,14 +197,14 @@ export default function MedicineList() {
                 onChange={handleSelectAllToggle}
                 className="w-4 h-4 text-[#0f766e] border-slate-350 rounded focus:ring-[#0f766e] cursor-pointer"
               />
-              <span className="text-xs uppercase font-bold tracking-wider text-slate-500">
+              <span className="text-xs uppercase font-bold tracking-wider text-slate-505">
                 Select All {filteredMeds.length > 0 ? `(${filteredMeds.length})` : ''}
               </span>
             </div>
             
             {selectedIds.length > 0 && (
               <div className="flex items-center gap-3">
-                <span className="text-slate-600 font-bold text-xs bg-slate-200 px-2 py-0.5 rounded-md">
+                <span className="text-slate-600 font-bold text-xs bg-slate-205 px-2 py-0.5 rounded-md">
                   {selectedIds.length} Selected
                 </span>
                 <button
@@ -185,7 +217,7 @@ export default function MedicineList() {
                 </button>
                 <button
                   onClick={() => setSelectedIds([])}
-                  className="text-slate-500 hover:text-slate-800 text-xs font-bold px-2 py-2 cursor-pointer transition-colors"
+                  className="text-slate-500 hover:text-slate-805 text-xs font-bold px-2 py-2 cursor-pointer transition-colors"
                 >
                   Clear Selection
                 </button>
@@ -194,7 +226,7 @@ export default function MedicineList() {
           </div>
         )}
 
-        {/* Medicine List Grid */}
+        {/* Medicine List Grid/List View */}
         {loading ? (
           <div className="flex flex-col gap-3">
             <Skeleton className="h-20 w-full rounded-xl" />
@@ -206,6 +238,97 @@ export default function MedicineList() {
           <div className="text-center py-12 border border-slate-200 border-dashed rounded-xl bg-slate-50/50 p-8">
             <span className="material-symbols-outlined text-slate-300 text-4xl mb-2">medication</span>
             <p className="text-xs text-slate-400 italic">No {filter} medications found.</p>
+          </div>
+        ) : layout === 'grid' ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            {filteredMeds.map((med) => {
+              const isActive = med.status === 'active'
+              const isChecked = selectedIds.includes(med.id)
+              
+              return (
+                <div 
+                  key={med.id} 
+                  className={`border rounded-xl p-4 flex flex-col justify-between gap-3.5 hover:border-slate-400 transition-all shadow-sm relative ${
+                    isChecked 
+                      ? 'bg-teal-50/10 border-teal-350' 
+                      : isActive 
+                        ? 'bg-white border-slate-200/80' 
+                        : 'bg-slate-50/70 border-slate-200/50 opacity-75'
+                  }`}
+                >
+                  {/* Title and Checkbox */}
+                  <div className="flex items-start gap-2.5 min-w-0">
+                    <input 
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={() => handleSelectToggle(med.id)}
+                      className="w-4 h-4 text-[#0f766e] border-slate-300 rounded focus:ring-[#0f766e] cursor-pointer mt-0.5 flex-shrink-0"
+                    />
+                    <div className="min-w-0 flex-grow text-left">
+                      <h4 className={`text-lg font-bold truncate ${isActive ? 'text-slate-900' : 'text-slate-400 line-through'}`} title={med.brand_name || med.generic_name}>
+                        {med.brand_name || med.generic_name}
+                      </h4>
+                      {med.brand_name && med.generic_name && med.brand_name.toLowerCase() !== med.generic_name.toLowerCase() && (
+                        <p className="text-[10px] text-slate-500 font-semibold truncate mt-0.5" title={med.generic_name}>
+                          {med.generic_name}
+                        </p>
+                      )}
+                      <span className={`inline-block mt-1.5 text-[8px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider ${
+                        isActive 
+                          ? 'bg-teal-50 border border-teal-200 text-teal-800' 
+                          : 'bg-slate-100 border border-slate-200 text-slate-500'
+                      }`}>
+                        {med.status}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Info Block */}
+                  <div className="space-y-1.5 text-xs text-slate-500 border-t border-slate-100 pt-3 flex-grow text-left">
+                    <p className="flex items-center gap-1.5 font-medium truncate">
+                      <span className="material-symbols-outlined text-slate-400 text-[18px]">medication</span>
+                      <span className="font-bold text-slate-700">Dosage:</span> {med.dosage}
+                    </p>
+                    <p className="flex items-center gap-1.5 font-medium truncate">
+                      <span className="material-symbols-outlined text-slate-400 text-[18px]">schedule</span>
+                      <span className="font-bold text-slate-700">Frequency:</span> {med.frequency}
+                    </p>
+                    {isActive ? (
+                      <p className="flex items-center gap-1.5 font-medium truncate">
+                        <span className="material-symbols-outlined text-slate-400 text-[18px]">calendar_today</span>
+                        <span className="font-bold text-slate-700">Since:</span> {new Date(med.added_at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
+                      </p>
+                    ) : (
+                      <p className="flex items-center gap-1.5 font-medium truncate">
+                        <span className="material-symbols-outlined text-slate-400 text-[18px]">history</span>
+                        <span className="font-bold text-slate-700">Ended:</span> {med.course_end_date ? new Date(med.course_end_date).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A'}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Actions Button */}
+                  <div className="border-t border-slate-100 pt-3 text-right">
+                    {isActive ? (
+                      <button 
+                        onClick={() => toggleStatus(med.id, med.status)}
+                        className="text-[#ba1a1a] hover:bg-[#ba1a1a]/5 font-semibold text-xs py-1.5 px-3 rounded-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer w-full"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">block</span>
+                        Discontinue
+                      </button>
+                    ) : (
+                      <button 
+                        onClick={() => toggleStatus(med.id, med.status)}
+                        className="text-[#0f766e] hover:bg-[#0f766e]/5 font-semibold text-xs py-1.5 px-3 rounded-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer w-full"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">restart_alt</span>
+                        Reactivate
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
           </div>
         ) : (
           <div className="flex flex-col gap-3">
@@ -234,10 +357,10 @@ export default function MedicineList() {
                     />
 
                     <div className="flex-grow flex flex-col md:flex-row md:items-center gap-4 md:gap-8 min-w-0">
-                      <div className="min-w-[180px] max-w-[240px] truncate">
-                        <h2 className={`text-base font-bold truncate ${isActive ? 'text-slate-900' : 'text-slate-400 line-through'}`} title={med.brand_name || med.generic_name}>
+                      <div className="min-w-[180px] max-w-[240px] truncate text-left">
+                        <h4 className={`text-base font-bold truncate ${isActive ? 'text-slate-900' : 'text-slate-400 line-through'}`} title={med.brand_name || med.generic_name}>
                           {med.brand_name || med.generic_name}
-                        </h2>
+                        </h4>
                         {med.brand_name && med.generic_name && med.brand_name.toLowerCase() !== med.generic_name.toLowerCase() && (
                           <p className="text-[10px] text-slate-500 font-semibold truncate mt-0.5" title={med.generic_name}>
                             {med.generic_name}
@@ -310,10 +433,10 @@ export default function MedicineList() {
             MedGuard
           </div>
           <div className="flex flex-wrap justify-center gap-6">
-            <Link to="/privacy" className="hover:text-[#0F766E] transition-colors">Privacy Policy</Link>
-            <a className="hover:text-[#0F766E] transition-colors" href="#" onClick={(e) => e.preventDefault()}>Terms of Service</a>
-            <a className="hover:text-[#0F766E] transition-colors" href="#" onClick={(e) => e.preventDefault()}>Clinical Guidelines</a>
-            <a className="hover:text-[#0F766E] transition-colors" href="#" onClick={(e) => e.preventDefault()}>Contact Support</a>
+            <Link to="/privacy-policy" className="hover:text-[#0F766E] transition-colors">Privacy Policy</Link>
+            <Link to="/terms" className="hover:text-[#0F766E] transition-colors">Terms of Service</Link>
+            <Link to="/clinical-guidelines" className="hover:text-[#0F766E] transition-colors">Clinical Guidelines</Link>
+            <Link to="/support" className="hover:text-[#0F766E] transition-colors">Contact Support</Link>
           </div>
           <div className="text-xs text-slate-400 mt-4 md:mt-0">
             © 2026 MedGuard AI. Clinical Excellence in Medication Safety.

@@ -37,6 +37,8 @@ def ocr_vlm_extraction_node(state: PrescriptionState) -> Dict[str, Any]:
       - dosage: string or null
       - frequency: string or null
       - duration_text: string or null
+      - duration_value: positive integer or null (CRITICAL: if duration is a range like "3-5 days" or "3 to 5 days", you MUST resolve it to the maximum integer value in that range, which is 5. Never return the minimum or a random number)
+      - duration_unit: string or null ("day", "week", "month", "year")
 
     Return ONLY the raw JSON object. Do not include markdown code block formatting.
     """
@@ -89,12 +91,50 @@ def ocr_vlm_extraction_node(state: PrescriptionState) -> Dict[str, Any]:
     raw_medicines = []
     for med in primary_meds:
         brand = med.get("brand_name")
+        
+        # Robust validation and resolution of range-to-max for duration_value
+        import re
+        duration_text = med.get("duration_text") or ""
+        raw_val = med.get("duration_value")
+        clean_val = None
+        
+        # Check if duration_text or raw_val contains a range pattern like "3-5" or "3 to 5"
+        range_match = re.search(r'(\d+)\s*(?:-|to)\s*(\d+)', str(duration_text))
+        if not range_match and raw_val is not None:
+            range_match = re.search(r'(\d+)\s*(?:-|to)\s*(\d+)', str(raw_val))
+            
+        if range_match:
+            try:
+                val1 = int(range_match.group(1))
+                val2 = int(range_match.group(2))
+                clean_val = max(val1, val2)
+            except (ValueError, TypeError):
+                pass
+                
+        if clean_val is None:
+            # Fallback: extract single number from duration_text first
+            match = re.search(r'\d+', str(duration_text))
+            if match:
+                clean_val = int(match.group())
+
+        if clean_val is None and raw_val is not None and raw_val != "":
+            try:
+                # Try direct conversion
+                clean_val = int(raw_val)
+            except (ValueError, TypeError):
+                # Fallback: extract the first sequence of digits
+                match = re.search(r'\d+', str(raw_val))
+                if match:
+                    clean_val = int(match.group())
+
         raw_medicines.append({
             "brand_name": brand,
             "generic_name": None,
             "dosage": med.get("dosage"),
             "frequency": med.get("frequency"),
-            "duration_text": med.get("duration_text"),
+            "duration_text": duration_text,
+            "duration_value": clean_val,
+            "duration_unit": med.get("duration_unit"),
             "resolution_status": "generic_unresolved"
         })
 

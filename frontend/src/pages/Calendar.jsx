@@ -20,10 +20,7 @@ export default function Calendar() {
   const [adherenceLogs, setAdherenceLogs] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [successMsg, setSuccessMsg] = useState('')
-  const [infoMsg, setInfoMsg] = useState('')
-  const [safetyChecking, setSafetyChecking] = useState(false)
-  
+
   // Date State for Monthly Grid
   const [currentMonth, setCurrentMonth] = useState(new Date())
   const [selectedDate, setSelectedDate] = useState(new Date())
@@ -114,28 +111,6 @@ export default function Calendar() {
     }
   }
 
-  const handleTriggerSafetyCheck = async () => {
-    setSafetyChecking(true)
-    setError('')
-    setSuccessMsg('')
-    setInfoMsg('')
-    
-    try {
-      const res = await api.post('/alerts/safety-check', { patient_id: user.id })
-      if (res.data.success) {
-        setSuccessMsg(`✔ ${res.data.message}`)
-        fetchCalendarData() // refresh the calendar to show new alerts/milestones
-      } else if (res.data.code === 'UP_TO_DATE') {
-        setInfoMsg(`ℹ ${res.data.message}`)
-      } else {
-        setError(res.data.message || 'Safety check completed, but with errors.')
-      }
-    } catch (err) {
-      setError(err.response?.data?.error?.message || 'Failed to trigger safety check.')
-    } finally {
-      setSafetyChecking(false)
-    }
-  }
 
   // --- Calendar Math ---
   const year = currentMonth.getFullYear()
@@ -199,11 +174,12 @@ export default function Calendar() {
       if (current > end) return false
     }
     
-    return med.status === 'active'
+    return med.status === 'active' || med.status === undefined
   }
 
   // Sort and assign tracks to active medicines to prevent overlapping lines
-  const sortedMedicines = [...activeMedicines].sort((a, b) => new Date(a.added_at) - new Date(b.added_at))
+  // Exclude lifetime medicines from calendar bar/legend rendering
+  const sortedMedicines = [...activeMedicines].filter(med => !med.is_lifetime).sort((a, b) => new Date(a.added_at) - new Date(b.added_at))
 
   // Filter items for a specific date cell
   const getDayAppointments = (date) => {
@@ -260,19 +236,6 @@ export default function Calendar() {
             </p>
           </div>
           <div className="mt-4 md:mt-0 flex flex-wrap items-center gap-3">
-            {/* Run Safety Check Button */}
-            <button
-              onClick={handleTriggerSafetyCheck}
-              disabled={safetyChecking}
-              className="bg-white border border-slate-200 hover:border-slate-350 hover:bg-slate-50 text-slate-700 font-semibold text-xs px-5 py-3 rounded-xl transition-all flex items-center shadow-sm cursor-pointer disabled:opacity-50 hover:scale-[1.02] active:scale-[0.98]"
-              title="Manually verify interactions and update safety checks"
-            >
-              <span className={`material-symbols-outlined mr-1.5 text-[18px] text-[#0F766E] ${safetyChecking ? 'animate-spin' : ''}`}>
-                shield_heart
-              </span>
-              {safetyChecking ? 'Running Check...' : 'Run Safety Check'}
-            </button>
-
             {/* Schedule Appointment Button */}
             <button 
               onClick={() => {
@@ -294,20 +257,6 @@ export default function Calendar() {
           <div className="error-banner mb-6 p-4 rounded-xl bg-rose-50 border border-rose-100 text-rose-700 text-xs text-left font-semibold animate-fade-in flex items-center gap-2">
             <span className="material-symbols-outlined text-sm font-bold">error</span>
             {error}
-          </div>
-        )}
-
-        {successMsg && (
-          <div className="mb-6 p-4 rounded-xl bg-emerald-50 border border-emerald-100 text-emerald-800 text-xs text-left font-semibold animate-fade-in flex items-center gap-2">
-            <span className="material-symbols-outlined text-sm font-bold">check_circle</span>
-            {successMsg}
-          </div>
-        )}
-
-        {infoMsg && (
-          <div className="mb-6 p-4 rounded-xl bg-sky-50 border border-sky-100 text-sky-800 text-xs text-left font-semibold animate-fade-in flex items-center gap-2">
-            <span className="material-symbols-outlined text-sm font-bold">info</span>
-            {infoMsg}
           </div>
         )}
 
@@ -574,51 +523,70 @@ export default function Calendar() {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {selectedDayMeds.map(med => {
-                    const log = selectedDayLogs.find(l => l.medicine_id === med.id)
-                    const isTaken = log?.status === 'taken'
+                  {(() => {
+                    const todayLocal = new Date()
+                    todayLocal.setHours(0, 0, 0, 0)
+                    const selLocal = new Date(selectedDate)
+                    selLocal.setHours(0, 0, 0, 0)
+                    const isFuture = selLocal > todayLocal
+
+                    return selectedDayMeds.map(med => {
+                      const log = selectedDayLogs.find(l => l.medicine_id === med.id)
+                      const isTaken = log?.status === 'taken'
                     
-                    return (
-                      <div 
-                        key={med.id} 
-                        className={`flex items-center justify-between p-3.5 rounded-xl border transition-all ${
-                          isTaken 
-                            ? 'bg-emerald-50/40 border-emerald-100' 
-                            : 'bg-slate-50/50 border-slate-100 hover:bg-slate-50'
-                        }`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <button 
-                            onClick={() => handleAdherenceToggle(med.id, selectedDateStr, log?.status)}
-                            className={`w-6 h-6 rounded-lg border flex items-center justify-center transition-all cursor-pointer ${
-                              isTaken 
-                                ? 'bg-emerald-600 border-emerald-600 text-white shadow-sm' 
-                                : 'bg-white border-slate-350 text-transparent hover:border-[#0F766E]'
-                            }`}
-                          >
-                            <span className="material-symbols-outlined text-[15px] font-bold">check</span>
-                          </button>
-                          <div>
-                            <div className="font-bold text-slate-800 text-sm truncate max-w-[150px]" title={med.brand_name || med.generic_name}>
-                              {med.brand_name || med.generic_name}
-                            </div>
-                            <div className="text-xs text-slate-500 font-medium">
-                              {med.dosage} • {med.frequency}
+                      return (
+                        <div 
+                          key={med.id} 
+                          className={`flex items-center justify-between p-3.5 rounded-xl border transition-all ${
+                            isFuture ? 'opacity-60 cursor-not-allowed' : ''
+                          } ${
+                            isTaken 
+                              ? 'bg-emerald-50/40 border-emerald-100' 
+                              : 'bg-slate-50/50 border-slate-100 hover:bg-slate-50'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <button 
+                              onClick={() => handleAdherenceToggle(med.id, selectedDateStr, log?.status)}
+                              disabled={isFuture}
+                              className={`w-6 h-6 rounded-lg border flex items-center justify-center transition-all ${
+                                isFuture
+                                  ? 'bg-slate-100 border-slate-200 text-slate-300 cursor-not-allowed'
+                                  : isTaken 
+                                    ? 'bg-emerald-600 border-emerald-600 text-white shadow-sm cursor-pointer' 
+                                    : 'bg-white border-slate-350 text-transparent hover:border-[#0F766E] cursor-pointer'
+                              }`}
+                            >
+                              {isTaken && (
+                                <span className="material-symbols-outlined text-[15px] font-bold">check</span>
+                              )}
+                            </button>
+                            <div>
+                              <div className="font-bold text-slate-800 text-sm truncate max-w-[150px]" title={med.brand_name || med.generic_name}>
+                                {med.brand_name || med.generic_name}
+                              </div>
+                              <div className="text-xs text-slate-500 font-medium">
+                                {med.dosage} • {med.frequency}
+                              </div>
                             </div>
                           </div>
+                          {isFuture ? (
+                            <span className="text-[10px] font-semibold text-slate-400 italic">
+                              Scheduled
+                            </span>
+                          ) : isTaken ? (
+                            <span className="text-[10px] font-bold text-emerald-805 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-md uppercase tracking-wider">
+                              Taken
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-semibold text-slate-400">
+                              Pending
+                            </span>
+                          )}
                         </div>
-                        {isTaken ? (
-                          <span className="text-[10px] font-bold text-emerald-805 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-md uppercase tracking-wider">
-                            Taken
-                          </span>
-                        ) : (
-                          <span className="text-[10px] font-semibold text-slate-400">
-                            Pending
-                          </span>
-                        )}
-                      </div>
-                    )
-                  })}
+                      )
+                    })
+                  })()}
                 </div>
               )}
             </div>
@@ -753,10 +721,10 @@ export default function Calendar() {
             MedGuard
           </div>
           <div className="flex flex-wrap justify-center gap-6">
-            <Link to="/privacy" className="hover:text-[#0F766E] transition-colors">Privacy Policy</Link>
-            <a className="hover:text-[#0F766E] transition-colors" href="#" onClick={(e) => e.preventDefault()}>Terms of Service</a>
-            <a className="hover:text-[#0F766E] transition-colors" href="#" onClick={(e) => e.preventDefault()}>Clinical Guidelines</a>
-            <a className="hover:text-[#0F766E] transition-colors" href="#" onClick={(e) => e.preventDefault()}>Contact Support</a>
+            <Link to="/privacy-policy" className="hover:text-[#0F766E] transition-colors">Privacy Policy</Link>
+            <Link to="/terms" className="hover:text-[#0F766E] transition-colors">Terms of Service</Link>
+            <Link to="/clinical-guidelines" className="hover:text-[#0F766E] transition-colors">Clinical Guidelines</Link>
+            <Link to="/support" className="hover:text-[#0F766E] transition-colors">Contact Support</Link>
           </div>
           <div className="text-xs text-slate-400 mt-4 md:mt-0">
             © 2026 MedGuard AI. Clinical Excellence in Medication Safety.

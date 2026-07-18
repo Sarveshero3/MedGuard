@@ -8,6 +8,9 @@ export function buildPrescriptionPayload(userId, finalVisitId, prescriptionMedic
       dosage: m.dosage,
       frequency: m.frequency,
       duration_text: m.duration_text,
+      duration_value: m.duration_value,
+      duration_unit: m.duration_unit,
+      is_lifetime: m.is_lifetime,
       added_at: m.added_at,
       source_photo_id: activeItem.extraction.source_photo_id,
       brand_mapping_correction: m.generic_name && (m.generic_name !== 'generic_unresolved' && m.generic_name !== 'no such medicine found') ? {
@@ -19,19 +22,19 @@ export function buildPrescriptionPayload(userId, finalVisitId, prescriptionMedic
   };
 }
 
-export function buildLabReportPayload(userId, finalVisitId, labFields, activeItem) {
+export function buildLabReportPayload(userId, finalVisitId, labTests, labFields, activeItem) {
   return {
     patient_id: userId,
     source_photo_id: activeItem.extraction.source_photo_id,
     visit_id: finalVisitId,
     disease_type: labFields.disease_type || undefined,
-    values: [{
-      test_type: labFields.test_type,
-      panel_name: labFields.panel_name,
-      value: parseFloat(labFields.value),
-      unit: labFields.unit,
+    values: labTests.map(t => ({
+      test_type: t.test_type,
+      panel_name: t.panel_name || labFields.panel_name || 'Lab Report',
+      value: parseFloat(t.value),
+      unit: t.unit,
       confidence: activeItem.extraction.confidence_scores?.value || 1.0,
       recorded_at: labFields.recorded_at,
-    }]
+    }))
   };
 }

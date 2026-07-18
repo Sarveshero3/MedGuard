@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import api from '../services/api'
@@ -12,6 +12,7 @@ import { LabReportReviewForm } from '../components/LabReportReviewForm'
 export default function Upload() {
   const { user, loading: authLoading } = useAuth()
   const navigate = useNavigate()
+  const resolvingFilesRef = useRef(new Set())
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -57,61 +58,103 @@ export default function Upload() {
 
   // Editable lab report fields for the currently active file review
   const [labFields, setLabFields] = useState({
-    test_type: '',
-    panel_name: '',
-    value: '',
-    unit: '',
     disease_type: '',
     recorded_at: '',
+    panel_name: '',
   })
+  const [labTests, setLabTests] = useState([])
 
   // State to hold the active file's extraction structure directly for UI helpers
   const [activeExtraction, setActiveExtraction] = useState(null)
 
   // Helper to trigger brand resolutions on load for any missing generic names
   const resolveExtractedMeds = async (meds) => {
-    let updated = [...meds];
-    const batchSize = 3;
-    for (let i = 0; i < meds.length; i += batchSize) {
-      const chunk = meds.slice(i, i + batchSize);
-      const promises = chunk.map(async (med, indexInChunk) => {
-        const absoluteIndex = i + indexInChunk;
-        if (med.brand_name && !med.generic_name) {
-          try {
-            const res = await api.post('/medicines/resolve-brand', { brand_name: med.brand_name });
-            const resolved = res.data.generic_name || 'no such medicine found';
-            return { index: absoluteIndex, generic_name: resolved };
-          } catch (e) {
-            return { index: absoluteIndex, generic_name: 'no such medicine found' };
+    if (!activeFileId) return;
+    
+    // 1. Ref guard to prevent concurrent resolution for the same fileId
+    if (resolvingFilesRef.current.has(activeFileId)) {
+      return;
+    }
+    resolvingFilesRef.current.add(activeFileId);
+
+    try {
+      // 2. Only resolve medicines that need resolution
+      const needsResolution = meds.some(med => 
+        med.brand_name && 
+        (!med.generic_name || med.generic_name === 'no such medicine found' || med.generic_name === 'generic_unresolved')
+      );
+      if (!needsResolution) {
+        return; // nothing to resolve, skip API calls
+      }
+
+      let updated = [...prescriptionMedicines];
+      // If prescriptionMedicines is empty or length mismatch, use the passed meds
+      if (updated.length !== meds.length) {
+        updated = [...meds];
+      }
+
+      const batchSize = 3;
+      for (let i = 0; i < meds.length; i += batchSize) {
+        const chunk = meds.slice(i, i + batchSize);
+        const promises = chunk.map(async (med, indexInChunk) => {
+          const absoluteIndex = i + indexInChunk;
+          
+          // Layer of safety: don't overwrite if it is already resolved
+          const currentMed = updated[absoluteIndex];
+          const isAlreadyResolved = currentMed && 
+            currentMed.generic_name && 
+            currentMed.generic_name !== 'no such medicine found' && 
+            currentMed.generic_name !== 'generic_unresolved';
+
+          if (med.brand_name && !isAlreadyResolved) {
+            try {
+              const res = await api.post('/medicines/resolve-brand', { brand_name: med.brand_name });
+              const resolved = res.data.generic_name || 'no such medicine found';
+              return { index: absoluteIndex, generic_name: resolved };
+            } catch (e) {
+              return { index: absoluteIndex, generic_name: 'no such medicine found' };
+            }
+          }
+          return null;
+        });
+        
+        const results = await Promise.allSettled(promises);
+        results.forEach(result => {
+          if (result.status === 'fulfilled' && result.value) {
+            const { index, generic_name } = result.value;
+            // Additional layer of safety: once resolved, never overwrite it
+            const currentMed = updated[index];
+            const isAlreadyResolved = currentMed && 
+              currentMed.generic_name && 
+              currentMed.generic_name !== 'no such medicine found' && 
+              currentMed.generic_name !== 'generic_unresolved';
+
+            if (!isAlreadyResolved) {
+              updated[index] = {
+                ...updated[index],
+                generic_name,
+                original_generic_name: generic_name
+              };
+            }
+          }
+        });
+      }
+      
+      setPrescriptionMedicines(updated);
+      setUploadedFiles(queue => queue.map(f => f.id === activeFileId ? {
+        ...f,
+        extraction: {
+          ...f.extraction,
+          raw_extraction: {
+            ...f.extraction.raw_extraction,
+            medicines: updated
           }
         }
-        return null;
-      });
-      
-      const results = await Promise.allSettled(promises);
-      results.forEach(result => {
-        if (result.status === 'fulfilled' && result.value) {
-          const { index, generic_name } = result.value;
-          updated[index] = {
-            ...updated[index],
-            generic_name,
-            original_generic_name: generic_name
-          };
-        }
-      });
+      } : f));
+    } finally {
+      // Clear from resolving set when completed
+      resolvingFilesRef.current.delete(activeFileId);
     }
-    
-    setPrescriptionMedicines(updated);
-    setUploadedFiles(queue => queue.map(f => f.id === activeFileId ? {
-      ...f,
-      extraction: {
-        ...f.extraction,
-        raw_extraction: {
-          ...f.extraction.raw_extraction,
-          medicines: updated
-        }
-      }
-    } : f));
   };
 
   const handleResolveBrand = async (index, brandName) => {
@@ -169,6 +212,9 @@ export default function Upload() {
           dosage: m.dosage || '',
           frequency: m.frequency || '',
           duration_text: m.duration_text || '',
+          duration_value: m.duration_value !== undefined ? m.duration_value : null,
+          duration_unit: m.duration_unit || null,
+          is_lifetime: !!m.is_lifetime,
         }));
         setPrescriptionMedicines(initialMeds);
         resolveExtractedMeds(initialMeds);
@@ -180,19 +226,39 @@ export default function Upload() {
           dosage: raw.dosage || '',
           frequency: raw.frequency || '',
           duration_text: raw.duration_text || '',
+          duration_value: raw.duration_value !== undefined ? raw.duration_value : null,
+          duration_unit: raw.duration_unit || null,
+          is_lifetime: !!raw.is_lifetime,
         }];
         setPrescriptionMedicines(initialMeds);
         resolveExtractedMeds(initialMeds);
       }
     } else {
+      let parsedTests = [];
+      if (raw.tests && Array.isArray(raw.tests)) {
+        parsedTests = raw.tests.map(t => ({
+          test_type: t.test_type || '',
+          panel_name: t.panel_name || raw.panel_name || '',
+          value: t.value || '',
+          unit: t.unit || '',
+          ref_range: t.ref_range || ''
+        }));
+      } else if (raw.test_type || raw.value) {
+        // Fallback for legacy format
+        parsedTests = [{
+          test_type: raw.test_type || '',
+          panel_name: raw.panel_name || '',
+          value: raw.value || '',
+          unit: raw.unit || '',
+          ref_range: ''
+        }];
+      }
+      setLabTests(parsedTests);
       setLabFields({
-        test_type: raw.test_type || '',
-        panel_name: raw.panel_name || '',
-        value: raw.value || '',
-        unit: raw.unit || '',
-        disease_type: '',
-        recorded_at: defaultDate,
-      })
+        disease_type: raw.disease_type || '',
+        recorded_at: raw.recorded_at || defaultDate,
+        panel_name: raw.panel_name || ''
+      });
     }
     
     if (data?.proposed_visit_id) {
@@ -263,7 +329,7 @@ export default function Upload() {
         const payload = buildPrescriptionPayload(user.id, finalVisitId, medsWithDate, activeItem)
         await api.post('/medicines/batch', payload)
       } else {
-        const payload = buildLabReportPayload(user.id, finalVisitId, labFields, activeItem)
+        const payload = buildLabReportPayload(user.id, finalVisitId, labTests, labFields, activeItem)
         await api.post('/lab-reports/confirm', payload)
       }
 
@@ -698,6 +764,20 @@ export default function Upload() {
                                 <LabReportReviewForm
                                   labFields={labFields}
                                   setLabFields={setLabFields}
+                                  labTests={labTests}
+                                  setLabTests={(updated) => {
+                                    setLabTests(updated);
+                                    setUploadedFiles(queue => queue.map(f => f.id === activeFileId ? {
+                                      ...f,
+                                      extraction: {
+                                        ...f.extraction,
+                                        raw_extraction: {
+                                          ...f.extraction.raw_extraction,
+                                          tests: updated
+                                        }
+                                      }
+                                    } : f));
+                                  }}
                                   confidenceScores={activeExtraction?.confidence_scores}
                                   getConfidenceBadge={getConfidenceBadge}
                                 />

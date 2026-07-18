@@ -15,7 +15,7 @@ router.get('/calendar', authenticateUser, enforcePatientAccess('full_view'), asy
 
   try {
     const medsResult = await query(
-      `SELECT id, brand_name, generic_name, dosage, frequency, added_at, duration_text, course_end_date
+      `SELECT id, brand_name, generic_name, dosage, frequency, added_at, duration_text, course_end_date, duration_value, duration_unit, is_lifetime, status
        FROM medicines
        WHERE patient_id = $1 AND status = 'active'
        ORDER BY added_at DESC`,
@@ -172,6 +172,21 @@ router.post('/adherence', authenticateUser, enforcePatientAccess('full_view'), e
   }
 
   try {
+    // Server-side future-date check using database CURRENT_DATE to prevent client clock manipulation
+    const dateCheck = await query(
+      `SELECT CAST($1 AS DATE) > CURRENT_DATE AS is_future`,
+      [scheduled_date]
+    );
+    if (dateCheck.rows[0]?.is_future) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_DATE',
+          message: 'Cannot log adherence for a future date.'
+        }
+      });
+    }
+
     const result = await query(
       `INSERT INTO adherence_logs (patient_id, medicine_id, scheduled_date, status, logged_at)
        VALUES ($1, $2, $3, $4, NOW())

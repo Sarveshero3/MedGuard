@@ -16,38 +16,34 @@ const router = express.Router();
  * Parses duration_text and computes course_end_date.
  * E.g., "5 days" -> added_at + 5 days
  */
-function computeCourseEndDate(addedAt, durationText) {
-  if (!durationText) return null;
-  const cleaned = durationText.trim().toLowerCase();
-  
-  // For ongoing / chronic medicines, default to a 90-day course (standard medical refill period)
-  if (cleaned === 'ongoing') {
-    const date = new Date(addedAt);
-    date.setDate(date.getDate() + 90);
-    return date;
+function computeCourseEndDate(addedAt, duration_value, duration_unit, is_lifetime) {
+  if (is_lifetime) {
+    return null; // Lifetime medicine has no course end date
   }
 
-  if (cleaned === 'unresolved' || cleaned === '') return null;
-
-  const match = cleaned.match(/^(\d+)\s+(day|days|week|weeks|month|months|year|years)$/);
-  if (!match) return null;
-
-  const quantity = parseInt(match[1], 10);
-  const unit = match[2];
-
-  const date = new Date(addedAt);
+  const startDate = new Date(addedAt);
+  
+  if (duration_value === null || duration_value === undefined) {
+    return null;
+  }
+  
+  const val = parseInt(duration_value, 10);
+  if (isNaN(val) || val <= 0) return null;
+  
+  const unit = (duration_unit || 'day').toLowerCase().trim();
   if (unit.startsWith('day')) {
-    date.setDate(date.getDate() + quantity);
+    startDate.setDate(startDate.getDate() + val);
   } else if (unit.startsWith('week')) {
-    date.setDate(date.getDate() + quantity * 7);
+    startDate.setDate(startDate.getDate() + val * 7);
   } else if (unit.startsWith('month')) {
-    date.setMonth(date.getMonth() + quantity);
+    startDate.setMonth(startDate.getMonth() + val);
   } else if (unit.startsWith('year')) {
-    date.setFullYear(date.getFullYear() + quantity);
+    startDate.setFullYear(startDate.getFullYear() + val);
   } else {
     return null;
   }
-  return date;
+  
+  return startDate;
 }
 const MS2_BASE_URL = process.env.MS2_BASE_URL || 'http://ms2-agent-service:8000';
 
@@ -61,7 +57,7 @@ router.get('/medicines', authenticateUser, enforcePatientAccess('full_view'), en
 
   try {
     const result = await query(
-      'SELECT id, brand_name, generic_name, dosage, frequency, source_photo_id, resolution_status, status, added_at FROM medicines WHERE patient_id = $1 ORDER BY added_at DESC',
+      'SELECT id, brand_name, generic_name, dosage, frequency, source_photo_id, resolution_status, status, added_at, duration_text, course_end_date, duration_value, duration_unit, is_lifetime FROM medicines WHERE patient_id = $1 ORDER BY added_at DESC',
       [patientId]
     );
 
@@ -117,7 +113,21 @@ router.get('/medicines/:id', authenticateUser, validateUUID('id'), enforceConsen
  * Secured: enforce patient access and validate payload.
  */
 router.post('/medicines', authenticateUser, enforcePatientAccess('full_view'), enforceConsent('health_data_processing'), enforceEmailVerified, sanitizeInput, validateBody('medicine'), async (req, res, next) => {
-  const { patient_id, brand_name, generic_name, dosage, frequency, duration_text, brand_mapping_correction, resolution_status, visit_id, added_at } = req.body;
+  const { 
+    patient_id, 
+    brand_name, 
+    generic_name, 
+    dosage, 
+    frequency, 
+    duration_text, 
+    duration_value, 
+    duration_unit, 
+    is_lifetime, 
+    brand_mapping_correction, 
+    resolution_status, 
+    visit_id, 
+    added_at 
+  } = req.body;
 
   try {
     const client = await require('../config/db').pool.connect();
@@ -135,11 +145,21 @@ router.post('/medicines', authenticateUser, enforcePatientAccess('full_view'), e
         });
       }
 
-      // Compute course_end_date if duration_text is provided
-      let courseEndDate = null;
-      if (duration_text) {
-        courseEndDate = computeCourseEndDate(new Date(), duration_text);
+      // Server-side validation of duration_value (clean positive integer check)
+      let cleanDurationValue = null;
+      if (duration_value !== undefined && duration_value !== null && duration_value !== '') {
+        const parsed = Number(duration_value);
+        if (Number.isInteger(parsed) && parsed > 0) {
+          cleanDurationValue = parsed;
+        }
       }
+      
+      const cleanIsLifetime = !!is_lifetime;
+      const cleanDurationUnit = duration_unit || null;
+
+      // Compute course_end_date using calendar-correct logic
+      const addedDate = added_at ? new Date(added_at) : new Date();
+      const courseEndDate = computeCourseEndDate(addedDate, cleanDurationValue, cleanDurationUnit, cleanIsLifetime);
 
       // Deterministic fallback: if generic_name wasn't extracted, look it up in brand_generic_map (Phase 5 Architectural Rule)
       let fallbackGeneric = generic_name;
@@ -166,10 +186,10 @@ router.post('/medicines', authenticateUser, enforcePatientAccess('full_view'), e
 
       // Save the medicine
       const result = await client.query(
-        `INSERT INTO medicines (patient_id, brand_name, generic_name, dosage, frequency, duration_text, course_end_date, resolution_status, status, visit_id, added_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active', $9, $10)
+        `INSERT INTO medicines (patient_id, brand_name, generic_name, dosage, frequency, duration_text, course_end_date, resolution_status, status, visit_id, added_at, duration_value, duration_unit, is_lifetime)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active', $9, $10, $11, $12, $13)
          RETURNING *`,
-        [patient_id, brand_name, resolvedGeneric, dosage, frequency, duration_text || null, courseEndDate, finalResolutionStatus, visit_id || null, added_at ? new Date(added_at) : new Date()]
+        [patient_id, brand_name, resolvedGeneric, dosage, frequency, duration_text || null, courseEndDate, finalResolutionStatus, visit_id || null, addedDate, cleanDurationValue, cleanDurationUnit, cleanIsLifetime]
       );
       const newMed = result.rows[0];
 
@@ -642,7 +662,20 @@ router.post('/medicines/batch', authenticateUser, enforcePatientAccess('full_vie
       const allFlaggedInteractions = [];
 
       for (const med of medicines) {
-        const { brand_name, generic_name, dosage, frequency, duration_text, brand_mapping_correction, resolution_status, added_at, source_photo_id } = med;
+        const { 
+          brand_name, 
+          generic_name, 
+          dosage, 
+          frequency, 
+          duration_text, 
+          duration_value, 
+          duration_unit, 
+          is_lifetime, 
+          brand_mapping_correction, 
+          resolution_status, 
+          added_at, 
+          source_photo_id 
+        } = med;
 
         // If user submitted a correction to brand generic map
         if (brand_mapping_correction) {
@@ -655,11 +688,21 @@ router.post('/medicines/batch', authenticateUser, enforcePatientAccess('full_vie
           });
         }
 
-        // Compute course_end_date if duration_text is provided
-        let courseEndDate = null;
-        if (duration_text) {
-          courseEndDate = computeCourseEndDate(new Date(), duration_text);
+        // Server-side validation of duration_value (clean positive integer check)
+        let cleanDurationValue = null;
+        if (duration_value !== undefined && duration_value !== null && duration_value !== '') {
+          const parsed = Number(duration_value);
+          if (Number.isInteger(parsed) && parsed > 0) {
+            cleanDurationValue = parsed;
+          }
         }
+        
+        const cleanIsLifetime = !!is_lifetime;
+        const cleanDurationUnit = duration_unit || null;
+
+        // Compute course_end_date using calendar-correct logic
+        const addedDate = added_at ? new Date(added_at) : new Date();
+        const courseEndDate = computeCourseEndDate(addedDate, cleanDurationValue, cleanDurationUnit, cleanIsLifetime);
 
         // Deterministic fallback: if generic_name wasn't extracted, look it up in brand_generic_map (Phase 5 Architectural Rule)
         let fallbackGeneric = generic_name;
@@ -676,12 +719,31 @@ router.post('/medicines/batch', authenticateUser, enforcePatientAccess('full_vie
           finalResolutionStatus = resolution_status;
         }
 
+        // Diagnostic log to verify parameter counts
+        const queryParams = [
+          patient_id,
+          brand_name,
+          resolvedGeneric,
+          dosage,
+          frequency,
+          duration_text || null,
+          courseEndDate,
+          finalResolutionStatus,
+          visit_id || null,
+          addedDate,
+          source_photo_id || null,
+          cleanDurationValue,
+          cleanDurationUnit,
+          cleanIsLifetime
+        ];
+        console.log(`[SQL DIAGNOSTIC] Placeholder count: 14, Parameter array length: ${queryParams.length}`);
+        
         // Save the medicine
         const result = await client.query(
-          `INSERT INTO medicines (patient_id, brand_name, generic_name, dosage, frequency, duration_text, course_end_date, resolution_status, status, visit_id, added_at, source_photo_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active', $9, $10, $11)
+          `INSERT INTO medicines (patient_id, brand_name, generic_name, dosage, frequency, duration_text, course_end_date, resolution_status, status, visit_id, added_at, source_photo_id, duration_value, duration_unit, is_lifetime)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active', $9, $10, $11, $12, $13, $14)
            RETURNING *`,
-          [patient_id, brand_name, resolvedGeneric, dosage, frequency, duration_text || null, courseEndDate, finalResolutionStatus, visit_id || null, added_at ? new Date(added_at) : new Date(), source_photo_id || null]
+          queryParams
         );
         const newMed = result.rows[0];
         savedMedicines.push(newMed);

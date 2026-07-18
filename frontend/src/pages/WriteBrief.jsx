@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import api from '../services/api'
@@ -8,6 +8,7 @@ export default function WriteBrief() {
   const { user, loading: authLoading } = useAuth()
   const { id } = useParams()
   const navigate = useNavigate()
+  const didGenerate = useRef(false)
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -39,7 +40,9 @@ export default function WriteBrief() {
       // Load existing brief
       fetchBrief(id)
     } else {
-      // Generate new brief
+      // Generate new brief (with ref guard to prevent strict mode double-firing)
+      if (didGenerate.current) return
+      didGenerate.current = true
       generateBrief()
     }
   }, [user, id])

@@ -20,8 +20,8 @@ router.get('/alerts', authenticateUser, enforcePatientAccess('alerts_only'), asy
       `SELECT f.id, f.patient_id, f.severity, f.confidence, f.status, f.created_at,
               nm.brand_name as new_medicine_brand, nm.generic_name as new_medicine_generic,
               em.brand_name as existing_medicine_brand, em.generic_name as existing_medicine_generic,
-              COALESCE(em.generic_name, em.brand_name) as drug_name_a,
-              COALESCE(nm.generic_name, nm.brand_name) as drug_name_b,
+              COALESCE(em.brand_name, em.generic_name) as drug_name_a,
+              COALESCE(nm.brand_name, nm.generic_name) as drug_name_b,
               kb.explanation,
               'drug_drug' as alert_type
        FROM interaction_flags f
@@ -38,7 +38,7 @@ router.get('/alerts', authenticateUser, enforcePatientAccess('alerts_only'), asy
     try {
       labMedResult = await query(
         `SELECT lmf.id, lmf.patient_id, lmf.severity, 1.0 as confidence, lmf.status, lmf.created_at,
-                COALESCE(m.generic_name, m.brand_name) as drug_name_a,
+                COALESCE(m.brand_name, m.generic_name) as drug_name_a,
                 (lv.test_type || ' = ' || lv.value || ' ' || lv.unit) as drug_name_b,
                 r.rationale as explanation,
                 'lab_medicine' as alert_type
@@ -172,7 +172,7 @@ router.post('/alerts/safety-check', authenticateUser, enforcePatientAccess('full
     const labValuesRes = await query(
       `SELECT lv.id, lv.recorded_at 
        FROM lab_values lv
-       JOIN lab_reports lr ON lv.lab_report_id = lr.id
+       JOIN lab_reports lr ON lv.report_id = lr.id
        WHERE lr.patient_id = $1
        ORDER BY lv.id`,
       [patientId]
@@ -308,8 +308,14 @@ router.post('/alerts/safety-check', authenticateUser, enforcePatientAccess('full
     });
 
   } catch (err) {
-    logger.error('MANUAL_SAFETY_CHECK_ERROR', `Error running manual safety check for patient ${patientId}: ${err.message}`);
-    next(err);
+    logger.error('MANUAL_SAFETY_CHECK_ERROR', `Error running manual safety check for patient ${patientId}: ${err.message}`, err);
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_SERVER_ERROR',
+        message: "We couldn't complete the safety check right now — please try again shortly."
+      }
+    });
   }
 });
 

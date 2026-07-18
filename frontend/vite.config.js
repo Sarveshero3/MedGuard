@@ -17,7 +17,7 @@ export default defineConfig({
     },
     proxy: {
       '/api': {
-        target: 'http://localhost:4000',
+        target: 'http://ms1-core-api:4000',
         changeOrigin: true,
       }
     }
