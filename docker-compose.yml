@@ -41,6 +41,12 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
       CLEAN_DB: "true"
       NODE_ENV: "development"
+      RECAPTCHA_SECRET_KEY: ${RECAPTCHA_SECRET_KEY:-}
+      RECAPTCHA_ENABLED: ${RECAPTCHA_ENABLED:-true}
+      AWS_SES_REGION: ${AWS_SES_REGION:-ap-south-1}
+      AWS_SES_FROM_ADDRESS: ${AWS_SES_FROM_ADDRESS:-noreply@medguard.living}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
     ports:
       - "4000:4000"
     volumes:
@@ -115,6 +121,7 @@ services:
       - /app/node_modules
     environment:
       VITE_API_BASE_URL: /api
+      VITE_RECAPTCHA_SITE_KEY: ${VITE_RECAPTCHA_SITE_KEY:-6LdNflstAAAAAJ6VEmCCY8NHWgOJUFJ878qJmXWQ}
     networks:
       - frontend-net
 
