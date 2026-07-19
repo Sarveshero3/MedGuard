@@ -31,13 +31,16 @@ async function verifyRecaptcha(token, expectedAction) {
   }
 
   try {
+    const params = new URLSearchParams();
+    params.append('secret', secretKey);
+    params.append('response', token);
+
     const response = await axios.post(
       SITEVERIFY_URL,
-      null,
+      params,
       {
-        params: {
-          secret: secretKey,
-          response: token,
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
         },
         timeout: 5000, // 5s timeout to prevent hanging on Google API issues
       }
