@@ -5,8 +5,10 @@ lab report parsing, and visit-brief generation.
 Strictly internal: no direct DB writes, no side-effects.
 """
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+import os
 
 from app.api.health import router as health_router
 from app.api.extract import router as extract_router
@@ -21,9 +23,7 @@ app = FastAPI(
 )
 
 # ── Middleware ────────────────────────────────────────────────
-from fastapi import Request
-from fastapi.responses import JSONResponse
-import os
+
 
 @app.middleware("http")
 async def verify_internal_auth(request: Request, call_next):

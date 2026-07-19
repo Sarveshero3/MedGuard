@@ -192,7 +192,7 @@ class BrandResolutionService {
 
   async _callMS2WithRetry(brand, maxRetries = 2, baseDelayMs = 1000) {
     let attempt = 0;
-    while (true) {
+    while (attempt <= maxRetries) {
       try {
         const res = await axios.post(`${MS2_BASE_URL}/api/extract/resolve-brand`, 
           { brand_name: brand },
@@ -213,10 +213,10 @@ class BrandResolutionService {
         
         throw new Error(res.data ? res.data.error : `Status code ${res.status}`);
       } catch (err) {
-        attempt++;
-        if (attempt > maxRetries) {
+        if (attempt >= maxRetries) {
           throw err;
         }
+        attempt++;
         const delay = baseDelayMs * Math.pow(2, attempt - 1);
         logger.warn('BRAND_RESOLUTION_RETRY_ATTEMPT', `Attempt ${attempt} failed to resolve '${brand}'. Retrying in ${delay}ms... Error: ${err.message}`);
         await new Promise(resolve => setTimeout(resolve, delay));

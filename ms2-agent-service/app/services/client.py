@@ -9,12 +9,13 @@ from app.config import settings
 
 logger = logging.getLogger("ms2.client")
 
+
 class KeyRotator:
     def __init__(self):
         self.lock = threading.Lock()
         self._keys: List[str] = []
         self._index = 0
-        self._rate_limits = {} # key -> timestamp when it was rate limited
+        self._rate_limits = {}  # key -> timestamp when it was rate limited
         self._initialized = False
 
     def initialize(self):
@@ -71,7 +72,7 @@ class KeyRotator:
             now = time.time()
             # Filter out keys that are currently cooling down from a 429 (cool down for 60 seconds)
             available_keys = [
-                k for k in self._keys 
+                k for k in self._keys
                 if k not in self._rate_limits or now - self._rate_limits[k] > 60
             ]
             
@@ -89,7 +90,9 @@ class KeyRotator:
             self._rate_limits[key] = time.time()
             logger.warning(f"Groq API key ...{key[-6:] if len(key) > 6 else key} marked as rate-limited.")
 
+
 rotator = KeyRotator()
+
 
 class RateResilientChatOpenAI(ChatOpenAI):
     """
@@ -152,6 +155,7 @@ class RateResilientChatOpenAI(ChatOpenAI):
         if last_exception:
             raise last_exception
         raise RuntimeError("All API key rotation attempts failed.")
+
 
 def get_client(model: str, temperature: float = 0.0) -> ChatOpenAI:
     """

@@ -399,7 +399,7 @@ async def research_interaction_route(req: InteractionRequest):
                 "generic_a": req.generic_a,
                 "generic_b": req.generic_b,
                 "severity": "unknown",
-                "explanation": f"Research could not be completed at this time due to temporary API rate limits or network issues. Please monitor patient symptoms closely.",
+                "explanation": "Research could not be completed at this time due to temporary API rate limits or network issues. Please monitor patient symptoms closely.",
                 "research_summary": "Fallback generated due to research API exception.",
                 "critique_iterations": 0,
                 "is_valid": True
@@ -419,6 +419,7 @@ RESOLUTION_METRICS = {
     "unresolved_error": 0
 }
 
+
 def clean_brand_name(brand: str) -> str:
     import re
     # Remove common dosage form prefixes (case-insensitive)
@@ -427,6 +428,7 @@ def clean_brand_name(brand: str) -> str:
     cleaned = re.sub(r'\s*\(\s*$', '', cleaned)
     cleaned = re.sub(r'[\(\[\{\-\:\;\,\.\+\*\/]+$', '', cleaned)
     return cleaned.strip()
+
 
 async def _search_web_grounding(query: str) -> str:
     """Run one Tavily basic search and format its agent-ready evidence using standard urllib."""

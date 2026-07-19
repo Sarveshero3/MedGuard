@@ -2,13 +2,14 @@ import base64
 import json
 import logging
 import datetime
-from typing import Dict, Any, List
+from typing import Dict, Any
 from pypdf import PdfReader
 from app.services.client import get_client
 from langchain_core.messages import HumanMessage, SystemMessage
 from app.config import settings
 
 logger = logging.getLogger("ms2.shared_nodes")
+
 
 def parse_json_safely(text: str) -> Dict[str, Any]:
     text = text.strip()
@@ -30,6 +31,7 @@ def parse_json_safely(text: str) -> Dict[str, Any]:
             except Exception:
                 pass
         return {}
+
 
 def perform_ocr_extraction(photo_path: str, filename: str) -> str:
     is_pdf = filename.lower().endswith(".pdf")
@@ -89,6 +91,7 @@ def perform_ocr_extraction(photo_path: str, filename: str) -> str:
                 raise err
 
     return ocr_text
+
 
 def proximity_auto_link_node(state: Dict[str, Any]) -> Dict[str, Any]:
     existing_visits = state.get("existing_visits", [])
