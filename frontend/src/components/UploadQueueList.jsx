@@ -11,18 +11,10 @@ export function UploadQueueList({
 }) {
   if (isCollapsed) {
     return (
-      <div className="lg:col-span-1 space-y-4 border-r border-slate-100 pr-0 lg:pr-2 text-center flex flex-col items-center">
-        {/* Toggle Expand Button */}
-        <button
-          onClick={() => setIsCollapsed(false)}
-          title="Expand Upload Queue"
-          className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center cursor-pointer transition-colors border border-slate-200"
-        >
-          <span className="material-symbols-outlined text-sm font-bold">chevron_right</span>
-        </button>
-
-        <div className="w-full border-t border-slate-100 my-2"></div>
-
+      <div
+        className="lg:col-span-1 space-y-4 border-r border-slate-100 pr-0 lg:pr-2 text-center flex flex-col items-center"
+        onMouseEnter={() => setIsCollapsed(false)}
+      >
         {/* Mini Add Button */}
         <button
           onClick={triggerFileSelect}
@@ -88,16 +80,12 @@ export function UploadQueueList({
 
   // Expanded View (Original Layout but shifted to lg:col-span-3)
   return (
-    <div className="lg:col-span-3 space-y-4 border-r border-slate-100 pr-0 lg:pr-4 text-left">
+    <div
+      className="lg:col-span-3 space-y-4 border-r border-slate-100 pr-0 lg:pr-4 text-left"
+      onMouseLeave={() => setIsCollapsed(true)}
+    >
       <div className="flex justify-between items-center mb-4">
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => setIsCollapsed(true)}
-            title="Collapse Queue"
-            className="p-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center cursor-pointer transition-colors border border-slate-200"
-          >
-            <span className="material-symbols-outlined text-xs font-bold">chevron_left</span>
-          </button>
           <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">Queue ({uploadedFiles.length})</h3>
         </div>
         

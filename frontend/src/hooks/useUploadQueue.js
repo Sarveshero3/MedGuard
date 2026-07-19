@@ -5,6 +5,7 @@ import { useDocumentExtractionStream } from './useDocumentExtractionStream'
 export function useUploadQueue(docType, user) {
   const [uploadedFiles, setUploadedFiles] = useState([])
   const [activeFileId, setActiveFileId] = useState(null)
+  const [duplicateFiles, setDuplicateFiles] = useState([])
   const fileInputRef = useRef(null)
   
   const { startStream } = useDocumentExtractionStream()
@@ -40,7 +41,8 @@ export function useUploadQueue(docType, user) {
         saved: f.saved,
         needsClassificationConfirmation: f.needsClassificationConfirmation,
         classificationConfidence: f.classificationConfidence,
-        base64: f.base64
+        base64: f.base64,
+        contentHash: f.contentHash
       }));
       sessionStorage.setItem('medguard_upload_queue', JSON.stringify(serializable));
     } else {
@@ -63,9 +65,31 @@ export function useUploadQueue(docType, user) {
   const handleFileChange = async (e) => {
     const selectedFiles = Array.from(e.target.files)
     if (selectedFiles.length > 0) {
-      const newItems = await Promise.all(selectedFiles.map(async (file) => {
+      const newItems = [];
+      const duplicateNames = [];
+
+      for (const file of selectedFiles) {
         const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
         
+        // Calculate file SHA-256 hash using crypto.subtle
+        let contentHash = '';
+        try {
+          const arrayBuffer = await file.arrayBuffer();
+          const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
+          const hashArray = Array.from(new Uint8Array(hashBuffer));
+          contentHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        } catch (hashErr) {
+          console.error('Failed to calculate file hash:', hashErr);
+          contentHash = 'error-' + Math.random().toString(36).substring(7);
+        }
+
+        // Compare against existing uploadedFiles queue
+        const isDuplicate = uploadedFiles.some(f => f.contentHash === contentHash);
+        if (isDuplicate) {
+          duplicateNames.push(file.name);
+          continue;
+        }
+
         // Convert file content to Base64 to survive browser refresh
         const base64 = await new Promise((resolve) => {
           const reader = new FileReader();
@@ -73,7 +97,7 @@ export function useUploadQueue(docType, user) {
           reader.readAsDataURL(file);
         });
 
-        return {
+        newItems.push({
           id: Math.random().toString(36).substring(7),
           file,
           name: file.name,
@@ -84,15 +108,22 @@ export function useUploadQueue(docType, user) {
           extraction: null,
           saved: false,
           docType: docType,
-          base64: base64
-        };
-      }));
+          base64: base64,
+          contentHash
+        });
+      }
 
-      setUploadedFiles(prev => [...prev, ...newItems]);
-      
-      // Auto-activate the first newly added file if there isn't an active one
-      if (!activeFileId && newItems.length > 0) {
-        setActiveFileId(newItems[0].id);
+      if (duplicateNames.length > 0) {
+        setDuplicateFiles(duplicateNames);
+      }
+
+      if (newItems.length > 0) {
+        setUploadedFiles(prev => [...prev, ...newItems]);
+        
+        // Auto-activate the first newly added file if there isn't an active one
+        if (!activeFileId) {
+          setActiveFileId(newItems[0].id);
+        }
       }
     }
     // Reset file input so same file can be selected again
@@ -192,6 +223,8 @@ export function useUploadQueue(docType, user) {
     handleUploadSingle,
     handleUploadAll,
     handleSkipToManual,
-    handleRemoveFromQueue
+    handleRemoveFromQueue,
+    duplicateFiles,
+    setDuplicateFiles
   }
 }

@@ -106,9 +106,9 @@ sequenceDiagram
 ## 2. In-Depth Technical Step Walkthrough
 
 ### Step 1: Frontend Ingestion
-- **Source File**: [Upload.jsx](../frontend/src/pages/Upload.jsx)
+- **Source File**: [Upload.jsx](../frontend/src/pages/Upload.jsx), [useUploadQueue.js](../frontend/src/hooks/useUploadQueue.js)
 - **Functions involved**:
-  - `handleFileChange(e)`: Converts file content to a Base64 string using the browser's `FileReader` class to maintain state during browser refreshes and page reloads.
+  - `handleFileChange(e)`: Converts file content to a Base64 string using the browser's `FileReader` class to maintain state during browser refreshes and page reloads. **Before adding to the queue**, it calculates a SHA-256 content hash of each file via the Web Crypto API (`crypto.subtle.digest`) and compares it against all files already in the upload queue. If a duplicate is detected, the file is rejected with a user-facing alert (`"This file has already been uploaded."`). The `contentHash` is persisted to `sessionStorage` alongside the queue state to survive page refreshes. **Important**: This is an additive UX optimization layered in front of the existing ms1-core-api backend idempotency check (which uses Redis `idempotency:file:{checksum}` keys) — it does not replace that server-side check.
   - `handleUploadSingle(fileId)` / `handleUploadAll()`: Places the file inside a `FormData` object as a `photo` field and appends `patient_id`. It fires an HTTP POST request to `/api/documents/upload`.
 
 ### Step 2: Core API Ingestion & Checksum Validation

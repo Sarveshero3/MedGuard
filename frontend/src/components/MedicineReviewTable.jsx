@@ -1,20 +1,22 @@
 import React from 'react';
+import { InfoButton } from './InfoButton';
 
 export function MedicineReviewTable({
   medicines,
   setMedicines,
-  onResolveBrand
+  onResolveBrand,
+  onShowInfo
 }) {
+  // Use medicines prop directly (not function updaters) so the parent callback
+  // in Upload.jsx always receives a plain array, not a function reference.
   const updateMedicine = (index, fieldOrObject, value) => {
-    setMedicines(prev => {
-      const updated = [...prev];
-      if (typeof fieldOrObject === 'object' && fieldOrObject !== null) {
-        updated[index] = { ...updated[index], ...fieldOrObject };
-      } else {
-        updated[index] = { ...updated[index], [fieldOrObject]: value };
-      }
-      return updated;
-    });
+    const updated = [...medicines];
+    if (typeof fieldOrObject === 'object' && fieldOrObject !== null) {
+      updated[index] = { ...updated[index], ...fieldOrObject };
+    } else {
+      updated[index] = { ...updated[index], [fieldOrObject]: value };
+    }
+    setMedicines(updated);
   };
 
   const removeMedicine = (index) => {
@@ -44,26 +46,32 @@ export function MedicineReviewTable({
               <th className="px-3 py-2 w-[210px]">Generic Name</th>
               <th className="px-3 py-2 w-[90px]">
                 <span className="flex items-center gap-1">Dosage
-                  <span className="group relative inline-block cursor-help">
-                    <span className="material-symbols-outlined text-[13px] align-middle text-slate-400">info</span>
-                    <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block bg-slate-800 text-white text-[10px] rounded px-2 py-1 whitespace-nowrap z-50 shadow-lg">e.g. 500mg, 1 tablet</span>
-                  </span>
+                  <InfoButton
+                    onShowInfo={onShowInfo}
+                    fieldName="Dosage"
+                    description="The amount and strength of the medication per dose, as printed on the prescription."
+                    example="500mg, 1 tablet, 5ml"
+                  />
                 </span>
               </th>
               <th className="px-3 py-2 w-[105px]">
                 <span className="flex items-center gap-1">Frequency
-                  <span className="group relative inline-block cursor-help">
-                    <span className="material-symbols-outlined text-[13px] align-middle text-slate-400">info</span>
-                    <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block bg-slate-800 text-white text-[10px] rounded px-2 py-1 whitespace-nowrap z-50 shadow-lg">e.g. Twice daily, Once at bedtime</span>
-                  </span>
+                  <InfoButton
+                    onShowInfo={onShowInfo}
+                    fieldName="Frequency"
+                    description="How often the medication should be taken per day or per week."
+                    example="Twice daily, Once at bedtime, Every 8 hours"
+                  />
                 </span>
               </th>
               <th className="px-3 py-2 w-[185px]">
                 <span className="flex items-center gap-1">Duration
-                  <span className="group relative inline-block cursor-help">
-                    <span className="material-symbols-outlined text-[13px] align-middle text-slate-400">info</span>
-                    <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block bg-slate-800 text-white text-[10px] rounded px-2 py-1 whitespace-nowrap z-50 shadow-lg">Enter a whole number and select a unit</span>
-                  </span>
+                  <InfoButton
+                    onShowInfo={onShowInfo}
+                    fieldName="Duration"
+                    description="The total period for which the medication is prescribed. Enter a number and select a unit (days/weeks/months/years), or check 'Lifetime' for ongoing medications."
+                    example="5 days, 2 weeks, 3 months"
+                  />
                 </span>
               </th>
               <th className="px-3 py-2 w-[40px]"></th>
@@ -89,7 +97,7 @@ export function MedicineReviewTable({
                   />
                 </td>
 
-                {/* Generic Name - Read-Only Display */}
+                {/* Generic Name - Read-Only Display (AI-generated, never user-editable) */}
                 <td className="px-3 py-2">
                   <div className="break-words whitespace-normal max-w-[200px] leading-relaxed">
                     {med.generic_name === 'no such medicine found' ? (
@@ -134,6 +142,7 @@ export function MedicineReviewTable({
                   />
                 </td>
 
+                {/* Duration — Lifetime only disables duration fields */}
                 <td className="px-2 py-2">
                   <div className="flex flex-col gap-1 text-[11px]">
                     <div className="flex items-center gap-1">
@@ -169,6 +178,7 @@ export function MedicineReviewTable({
                           onChange={(e) => {
                             const val = e.target.checked;
                             if (val) {
+                              // Only clear duration fields — leave brand, dosage, frequency untouched
                               updateMedicine(index, {
                                 is_lifetime: true,
                                 duration_value: null,
