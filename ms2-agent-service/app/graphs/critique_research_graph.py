@@ -22,7 +22,7 @@ def research_generic_interactions_node(state: CritiqueResearchState) -> Dict[str
 
     # 1. Check database first via ms1 API
     try:
-        url = f"{settings.ms1_base_url}/api/medicines/check-interaction"
+        url = f"{settings.ms1_base_url}/api/check-interaction"
         response = httpx.get(url, params={"generic_a": gen_a, "generic_b": gen_b}, timeout=10.0)
         if response.status_code == 200:
             res_data = response.json()
