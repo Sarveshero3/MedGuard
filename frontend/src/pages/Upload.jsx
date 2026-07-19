@@ -33,7 +33,9 @@ export default function Upload() {
     handleUploadSingle,
     handleUploadAll,
     handleSkipToManual,
-    handleRemoveFromQueue
+    handleRemoveFromQueue,
+    duplicateFiles,
+    setDuplicateFiles
   } = useUploadQueue(docType, user)
 
   const [isQueueCollapsed, setIsQueueCollapsed] = useState(false)
@@ -67,10 +69,17 @@ export default function Upload() {
   // State to hold the active file's extraction structure directly for UI helpers
   const [activeExtraction, setActiveExtraction] = useState(null)
 
+  // Bottom info panel state for field help tooltips
+  const [activeInfo, setActiveInfo] = useState(null)
+  // Preview panel zoom level
+  const [zoom, setZoom] = useState(1)
+  // Guard ref to prevent form re-initialization on every uploadedFiles change
+  const lastInitializedRef = useRef(null)
+
   // Helper to trigger brand resolutions on load for any missing generic names
   const resolveExtractedMeds = async (meds) => {
     if (!activeFileId) return;
-    
+
     // 1. Ref guard to prevent concurrent resolution for the same fileId
     if (resolvingFilesRef.current.has(activeFileId)) {
       return;
@@ -79,8 +88,8 @@ export default function Upload() {
 
     try {
       // 2. Only resolve medicines that need resolution
-      const needsResolution = meds.some(med => 
-        med.brand_name && 
+      const needsResolution = meds.some(med =>
+        med.brand_name &&
         (!med.generic_name || med.generic_name === 'no such medicine found' || med.generic_name === 'generic_unresolved')
       );
       if (!needsResolution) {
@@ -98,12 +107,12 @@ export default function Upload() {
         const chunk = meds.slice(i, i + batchSize);
         const promises = chunk.map(async (med, indexInChunk) => {
           const absoluteIndex = i + indexInChunk;
-          
+
           // Layer of safety: don't overwrite if it is already resolved
           const currentMed = updated[absoluteIndex];
-          const isAlreadyResolved = currentMed && 
-            currentMed.generic_name && 
-            currentMed.generic_name !== 'no such medicine found' && 
+          const isAlreadyResolved = currentMed &&
+            currentMed.generic_name &&
+            currentMed.generic_name !== 'no such medicine found' &&
             currentMed.generic_name !== 'generic_unresolved';
 
           if (med.brand_name && !isAlreadyResolved) {
@@ -117,16 +126,16 @@ export default function Upload() {
           }
           return null;
         });
-        
+
         const results = await Promise.allSettled(promises);
         results.forEach(result => {
           if (result.status === 'fulfilled' && result.value) {
             const { index, generic_name } = result.value;
             // Additional layer of safety: once resolved, never overwrite it
             const currentMed = updated[index];
-            const isAlreadyResolved = currentMed && 
-              currentMed.generic_name && 
-              currentMed.generic_name !== 'no such medicine found' && 
+            const isAlreadyResolved = currentMed &&
+              currentMed.generic_name &&
+              currentMed.generic_name !== 'no such medicine found' &&
               currentMed.generic_name !== 'generic_unresolved';
 
             if (!isAlreadyResolved) {
@@ -139,7 +148,7 @@ export default function Upload() {
           }
         });
       }
-      
+
       setPrescriptionMedicines(updated);
       setUploadedFiles(queue => queue.map(f => f.id === activeFileId ? {
         ...f,
@@ -159,9 +168,9 @@ export default function Upload() {
 
   const handleResolveBrand = async (index, brandName) => {
     if (!brandName.trim()) return;
-    
+
     setPrescriptionMedicines(prev => prev.map((m, idx) => idx === index ? { ...m, generic_name: '', original_generic_name: '' } : m));
-    
+
     try {
       const res = await api.post('/medicines/resolve-brand', { brand_name: brandName });
       const resolved = res.data.generic_name || 'no such medicine found';
@@ -260,7 +269,7 @@ export default function Upload() {
         panel_name: raw.panel_name || ''
       });
     }
-    
+
     if (data?.proposed_visit_id) {
       setLinkVisitOption('existing')
       setSelectedVisitId(data.proposed_visit_id)
@@ -272,18 +281,30 @@ export default function Upload() {
     }
   }
 
-  // Update form fields when active file changes or updates
+  // Update form fields when active file changes or when extraction first completes.
+  // CRITICAL FIX: This must NOT re-fire on every uploadedFiles change (which happens
+  // on each keystroke due to the form-to-queue sync). The lastInitializedRef guard
+  // ensures initializeFormFields only runs when the file ID or completion status
+  // actually changes — preventing the "table wipes on edit" bug.
   useEffect(() => {
     if (!activeFileId) {
       setActiveExtraction(null);
+      setActiveInfo(null);
+      setZoom(1);
       return;
     }
-    
+
     const activeItem = uploadedFiles.find(f => f.id === activeFileId);
     if (activeItem && activeItem.status === 'completed' && activeItem.extraction) {
-      setActiveExtraction(activeItem.extraction);
-      initializeFormFields(activeItem.docType, activeItem.extraction);
-      setIsQueueCollapsed(true);
+      const initKey = `${activeFileId}:completed`;
+      if (lastInitializedRef.current !== initKey) {
+        lastInitializedRef.current = initKey;
+        setActiveExtraction(activeItem.extraction);
+        initializeFormFields(activeItem.docType, activeItem.extraction);
+        setIsQueueCollapsed(true);
+        setActiveInfo(null);
+        setZoom(1);
+      }
     } else {
       setActiveExtraction(null);
     }
@@ -334,10 +355,11 @@ export default function Upload() {
       }
 
       setSuccess('✔ Clinical record successfully confirmed and saved!')
-      
+      setActiveInfo(null)
+
       // Update queue item state to saved
       setUploadedFiles(prev => prev.map(f => f.id === activeFileId ? { ...f, saved: true } : f))
-      
+
       // Select the next completed & unsaved file in the queue
       setTimeout(() => {
         setSuccess('')
@@ -376,7 +398,7 @@ export default function Upload() {
   return (
     <>
       <main className="flex-grow flex flex-col items-center py-16 px-6 md:px-16 w-full max-w-[1440px] mx-auto animate-fade-in text-left">
-        
+
         {/* Header */}
         <header className="mb-12 w-full flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
           <div>
@@ -389,7 +411,7 @@ export default function Upload() {
 
         {/* Workspace Card */}
         <div className="w-full bg-white border border-slate-200/80 rounded-2xl p-6 md:p-10 shadow-sm">
-          
+
           {error && (
             <div className="mb-8 p-4 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
               {error}
@@ -421,7 +443,7 @@ export default function Upload() {
           {/* STEP 1: Upload Dropzone (When Queue is Empty) */}
           {uploadedFiles.length === 0 && (
             <div className="flex flex-col items-center">
-              <div 
+              <div
                 onClick={triggerFileSelect}
                 className="w-full max-w-3xl border-2 border-dashed border-slate-200 rounded-2xl p-12 flex flex-col items-center justify-center text-center cursor-pointer min-h-[400px] hover:border-slate-400 hover:bg-slate-50/50 transition-all duration-200"
               >
@@ -432,7 +454,7 @@ export default function Upload() {
                 <p className="text-sm text-slate-500 mb-8">Drag &amp; drop images or PDF files here, or click to browse</p>
 
                 <div className="flex gap-4 mt-6" onClick={(e) => e.stopPropagation()}>
-                  <button 
+                  <button
                     onClick={triggerFileSelect}
                     className="bg-[#0f766e] hover:bg-[#0d645c] text-white font-semibold text-sm px-6 py-3 rounded-lg flex items-center justify-center gap-2 transition-colors cursor-pointer"
                   >
@@ -448,9 +470,9 @@ export default function Upload() {
           {/* STEP 2 & 3: Batch Queue Workspace (When Queue Has Items) */}
           {uploadedFiles.length > 0 && (
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 w-full">
-              
+
               {/* Left Column: File Queue */}
-              <UploadQueueList 
+              <UploadQueueList
                 uploadedFiles={uploadedFiles}
                 setUploadedFiles={setUploadedFiles}
                 activeFileId={activeFileId}
@@ -486,11 +508,10 @@ export default function Upload() {
                                 onClick={() => {
                                   setUploadedFiles(prev => prev.map(f => f.id === activeItem.id ? { ...f, docType: 'prescription' } : f))
                                 }}
-                                className={`flex-1 text-center py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-                                  activeItem.docType === 'prescription'
+                                className={`flex-1 text-center py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${activeItem.docType === 'prescription'
                                     ? 'bg-[#0f766e] text-white shadow-sm'
                                     : 'bg-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
-                                }`}
+                                  }`}
                               >
                                 Prescription
                               </button>
@@ -499,11 +520,10 @@ export default function Upload() {
                                 onClick={() => {
                                   setUploadedFiles(prev => prev.map(f => f.id === activeItem.id ? { ...f, docType: 'lab_report' } : f))
                                 }}
-                                className={`flex-1 text-center py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-                                  activeItem.docType === 'lab_report'
+                                className={`flex-1 text-center py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${activeItem.docType === 'lab_report'
                                     ? 'bg-[#0f766e] text-white shadow-sm'
                                     : 'bg-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
-                                }`}
+                                  }`}
                               >
                                 Lab Report
                               </button>
@@ -531,7 +551,7 @@ export default function Upload() {
                     // 2. Uploading / processing states
                     if (activeItem.status === 'uploading' || activeItem.status === 'processing') {
                       const msg = activeItem.progressMessage || '';
-                      
+
                       const steps = [
                         { id: 1, label: 'Document Ingestion & Checksum Verification', status: msg !== 'Uploading to server...' ? 'completed' : 'active' },
                         { id: 2, label: 'Text Extraction & Character Parsing (OCR)', status: (msg === 'Analyzing document structure...' || msg === 'Extracting fields...') ? 'active' : (msg !== 'Uploading to server...' ? 'completed' : 'pending') },
@@ -584,9 +604,9 @@ export default function Upload() {
                           <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden mb-2">
                             <div className="bg-[#0f766e] h-full transition-all duration-500" style={{
                               width: msg === 'Uploading to server...' ? '15%' :
-                                     msg === 'Enqueued in pipeline...' ? '35%' :
-                                     msg === 'Analyzing document structure...' ? '65%' :
-                                     msg === 'Extracting fields...' ? '85%' : '95%'
+                                msg === 'Enqueued in pipeline...' ? '35%' :
+                                  msg === 'Analyzing document structure...' ? '65%' :
+                                    msg === 'Extracting fields...' ? '85%' : '95%'
                             }}></div>
                           </div>
                           <span className="text-[10px] text-slate-400 font-mono self-end">{msg}</span>
@@ -645,7 +665,7 @@ export default function Upload() {
                                 Review Required
                               </span>
                             </div>
-                            
+
                             {activeItem.docType === 'prescription' && (
                               <div className="flex items-center gap-3 border border-slate-200 bg-slate-50/50 rounded-xl px-4 py-2 text-xs">
                                 <label htmlFor="prescription_date_top" className="font-bold text-slate-500 uppercase tracking-wider">
@@ -671,38 +691,54 @@ export default function Upload() {
                           )}
 
                           <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
-                            
+
                             {/* Left: Document View Panel */}
-                            <div className="xl:col-span-4 flex flex-col border border-slate-200 rounded-xl bg-slate-50 overflow-hidden shadow-sm">
+                            <div className="xl:col-span-4 self-start flex flex-col border border-slate-200 rounded-xl bg-slate-50 overflow-hidden shadow-sm">
                               <div className="bg-slate-100 border-b border-slate-200 p-3 flex justify-between items-center text-xs text-slate-500 font-semibold">
                                 <span>Preview Panel</span>
-                                <span>{activeItem.isPdf ? 'PDF File' : 'Image File'}</span>
+                                <div className="flex items-center gap-1.5">
+                                  <button type="button" onClick={() => setZoom(z => Math.max(0.25, z - 0.25))} className="p-1 rounded hover:bg-slate-200 transition-colors cursor-pointer" title="Zoom Out">
+                                    <span className="material-symbols-outlined text-sm">zoom_out</span>
+                                  </button>
+                                  <span className="text-[10px] font-mono min-w-[3ch] text-center select-none">{Math.round(zoom * 100)}%</span>
+                                  <button type="button" onClick={() => setZoom(z => Math.min(3, z + 0.25))} className="p-1 rounded hover:bg-slate-200 transition-colors cursor-pointer" title="Zoom In">
+                                    <span className="material-symbols-outlined text-sm">zoom_in</span>
+                                  </button>
+                                  <button type="button" onClick={() => setZoom(1)} className="p-1 rounded hover:bg-slate-200 transition-colors cursor-pointer" title="Reset Zoom">
+                                    <span className="material-symbols-outlined text-sm">fit_screen</span>
+                                  </button>
+                                  <span className="text-slate-300 mx-0.5">|</span>
+                                  <span>{activeItem.isPdf ? 'PDF' : 'Image'}</span>
+                                </div>
                               </div>
-                              <div className="p-4 flex-grow flex items-center justify-center min-h-[350px] bg-slate-150">
-                                {activeItem.isPdf ? (
-                                  <object
-                                    data={activeItem.base64}
-                                    type="application/pdf"
-                                    className="w-full min-h-[450px] rounded border border-slate-200 shadow-sm"
-                                  >
-                                    <div className="flex flex-col items-center justify-center text-center gap-3 p-8">
-                                      <span className="material-symbols-outlined text-6xl text-rose-500">picture_as_pdf</span>
-                                      <span className="text-xs font-bold text-slate-700 truncate max-w-[200px]" title={activeItem.name}>
-                                        {activeItem.name}
-                                      </span>
-                                      <span className="text-[10px] bg-slate-200 text-slate-600 px-2 py-0.5 rounded font-semibold uppercase">
-                                        PDF Preview Unavailable
-                                      </span>
-                                    </div>
-                                  </object>
-                                ) : (
-                                  <img className="object-contain max-h-[350px] w-full rounded border border-slate-200 shadow-sm" src={activeItem.preview} alt="Document preview" />
-                                )}
+                              <div className="p-4 overflow-auto max-h-[550px] bg-slate-150">
+                                <div style={{ width: `${zoom * 100}%`, transformOrigin: 'top left' }}>
+                                  {activeItem.isPdf ? (
+                                    <object
+                                      data={activeItem.base64}
+                                      type="application/pdf"
+                                      style={{ width: '100%', minHeight: `${450 * zoom}px` }}
+                                      className="rounded border border-slate-200 shadow-sm"
+                                    >
+                                      <div className="flex flex-col items-center justify-center text-center gap-3 p-8">
+                                        <span className="material-symbols-outlined text-6xl text-rose-500">picture_as_pdf</span>
+                                        <span className="text-xs font-bold text-slate-700 truncate max-w-[200px]" title={activeItem.name}>
+                                          {activeItem.name}
+                                        </span>
+                                        <span className="text-[10px] bg-slate-200 text-slate-600 px-2 py-0.5 rounded font-semibold uppercase">
+                                          PDF Preview Unavailable
+                                        </span>
+                                      </div>
+                                    </object>
+                                  ) : (
+                                    <img className="object-contain w-full rounded border border-slate-200 shadow-sm" src={activeItem.preview || activeItem.base64} alt="Document preview" />
+                                  )}
+                                </div>
                               </div>
                             </div>
                             {/* Right: Validation Forms */}
                             <form onSubmit={handleSaveActive} className="xl:col-span-8 space-y-5">
-                              
+
                               {activeItem.needsClassificationConfirmation ? (
                                 <div className="bg-amber-50 border border-amber-200 p-5 rounded-xl mb-6 text-left shadow-sm">
                                   <h4 className="text-xs font-bold text-amber-800 mb-1.5 flex items-center gap-1.5 uppercase tracking-wider">
@@ -716,9 +752,9 @@ export default function Upload() {
                                     <button
                                       type="button"
                                       onClick={() => {
-                                        setUploadedFiles(prev => prev.map(f => f.id === activeItem.id ? { 
-                                          ...f, 
-                                          needsClassificationConfirmation: false 
+                                        setUploadedFiles(prev => prev.map(f => f.id === activeItem.id ? {
+                                          ...f,
+                                          needsClassificationConfirmation: false
                                         } : f))
                                       }}
                                       className="bg-amber-800 hover:bg-amber-900 text-white font-semibold text-[10px] px-3 py-2 rounded-lg transition-all cursor-pointer shadow-sm uppercase tracking-wider"
@@ -729,10 +765,10 @@ export default function Upload() {
                                       type="button"
                                       onClick={() => {
                                         const newDocType = activeItem.docType === 'prescription' ? 'lab_report' : 'prescription';
-                                        setUploadedFiles(prev => prev.map(f => f.id === activeItem.id ? { 
-                                          ...f, 
+                                        setUploadedFiles(prev => prev.map(f => f.id === activeItem.id ? {
+                                          ...f,
                                           docType: newDocType,
-                                          needsClassificationConfirmation: false 
+                                          needsClassificationConfirmation: false
                                         } : f))
                                       }}
                                       className="bg-white hover:bg-amber-100/50 text-amber-800 border border-amber-300 font-semibold text-[10px] px-3 py-2 rounded-lg transition-all cursor-pointer shadow-sm uppercase tracking-wider"
@@ -743,7 +779,7 @@ export default function Upload() {
                                 </div>
                               ) : null}
                               {activeItem.docType === 'prescription' ? (
-                                <MedicineReviewTable 
+                                <MedicineReviewTable
                                   medicines={prescriptionMedicines}
                                   setMedicines={(updated) => {
                                     setPrescriptionMedicines(updated);
@@ -759,6 +795,7 @@ export default function Upload() {
                                     } : f));
                                   }}
                                   onResolveBrand={handleResolveBrand}
+                                  onShowInfo={setActiveInfo}
                                 />
                               ) : (
                                 <LabReportReviewForm
@@ -780,11 +817,12 @@ export default function Upload() {
                                   }}
                                   confidenceScores={activeExtraction?.confidence_scores}
                                   getConfidenceBadge={getConfidenceBadge}
+                                  onShowInfo={setActiveInfo}
                                 />
                               )}
 
                               {/* Visit Proximity linking */}
-                              <VisitLinkPanel 
+                              <VisitLinkPanel
                                 activeExtraction={activeExtraction}
                                 linkVisitOption={linkVisitOption}
                                 setLinkVisitOption={setLinkVisitOption}
@@ -795,10 +833,10 @@ export default function Upload() {
                               />
 
                               <div className="pt-4 border-t border-slate-100 flex justify-end gap-3">
-                                <button 
-                                  type="submit" 
+                                <button
+                                  type="submit"
                                   disabled={saving}
-                                  className="bg-[#0f766e] hover:bg-[#0d645c] text-white font-semibold text-xs px-6 py-2.5 rounded-lg flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                                  className="!bg-[#0f766e] hover:!bg-[#0d645c] !text-white font-semibold text-xs px-6 py-2.5 rounded-xl flex items-center gap-1.5 cursor-pointer disabled:opacity-50 border-0 shadow-sm hover:scale-[1.01] active:scale-[0.99] transition-all"
                                 >
                                   <span className="material-symbols-outlined text-sm">verified</span>
                                   {saving ? 'Saving...' : 'Save & Link Records'}
@@ -846,6 +884,71 @@ export default function Upload() {
           </div>
         </div>
       </footer>
+
+      {/* Bottom docked field info panel */}
+      {activeInfo && (
+        <div className="fixed bottom-0 left-0 right-0 z-[9999] animate-slide-up">
+          <div className="max-w-3xl mx-auto bg-white text-[#0b1f33] rounded-t-2xl shadow-[0_-8px_24px_rgba(11,31,51,0.06)] border border-slate-200/80 border-b-0 px-6 py-5">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex-grow min-w-0 text-left">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="material-symbols-outlined text-[#0f766e] text-lg font-bold">info</span>
+                  <h4 className="text-sm font-extrabold uppercase tracking-wider text-[#0b1f33]" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+                    {activeInfo.fieldName}
+                  </h4>
+                </div>
+                <p className="text-[13px] text-[#5d6b78] leading-relaxed" style={{ fontFamily: "'Manrope', sans-serif" }}>
+                  {activeInfo.description}
+                </p>
+                {activeInfo.example && (
+                  <div className="mt-4 bg-[#f4f8f8] border border-slate-200/40 rounded-xl px-4 py-2 flex items-center gap-2">
+                    <span className="text-[10px] font-bold text-[#5d6b78] uppercase tracking-wider select-none" style={{ fontFamily: "'Manrope', sans-serif" }}>
+                      Example:
+                    </span>
+                    <span className="text-[#0b1f33] font-mono text-xs font-semibold">{activeInfo.example}</span>
+                  </div>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveInfo(null)}
+                className="text-slate-400 hover:text-[#0b1f33] p-1.5 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer flex-shrink-0"
+              >
+                <span className="material-symbols-outlined text-lg">close</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Duplicate warning themed modal */}
+      {duplicateFiles && duplicateFiles.length > 0 && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl p-6 max-w-sm w-full text-center flex flex-col items-center animate-scale-up relative transform transition-all">
+            <div className="w-12 h-12 rounded-full bg-amber-50 border border-amber-100 flex items-center justify-center text-amber-600 mb-4">
+              <span className="material-symbols-outlined text-2xl font-bold">warning</span>
+            </div>
+            <h3 className="text-base font-bold text-slate-900 mb-2">Duplicate File Selected</h3>
+            <p className="text-xs text-slate-500 mb-4 leading-relaxed">
+              The following file(s) have already been uploaded to the workspace queue:
+            </p>
+            <div className="w-full bg-slate-50 border border-slate-200/60 rounded-xl p-3 mb-5 max-h-24 overflow-y-auto text-left">
+              <ul className="list-disc list-inside text-xs font-mono text-slate-700 space-y-1">
+                {duplicateFiles.map((name, i) => (
+                  <li key={i} className="truncate">{name}</li>
+                ))}
+              </ul>
+            </div>
+            <button
+              type="button"
+              onClick={() => setDuplicateFiles([])}
+              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs py-2.5 rounded-xl cursor-pointer transition-all shadow-sm hover:scale-[1.01] active:scale-[0.99]"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
     </>
   )
 }

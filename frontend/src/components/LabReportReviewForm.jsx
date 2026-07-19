@@ -1,5 +1,6 @@
 import React from 'react'
 import { unescapeHTML } from '../lib/utils'
+import { InfoButton } from './InfoButton'
 
 export function LabReportReviewForm({
   labFields,
@@ -7,7 +8,8 @@ export function LabReportReviewForm({
   labTests,
   setLabTests,
   confidenceScores,
-  getConfidenceBadge
+  getConfidenceBadge,
+  onShowInfo
 }) {
   const confidence = confidenceScores || {}
 
@@ -48,10 +50,46 @@ export function LabReportReviewForm({
           <table className="w-full text-left text-xs text-slate-700">
             <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider font-semibold border-b border-slate-200">
               <tr>
-                <th className="px-4 py-2 w-1/3">Test Type</th>
-                <th className="px-4 py-2 w-1/4">Measured Value</th>
-                <th className="px-4 py-2 w-1/5">Unit</th>
-                <th className="px-4 py-2 w-1/4">Ref. Range</th>
+                <th className="px-4 py-2 w-1/3">
+                  <span className="flex items-center gap-1">Test Type
+                    <InfoButton
+                      onShowInfo={onShowInfo}
+                      fieldName="Test Type"
+                      description="The name of the laboratory test or biomarker being measured."
+                      example="HbA1c, TSH, Complete Blood Count"
+                    />
+                  </span>
+                </th>
+                <th className="px-4 py-2 w-1/4">
+                  <span className="flex items-center gap-1">Measured Value
+                    <InfoButton
+                      onShowInfo={onShowInfo}
+                      fieldName="Measured Value"
+                      description="The numeric or qualitative result from the laboratory analysis."
+                      example="7.2, 3.5, Positive"
+                    />
+                  </span>
+                </th>
+                <th className="px-4 py-2 w-1/5">
+                  <span className="flex items-center gap-1">Unit
+                    <InfoButton
+                      onShowInfo={onShowInfo}
+                      fieldName="Unit"
+                      description="The measurement unit for the test result."
+                      example="%, mg/dL, mIU/L"
+                    />
+                  </span>
+                </th>
+                <th className="px-4 py-2 w-1/4">
+                  <span className="flex items-center gap-1">Ref. Range
+                    <InfoButton
+                      onShowInfo={onShowInfo}
+                      fieldName="Reference Range"
+                      description="The normal/reference range for healthy individuals. Used to flag abnormal results."
+                      example="4.0 - 5.6, 0.4 - 4.0"
+                    />
+                  </span>
+                </th>
                 <th className="px-2 py-2 w-[40px]"></th>
               </tr>
             </thead>
@@ -124,7 +162,16 @@ export function LabReportReviewForm({
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div>
-          <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider mb-1.5">Panel / Report Name</label>
+          <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider mb-1.5">
+            <span className="inline-flex items-center gap-1">Panel / Report Name
+              <InfoButton
+                onShowInfo={onShowInfo}
+                fieldName="Panel Name"
+                description="The name of the lab panel or report group this test belongs to."
+                example="Clinical Laboratory Report, Lipid Panel"
+              />
+            </span>
+          </label>
           <input
             type="text"
             value={labFields.panel_name || ''}
@@ -134,7 +181,16 @@ export function LabReportReviewForm({
           />
         </div>
         <div>
-          <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider mb-1.5">Disease / Clinical Indication</label>
+          <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider mb-1.5">
+            <span className="inline-flex items-center gap-1">Disease / Clinical Indication
+              <InfoButton
+                onShowInfo={onShowInfo}
+                fieldName="Disease Type"
+                description="The clinical indication or condition being investigated by this lab report."
+                example="Diabetes, Thyroid, Lipid"
+              />
+            </span>
+          </label>
           <input
             type="text"
             value={labFields.disease_type || ''}
@@ -144,7 +200,16 @@ export function LabReportReviewForm({
           />
         </div>
         <div>
-          <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider mb-1.5">Report Date</label>
+          <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider mb-1.5">
+            <span className="inline-flex items-center gap-1">Report Date
+              <InfoButton
+                onShowInfo={onShowInfo}
+                fieldName="Report Date"
+                description="The date the laboratory report was generated or the sample was collected."
+                example="2026-01-15"
+              />
+            </span>
+          </label>
           <input
             type="date"
             required

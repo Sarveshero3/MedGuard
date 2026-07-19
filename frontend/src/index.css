@@ -32,9 +32,18 @@
 }
 
 /* Global input text color force for accessibility and contrast */
-input, select, textarea {
+input:not([type="checkbox"]):not([type="radio"]), select, textarea {
   color: #000000 !important;
   background-color: #ffffff !important;
+}
+
+/* Slide-up animation for the bottom info panel */
+@keyframes slide-up {
+  from { transform: translateY(100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.animate-slide-up {
+  animation: slide-up 0.25s ease-out;
 }
 
 body {
@@ -842,5 +851,20 @@ input:-webkit-autofill:active {
   -webkit-text-fill-color: #000000 !important;
   color: #000000 !important;
   transition: background-color 5000s ease-in-out 0s;
+}
+
+@keyframes scaleUp {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-scale-up {
+  animation: scaleUp 0.2s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
 }
 

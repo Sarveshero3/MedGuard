@@ -27,27 +27,28 @@ This document explains in simple words how data flows between files and function
 ## 2. Ingestion & AI Extraction Flow (Prescriptions & Lab Reports)
 
 ```
-[Upload.jsx (Page)] ──(1) upload photo──> [medicines.js (Route)]
-                                                    │
-                                            (2) save file & queue
-                                                    │
-                                            [queueService.js (Worker)]
-                                                    │
-                                            (3) HTTP POST /extract
-                                                    │
-                                            [extract.py (FastAPI Route)]
-                                                    │
-                                            (4) run LangGraph
-                                                    │
-                                            [prescription_graph.py] / [lab_report_graph.py]
+[Upload.jsx (Page)] ──(1) check duplicate / upload ──> [medicines.js (Route)]
+                                                     │
+                                             (2) save file & queue
+                                                     │
+                                             [queueService.js (Worker)]
+                                                     │
+                                             (3) HTTP POST /extract
+                                                     │
+                                             [extract.py (FastAPI Route)]
+                                                     │
+                                             (4) run LangGraph
+                                                     │
+                                             [prescription_graph.py] / [lab_report_graph.py]
 ```
 
 1. **Uploading the Document**:
-   - The patient selects a photo in [Upload.jsx (Page)](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/frontend/src/pages/Upload.jsx).
-   - The file is uploaded via `POST /api/medicines/upload` or `/api/lab-reports/upload`.
-   - [security.js (Middleware)](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/ms1-core-api/src/middleware/security.js) intercepts the upload using Multer, saves the file to the local `uploads/` folder, and enforces file limits (max 8MB, JPEG/PNG only).
+   - The patient selects a photo or PDF in [Upload.jsx (Page)](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/frontend/src/pages/Upload.jsx).
+   - Before uploading, the frontend hashes the file contents via the Web Crypto API (`crypto.subtle.digest('SHA-256')`) and checks the file's hash against the existing session-saved queue. If a duplicate is found, the upload is prevented at the browser level and the user is alerted.
+   - For unique files, the file is uploaded via `POST /api/medicines/upload` or `/api/lab-reports/upload`.
+   - [security.js (Middleware)](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/ms1-core-api/src/middleware/security.js) intercepts the upload using Multer, saves the file to the local `uploads/` folder, and enforces file limits (max 8MB, JPEG/PNG/PDF).
 2. **Enqueuing and Status Broadcasting**:
-   - [medicines.js (Route)](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/ms1-core-api/src/routes/medicines.js) or [labReports.js (Route)](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/ms1-core-api/src/routes/labReports.js) calculates the file's SHA-256 hash to prevent duplicate uploads.
+   - [medicines.js (Route)](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/ms1-core-api/src/routes/medicines.js) or [labReports.js (Route)](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/ms1-core-api/src/routes/labReports.js) calculates the file's SHA-256 checksum on the backend to enforce database/idempotency keys.
    - It enqueues a job into BullMQ using `extractionQueue.add` inside [queueService.js (Service)](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/ms1-core-api/src/services/queueService.js) and returns the Job ID to the browser.
    - [Upload.jsx](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/frontend/src/pages/Upload.jsx) opens a Server-Sent Events (SSE) stream to `/api/status/stream/:jobId` (defined in [jobs.js Route](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/ms1-core-api/src/routes/jobs.js)) to receive real-time status updates from the queue worker.
 3. **Processing the Queue**:
