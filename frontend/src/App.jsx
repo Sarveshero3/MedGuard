@@ -27,12 +27,6 @@ function App() {
       <Route path="/" element={<Home />} />
       <Route path="/login" element={<Login />} />
       
-      {/* Static Info Pages */}
-      <Route path="/terms" element={<Navigate to="/dashboard" replace />} />
-      <Route path="/privacy-policy" element={<Navigate to="/dashboard" replace />} />
-      <Route path="/clinical-guidelines" element={<Navigate to="/dashboard" replace />} />
-      <Route path="/support" element={<Navigate to="/dashboard" replace />} />
-
       {/* Authenticated Clinical Workspace */}
       <Route element={<ProtectedRoute />}>
         <Route element={<Layout />}>
@@ -45,6 +39,10 @@ function App() {
           <Route path="/privacy" element={<PrivacySettings />} />
           <Route path="/brief/new" element={<WriteBrief />} />
           <Route path="/brief/:id" element={<WriteBrief />} />
+          <Route path="/terms" element={<Terms />} />
+          <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+          <Route path="/clinical-guidelines" element={<ClinicalGuidelines />} />
+          <Route path="/support" element={<Support />} />
         </Route>
       </Route>
       <Route path="*" element={<NotFound />} />

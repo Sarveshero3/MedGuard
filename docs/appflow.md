@@ -1,100 +1,103 @@
-# MedGuard End-to-End Application Flow
+# MedGuard Data Flow & File Interactions
 
-This document combines the user-facing journey (Section 7) with the system-level implementation flows (Section 10.2) to show exactly how the system processes data at each stage.
-
----
-
-### Phase 0: Account Creation & Login (Dual-Token Auth & OTP)
-
-*   **User Action**: Ramesh signs up with his email and password, verifies his email via OTP, and later logs in.
-*   **System Action**:
-    1.  On signup, `ms1` generates a one-time code and triggers **AWS SES** to email it.
-    2.  Ramesh enters the code; `ms1` verifies it, marks the account `is_email_verified = true`, and issues an `accessToken` (15 min TTL) and a `refreshToken` (7 day TTL).
-    3.  On subsequent logins, successful MFA verification issues both tokens. The client stores the `refreshToken` in localStorage.
-    4.  An Axios response interceptor intercepts any 401 response and silently rotates the tokens via `POST /auth/refresh` using a shared-promise queue to prevent concurrent races.
+This document explains in simple words how data flows between files and functions across the frontend and backend of MedGuard.
 
 ---
 
-### Phase 1: Prescription Upload & Extraction
+## 1. Authentication Flow (MFA & Email Verification)
 
-*   **User Action**: Ramesh photographs his new prescription from his cardiologist and uploads it via the React app.
-*   **System Action**:
-    1.  The `frontend` sends the image to `ms1-core-api` at `/api/documents/upload` or `/api/medicines/upload` (handling uploads up to 8MB).
-    2.  During saving/confirming, `ms1` starts a transaction (`BEGIN`) and locks the patient's existing medicines using `SELECT ... FOR UPDATE` to prevent concurrent write race conditions.
-    2.  `ms1` stores the raw image and issues a request to the internal-only `ms2-agent-service` endpoint.
-    3.  `ms2` runs the **Prescription Assessment Graph**:
-        *   Pre-processes the image (contrast adjustment, resizing).
-        *   Calls a vision-LLM model to extract structured fields: `brand_name`, `dosage`, `frequency`, and `prescribing_doctor`.
-        *   Calculates a confidence score per field.
-    4.  `ms2` maps the extracted brand name against `brand_generic_map`.
-        *   *If resolved successfully*: returns the generic name with confidence scores.
-        *   *If unresolved / low confidence (<85%)*: flags the record with `resolution_status = 'generic_unresolved'` and triggers the user inline correction loop in Phase 2.
+```
+[Browser Form] ──(1) submit credentials──> [auth.js (Route)]
+                                                  │
+                                          (2) generate code
+                                                  │
+                                          [email.js (Util)] ──(3) send via SES──> [Patient Inbox]
+```
 
----
-
-### Phase 2: Ambiguity Follow-up Loop & Inline Correction
-
-*   **User Action**: Ramesh sees a follow-up question on his screen: *"Is the dosage clearly 5mg?"* and clicks **Yes**. If the brand name itself was extracted with low confidence, he's shown the raw photo next to the guessed name and can correct it directly, right here — there is no separate review step later.
-*   **System Action**:
-    1.  If the vision-LLM in `ms2` finds handwriting ambiguous (dosage, frequency, brand name, or duration), it sets the confidence low and drafts a structured follow-up question for the specific field in question.
-    2.  `ms1` serves this question to the React `frontend` before confirming the entry.
-    3.  If the low-confidence field is the brand name, the user's correction is written directly to `brand_generic_map` as a new row with `source = 'user_confirmed'`, a bumped `version`, and a new `effective_date` — in the same request, no separate queue.
-    4.  When the user submits all answers, `ms1` saves the medicine to the `medicines` table with `status = 'active'`, sets `resolution_status = 'resolved'`, and computes `course_end_date` from the (now-confirmed) `duration_text` if resolvable.
+1. **Email Code Gating**:
+   - The user inputs credentials on the login screen.
+   - [auth.js (Route)](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/ms1-core-api/src/routes/auth.js) handles the login request. If the user's email is unverified, it generates a code and uses `sendEmail()` inside [email.js (Util)](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/ms1-core-api/src/utils/email.js) to dispatch it via AWS SES.
+   - The user enters the code to confirm, which calls `/auth/verify-email`. The route updates `users.is_email_verified = true` in PostgreSQL.
+2. **Access Security**:
+   - On successful login/MFA, [auth.js](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/ms1-core-api/src/routes/auth.js) issues a JWT access token (15 mins) and refresh token (7 days).
+   - [auth.js (Middleware)](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/ms1-core-api/src/middleware/auth.js) intercepts subsequent requests using `authenticateUser` to verify the JWT and `enforceEmailVerified` to block unverified actions.
 
 ---
 
-### Phase 3: Deterministic Interaction Check
+## 2. Ingestion & AI Extraction Flow (Prescriptions & Lab Reports)
 
-*   **User Action**: System flags a moderate interaction with a medicine Ramesh's endocrinologist prescribed, displaying a plain-language warning.
-*   **System Action**:
-    1.  `ms1` initiates a deterministic check. It queries the active medicines for Ramesh (`medicines` table where `status = 'active'`).
-    2.  For each pair (the new generic vs. existing generics), it queries the `interaction_kb` table.
-    3.  If a match is found, `ms1` writes an entry to the `interaction_flags` table with the corresponding `severity`, `explanation`, and `kb_entry_id` (representing the KB version).
-    4.  If the interaction severity is high or approved, `ms1` updates the frontend UI to display the explanation (e.g., *"Avoid taking Glycomet alongside this new medicine because..."*).
+```
+[Upload.jsx (Page)] ──(1) upload photo──> [medicines.js (Route)]
+                                                    │
+                                            (2) save file & queue
+                                                    │
+                                            [queueService.js (Worker)]
+                                                    │
+                                            (3) HTTP POST /extract
+                                                    │
+                                            [extract.py (FastAPI Route)]
+                                                    │
+                                            (4) run LangGraph
+                                                    │
+                                            [prescription_graph.py] / [lab_report_graph.py]
+```
 
----
-
-### Phase 4: Caregiver Notification
-
-*   **User Action**: Priya (Ramesh's linked caregiver) receives the alert via email. She calls her father to discuss it before his next doctor visit.
-*   **System Action**:
-    1.  Upon writing a new flag to `interaction_flags`, `ms1` checks the `caregiver_links` table for active links.
-    2.  `ms1` triggers AWS SES to send alert emails to the patient (Ramesh) and the caregiver (Priya) — the same SES sender identity used for OTP in Phase 0.
-    3.  Priya logs into her React dashboard, which queries `ms1` using her caregiver JWT claims. She sees Ramesh's active medicine list and active alerts in a read-only timeline.
-
----
-
-### Phase 5: Lab Report Timeline & Trend Calculation
-
-*   **User Action**: A few weeks later, Ramesh uploads a PDF/photo of a new blood sugar lab report. The system extracts the values and flags a rising trend.
-*   **System Action**:
-    1.  `frontend` uploads the document to `ms1`, which sends it to `ms2`.
-    2.  `ms2` runs the **Lab Report Extraction Graph** to parse the values (e.g., `HbA1c = 7.2%`, `LDL = 130 mg/dL`) and returns them to `ms1`.
-    3.  `ms1` saves these in `lab_values` and triggers a deterministic trend check:
-        *   It compares the new value to the last two historical records.
-        *   If the value has increased significantly (e.g., a relative increase >10% or absolute increase >0.3 for HbA1c), it flags the trend as a meaningful change.
-
----
-
-### Phase 6: Visit Prep Brief Generation
-
-*   **User Action**: With an appointment scheduled for next week, Ramesh generates his "Visit Prep Brief". The system outputs a one-page overview.
-*   **System Action**:
-    1.  The `frontend` calls `/api/visits/:id/brief` on `ms1`.
-    2.  `ms1` aggregates the patient's active medicines, active interaction flags, and recent lab value trends, and passes them to `ms2`.
-    3.  `ms2` runs the **Visit-Brief Writer Graph**:
-        *   Organizes the medication list and highlighted trends.
-        *   Drafts 3-4 questions for the patient to ask, framed around *concern and cause*, never around a specific treatment or dosage action (e.g., *"My HbA1c increased from 6.8 to 7.2 over the last 3 months — is this something to be concerned about, and what could be causing it?"*, not *"should we adjust my dosage?"*). The graph is constrained by a dedicated system prompt (see `docs/prompts/visit-brief-writer.md`) that hard-blocks any medication-change suggestion.
-        *   Appends the mandatory disclaimer: *"Discuss this with your doctor — this is not a diagnosis."*
-    4.  `ms1` saves the output in `briefs` and returns it to the client for rendering, printing, or email delivery.
+1. **Uploading the Document**:
+   - The patient selects a photo in [Upload.jsx (Page)](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/frontend/src/pages/Upload.jsx).
+   - The file is uploaded via `POST /api/medicines/upload` or `/api/lab-reports/upload`.
+   - [security.js (Middleware)](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/ms1-core-api/src/middleware/security.js) intercepts the upload using Multer, saves the file to the local `uploads/` folder, and enforces file limits (max 8MB, JPEG/PNG only).
+2. **Enqueuing and Status Broadcasting**:
+   - [medicines.js (Route)](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/ms1-core-api/src/routes/medicines.js) or [labReports.js (Route)](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/ms1-core-api/src/routes/labReports.js) calculates the file's SHA-256 hash to prevent duplicate uploads.
+   - It enqueues a job into BullMQ using `extractionQueue.add` inside [queueService.js (Service)](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/ms1-core-api/src/services/queueService.js) and returns the Job ID to the browser.
+   - [Upload.jsx](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/frontend/src/pages/Upload.jsx) opens a Server-Sent Events (SSE) stream to `/api/status/stream/:jobId` (defined in [jobs.js Route](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/ms1-core-api/src/routes/jobs.js)) to receive real-time status updates from the queue worker.
+3. **Processing the Queue**:
+   - The BullMQ worker in [queueService.js](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/ms1-core-api/src/services/queueService.js) runs.
+   - It triggers an HTTP POST request to `ms2-agent-service` using `extractDocumentData()`, forwarding the file to the FastAPI routes in [extract.py (Route)](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/ms2-agent-service/app/api/extract.py).
+4. **AI Parsing (LangGraph)**:
+   - [extract.py](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/ms2-agent-service/app/api/extract.py) routes the file buffer to the appropriate graph:
+     - Prescriptions: parsed by [prescription_graph.py](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/ms2-agent-service/app/graphs/prescription_graph.py).
+     - Lab Reports: parsed by [lab_report_graph.py](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/ms2-agent-service/app/graphs/lab_report_graph.py).
+   - Mismatch/low-confidence results flag `needs_follow_up = true` or `needs_classification_confirmation = true` to trigger verification prompts in the browser.
+   - On completion, the worker cleans up the local file using `fs.unlinkSync()`, broadcasts `status: 'completed'` over the SSE stream, and returns the structured extraction payload back to the browser review form.
 
 ---
 
-### Phase 7: Medicine Course & Appointment Calendar
+## 3. Saving & Drug Safety Check Flow
 
-*   **User Action**: Ramesh opens his calendar view and sees his current medicine courses laid out with end dates, plus an upcoming cardiology appointment he added himself.
-*   **System Action**:
-    1.  During Phase 1 extraction, `ms2` also extracts a `duration_text` field from the prescription (e.g., "for 5 days," "ongoing"). If it's ambiguous, this is asked as a follow-up question in the same Phase 2 loop as dosage/frequency — not a new mechanism.
-    2.  Once resolved, `ms1` computes `course_end_date` from `added_at` + `duration_text` and stores it on the `medicines` row.
-    3.  The user can independently add a doctor appointment (date, note) directly through the app, stored in `visits` with `visit_type = 'user_added'`.
-    4.  The frontend calendar view (`GET /api/calendar`) merges active medicine course end dates with the user's `visits` entries into one timeline — no separate table, just a combined read.
+```
+[Review Form] ──(1) save confirmed data──> [medicines.js (Route)]
+                                                    │
+                                            (2) check interaction
+                                                    │
+                                            [interactionEngine.js (Util)]
+                                                    │
+                                            (3) flag / alert via SES
+```
+
+1. **Data Confirmation**:
+   - The user reviews the extracted fields in [MedicineReviewTable.jsx](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/frontend/src/components/MedicineReviewTable.jsx) or [LabReportReviewForm.jsx](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/frontend/src/components/LabReportReviewForm.jsx) and clicks **Save**.
+   - The frontend sends the payload to `POST /api/medicines` or `POST /api/lab-reports/confirm`.
+2. **PostgreSQL Transactions & Locking**:
+   - [medicines.js (Route)](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/ms1-core-api/src/routes/medicines.js) runs the save block inside a database transaction (`BEGIN` / `COMMIT`).
+   - It performs a row-level lock using `SELECT ... FOR UPDATE` on the patient's existing active medicines to block simultaneous writes, preventing duplicate additions or race conditions.
+3. **Safety Calculations**:
+   - Before committing, `ms1` calls `checkInteractions()` in [interactionEngine.js (Util)](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/ms1-core-api/src/utils/interactionEngine.js).
+   - This function compares the new medication generic name against active patient generics and searches the `interaction_kb` database table.
+   - If an interaction is found:
+     - `ms1` writes a record to the `interaction_flags` table.
+     - `ms1` queries linked caregivers using [caregivers.js (Route)](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/ms1-core-api/src/routes/caregivers.js).
+     - It dispatches plain-English interaction alert emails to both patient and caregiver using AWS SES.
+   - The transaction commits (`COMMIT`), and the medicine is saved.
+
+---
+
+## 4. Lab Trend Explanation & Visit Prep Flow
+
+1. **Trend Evaluation**:
+   - When lab values are saved, `ms1` calls [trendCalculator.js (Util)](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/ms1-core-api/src/utils/trendCalculator.js) to compare the new value against historical records.
+   - Out-of-bounds statuses are calculated on the frontend using standardized clinician thresholds.
+2. **Visit Brief Compilation**:
+   - When a patient clicks "Generate Visit Brief" in [Dashboard.jsx](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/frontend/src/pages/Dashboard.jsx), the frontend requests `/api/visits/:id/brief`.
+   - `ms1` fetches the patient's active medicines, active flags, and lab trends, sending them to `ms2` at `/api/visit-brief`.
+   - `ms2` runs [brief_writer_graph.py](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/ms2-agent-service/app/graphs/brief_writer_graph.py) to compile a patient-friendly summary sheet and questions for the physician.
+   - The brief is saved in PostgreSQL and rendered for printing or sharing.

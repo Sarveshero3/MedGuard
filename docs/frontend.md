@@ -1,48 +1,60 @@
-# MedGuard Frontend SPA Documentation
+# React Frontend Service Details
 
-The MedGuard frontend is a modern React SPA built using Vite. It implements dynamic views for patients and caregivers, handles multi-document parallel file uploads (images and PDFs), establishes real-time Server-Sent Events (SSE) connections to monitor extraction progress, and styles elements using vanilla CSS and Tailwind variables.
-
----
-
-## General Architectural Flow
-
-1. **Authentication & Routing**:
-   - `App.jsx` registers SPA paths using `react-router-dom`.
-   - `AuthContext.jsx` manages global user session state (login, registration, MFA, and logout) by checking tokens against `localStorage`. Unauthenticated routes redirect patients back to the `/login` portal.
-2. **Document Upload & AI extraction validation**:
-   - `Upload.jsx` coordinates document queue storage.
-   - When files are selected, the app creates temporary previews and enqueues uploads via `POST /api/documents/upload`.
-   - It listens to `/api/status/stream/:jobId` relative SSE streams. Nginx proxy routing bypasses CSP errors.
-   - Once completed, the payload specifies `docType` and extracted data, rendering the corresponding form dynamically. Mismatch/unresolved flags prompt patient confirmation steps before committing.
-3. **Dashboards & Alerts**:
-   - `Dashboard.jsx` loads active prescriptions, calendar visits, and clinical alerts.
-   - `Alerts.jsx` displays drug-drug interactions with severity ratings, enabling acknowledgment flows.
-   - `MedicineList.jsx` provides tabbed lists filtering active medications versus patient histories.
+The MedGuard frontend is a React single-page app (SPA) built using Vite and styled with Vanilla CSS and Tailwind utility tokens.
 
 ---
 
-## Directory Structure & Important Files
+## 1. Directory Structure
 
-### `src/context/`
-Global React context providers.
-- **[AuthContext.jsx](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/frontend/src/context/AuthContext.jsx)**: Exposes authentication wrappers, storing active tokens and routing MFA verification gates.
+### Contexts (`src/context/`)
+- **[AuthContext.jsx](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/frontend/src/context/AuthContext.jsx)**:
+  - Manages the user's active session state. Handles login, registration, MFA code entry, and logout.
+  - Automatically stores the generated JWT access and refresh tokens in `localStorage`.
 
-### `src/services/`
-- **[api.js](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/frontend/src/services/api.js)**: Configures Axios with a base URL matching relative `/api` paths. Automatically attaches `Authorization: Bearer <token>` headers on outgoing calls.
+### Services (`src/services/`)
+- **[api.js](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/frontend/src/services/api.js)**:
+  - Configures Axios with a base URL of `/api` (proxied in production via Vercel).
+  - Uses request interceptors to automatically attach the `Authorization: Bearer <token>` header to all outbound HTTP requests.
+  - Implements response interceptors to catch 401 errors, queuing concurrent requests while performing a token refresh transaction.
 
-### `src/components/`
-- **[MgNavbar.jsx](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/frontend/src/components/MgNavbar.jsx)**: Navigation header bar, handling profile links and displaying caregiver view alerts if active.
-- **`ui/`**: General reusable widgets:
-  - **[MgTabs.jsx](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/frontend/src/components/ui/MgTabs.jsx)**: Selection tabs. Styles active tabs using the `--mg-accent` primary token from `index.css`.
-  - **[button.jsx](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/frontend/src/components/ui/button.jsx)**, **[card.jsx](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/frontend/src/components/ui/card.jsx)**, **[checkbox.jsx](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/frontend/src/components/ui/checkbox.jsx)**: Low-level UI design components.
+### Reusable Components (`src/components/`)
+- **[MgNavbar.jsx](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/frontend/src/components/MgNavbar.jsx)**:
+  - Global navigation header bar displaying menu links (Dashboard, Upload, Medicines, Lab Reports, Alerts, Calendar, Privacy) and the Logout button.
+  - Automatically queries active safety warnings on mount and displays a red indicator dot next to the Alerts tab if unresolved flags are present.
+- **[MedicineReviewTable.jsx](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/frontend/src/components/MedicineReviewTable.jsx)**:
+  - Interactive table allowing patients to edit or correct extracted medication details (dosage, frequency, duration, lifetime usage, or brand mappings) before saving.
+- **[LabReportReviewForm.jsx](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/frontend/src/components/LabReportReviewForm.jsx)**:
+  - Form displaying extracted laboratory values. Decodes and cleans HTML entities (e.g., converting `mg&#x2F;dL` back to `mg/dL`).
 
-### `src/pages/`
-SPA Page components.
-- **[Home.jsx](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/frontend/src/pages/Home.jsx)**: Clinical landing page.
-- **[Login.jsx](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/frontend/src/pages/Login.jsx)**: Credentials portal supporting registration, MFA entry, and role selection.
-- **[Dashboard.jsx](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/frontend/src/pages/Dashboard.jsx)**: Main patient metrics board housing visit summaries, upcoming physician events, and quick links.
-- **[Upload.jsx](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/frontend/src/pages/Upload.jsx)**: Batch document queue processor. Resolves automatic doc-type classifications and validates consensus results.
-- **[MedicineList.jsx](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/frontend/src/pages/MedicineList.jsx)**: Medication dashboard showing active prescriptions and histories.
-- **[Alerts.jsx](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/frontend/src/pages/Alerts.jsx)**: Clinical safety interactions screen.
-- **[Calendar.jsx](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/frontend/src/pages/Calendar.jsx)**: Visits scheduler.
-- **[PrivacySettings.jsx](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/frontend/src/pages/PrivacySettings.jsx)**: Consent management page allowing users to configure data sharing and caregiver relationships.
+---
+
+## 2. Page Portals (`src/pages/`)
+
+- **[Upload.jsx](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/frontend/src/pages/Upload.jsx)**:
+  - Document upload portal handling PDF and image uploads.
+  - Leverages the `useUploadQueue` hook to process parallel files, starts an SSE connection to track BullMQ jobs, and renders review forms dynamically upon completion.
+- **[MedicineList.jsx](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/frontend/src/pages/MedicineList.jsx)**:
+  - Displays the patient's active prescriptions (Active Prescriptions tab) and historical medications (History tab).
+  - Integrates checkboxes for selecting multiple items and triggers bulk deletions via `POST /api/medicines/batch-delete`.
+  - Fixes custom `h4` tags for medicine titles to prevent oversized heading overrides from global stylesheets.
+- **[LabReports.jsx](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/frontend/src/pages/LabReports.jsx)**:
+  - Displays laboratory timelines. Translates raw metrics into clinical status categories (Normal vs. Outside normal range) using standard healthy clinical ranges.
+- **[Alerts.jsx](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/frontend/src/pages/Alerts.jsx)**:
+  - Displays drug-drug safety alerts in a plain-English, non-alarmist format, with detailed clinical notes expandable on demand.
+- **[PrivacyPolicy.jsx](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/frontend/src/pages/PrivacyPolicy.jsx)**, **[Terms.jsx](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/frontend/src/pages/Terms.jsx)**, **[ClinicalGuidelines.jsx](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/frontend/src/pages/ClinicalGuidelines.jsx)**, **[Support.jsx](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/frontend/src/pages/Support.jsx)**:
+  - Static information pages. Styled inside premium white container boxes (`bg-white border border-slate-200 rounded-xl p-8 md:p-10 shadow-sm`) with clean, compact typography.
+
+---
+
+## 3. Production Vercel Configuration
+
+Vercel hosts the compiled static frontend files and maps page requests back to index.html for client-side routing. This is governed by [vercel.json](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/frontend/vercel.json):
+```json
+{
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "http://<EC2_PUBLIC_IP>:4000/api/:path*" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}
+```
+This rewrite ensures any API requests made by Axios are seamlessly reverse-proxied to the core Express backend on EC2, avoiding CORS and mixed-content issues.

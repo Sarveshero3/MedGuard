@@ -8,6 +8,7 @@ const { sanitizeInput, validateBody, validateUUID, upload } = require('../middle
 const { enforceConsent } = require('../middleware/consent');
 const { uploadLimiter } = require('../middleware/rateLimiter');
 const { extractionQueue } = require('../services/queueService');
+const brandResolutionService = require('../services/brandResolutionService');
 
 const router = express.Router();
 
@@ -15,30 +16,34 @@ const router = express.Router();
  * Parses duration_text and computes course_end_date.
  * E.g., "5 days" -> added_at + 5 days
  */
-function computeCourseEndDate(addedAt, durationText) {
-  if (!durationText) return null;
-  const cleaned = durationText.trim().toLowerCase();
-  if (cleaned === 'ongoing' || cleaned === 'unresolved' || cleaned === '') return null;
+function computeCourseEndDate(addedAt, duration_value, duration_unit, is_lifetime) {
+  if (is_lifetime) {
+    return null; // Lifetime medicine has no course end date
+  }
 
-  const match = cleaned.match(/^(\d+)\s+(day|days|week|weeks|month|months|year|years)$/);
-  if (!match) return null;
-
-  const quantity = parseInt(match[1], 10);
-  const unit = match[2];
-
-  const date = new Date(addedAt);
+  const startDate = new Date(addedAt);
+  
+  if (duration_value === null || duration_value === undefined) {
+    return null;
+  }
+  
+  const val = parseInt(duration_value, 10);
+  if (isNaN(val) || val <= 0) return null;
+  
+  const unit = (duration_unit || 'day').toLowerCase().trim();
   if (unit.startsWith('day')) {
-    date.setDate(date.getDate() + quantity);
+    startDate.setDate(startDate.getDate() + val);
   } else if (unit.startsWith('week')) {
-    date.setDate(date.getDate() + quantity * 7);
+    startDate.setDate(startDate.getDate() + val * 7);
   } else if (unit.startsWith('month')) {
-    date.setMonth(date.getMonth() + quantity);
+    startDate.setMonth(startDate.getMonth() + val);
   } else if (unit.startsWith('year')) {
-    date.setFullYear(date.getFullYear() + quantity);
+    startDate.setFullYear(startDate.getFullYear() + val);
   } else {
     return null;
   }
-  return date;
+  
+  return startDate;
 }
 const MS2_BASE_URL = process.env.MS2_BASE_URL || 'http://ms2-agent-service:8000';
 
@@ -52,7 +57,7 @@ router.get('/medicines', authenticateUser, enforcePatientAccess('full_view'), en
 
   try {
     const result = await query(
-      'SELECT id, brand_name, generic_name, dosage, frequency, source_photo_id, resolution_status, status, added_at FROM medicines WHERE patient_id = $1 ORDER BY added_at DESC',
+      'SELECT id, brand_name, generic_name, dosage, frequency, source_photo_id, resolution_status, status, added_at, duration_text, course_end_date, duration_value, duration_unit, is_lifetime FROM medicines WHERE patient_id = $1 ORDER BY added_at DESC',
       [patientId]
     );
 
@@ -108,7 +113,21 @@ router.get('/medicines/:id', authenticateUser, validateUUID('id'), enforceConsen
  * Secured: enforce patient access and validate payload.
  */
 router.post('/medicines', authenticateUser, enforcePatientAccess('full_view'), enforceConsent('health_data_processing'), enforceEmailVerified, sanitizeInput, validateBody('medicine'), async (req, res, next) => {
-  const { patient_id, brand_name, generic_name, dosage, frequency, duration_text, brand_mapping_correction, resolution_status, visit_id, added_at } = req.body;
+  const { 
+    patient_id, 
+    brand_name, 
+    generic_name, 
+    dosage, 
+    frequency, 
+    duration_text, 
+    duration_value, 
+    duration_unit, 
+    is_lifetime, 
+    brand_mapping_correction, 
+    resolution_status, 
+    visit_id, 
+    added_at 
+  } = req.body;
 
   try {
     const client = await require('../config/db').pool.connect();
@@ -117,32 +136,41 @@ router.post('/medicines', authenticateUser, enforcePatientAccess('full_view'), e
 
       // If user submitted a correction to brand generic map during follow-up, write it append-only
       if (brand_mapping_correction) {
-        const { brand_name: correctedBrand, generic_name: correctedGeneric } = brand_mapping_correction;
-        const versionResult = await client.query(
-          'SELECT version FROM brand_generic_map WHERE brand_name = $1 ORDER BY effective_date DESC LIMIT 1',
-          [correctedBrand]
-        );
-        let nextVersion = 'v1';
-        if (versionResult.rows.length > 0) {
-          const currentVersion = versionResult.rows[0].version;
-          const currentNum = parseInt(currentVersion.replace('v', ''), 10) || 1;
-          nextVersion = `v${currentNum + 1}`;
+        const { brand_name: correctedBrand, generic_name: correctedGeneric, is_correction } = brand_mapping_correction;
+        await brandResolutionService.saveCorrection({
+          brandName: correctedBrand,
+          genericName: correctedGeneric,
+          resolutionSource: is_correction ? 'user_correction' : 'user_confirmed',
+          client
+        });
+      }
+
+      // Server-side validation of duration_value (clean positive integer check)
+      let cleanDurationValue = null;
+      if (duration_value !== undefined && duration_value !== null && duration_value !== '') {
+        const parsed = Number(duration_value);
+        if (Number.isInteger(parsed) && parsed > 0) {
+          cleanDurationValue = parsed;
         }
-        await client.query(
-          `INSERT INTO brand_generic_map (brand_name, generic_name, source, version, effective_date)
-           VALUES ($1, $2, 'user_confirmed', $3, NOW())
-           ON CONFLICT (brand_name, version) DO NOTHING`,
-          [correctedBrand, correctedGeneric, nextVersion]
-        );
+      }
+      
+      const cleanIsLifetime = !!is_lifetime;
+      const cleanDurationUnit = duration_unit || null;
+
+      // Compute course_end_date using calendar-correct logic
+      const addedDate = added_at ? new Date(added_at) : new Date();
+      const courseEndDate = computeCourseEndDate(addedDate, cleanDurationValue, cleanDurationUnit, cleanIsLifetime);
+
+      // Deterministic fallback: if generic_name wasn't extracted, look it up in brand_generic_map (Phase 5 Architectural Rule)
+      let fallbackGeneric = generic_name;
+      if (!fallbackGeneric && brand_name) {
+        const cacheRow = await brandResolutionService.queryCache(brand_name);
+        if (cacheRow && cacheRow.resolution_status === 'resolved') {
+          fallbackGeneric = cacheRow.generic_name;
+        }
       }
 
-      // Compute course_end_date if duration_text is provided
-      let courseEndDate = null;
-      if (duration_text) {
-        courseEndDate = computeCourseEndDate(new Date(), duration_text);
-      }
-
-      const resolvedGeneric = generic_name || (brand_mapping_correction && brand_mapping_correction.generic_name) || null;
+      const resolvedGeneric = fallbackGeneric || (brand_mapping_correction && brand_mapping_correction.generic_name) || null;
       let finalResolutionStatus = resolvedGeneric ? 'resolved' : 'generic_unresolved';
       if (resolution_status) {
         finalResolutionStatus = resolution_status;
@@ -158,108 +186,25 @@ router.post('/medicines', authenticateUser, enforcePatientAccess('full_view'), e
 
       // Save the medicine
       const result = await client.query(
-        `INSERT INTO medicines (patient_id, brand_name, generic_name, dosage, frequency, duration_text, course_end_date, resolution_status, status, visit_id, added_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active', $9, $10)
+        `INSERT INTO medicines (patient_id, brand_name, generic_name, dosage, frequency, duration_text, course_end_date, resolution_status, status, visit_id, added_at, duration_value, duration_unit, is_lifetime)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active', $9, $10, $11, $12, $13)
          RETURNING *`,
-        [patient_id, brand_name, resolvedGeneric, dosage, frequency, duration_text || null, courseEndDate, finalResolutionStatus, visit_id || null, added_at ? new Date(added_at) : new Date()]
+        [patient_id, brand_name, resolvedGeneric, dosage, frequency, duration_text || null, courseEndDate, finalResolutionStatus, visit_id || null, addedDate, cleanDurationValue, cleanDurationUnit, cleanIsLifetime]
       );
       const newMed = result.rows[0];
 
-      // Perform interaction check
-      let flaggedInteractions = [];
-      if (resolvedGeneric && existingGenerics.length > 0) {
-        const { checkInteractions } = require('../utils/interactionEngine');
-        flaggedInteractions = await checkInteractions(resolvedGeneric, existingGenerics);
-      }
-
-      // Save flagged interactions and send emails
-      if (flaggedInteractions.length > 0) {
-        for (const interaction of flaggedInteractions) {
-          // Identify which generic name is the existing one
-          const existingGenName = [interaction.generic_a.toLowerCase(), interaction.generic_b.toLowerCase()]
-            .find(g => g !== resolvedGeneric.toLowerCase());
-
-          const conflictingMed = existingMeds.find(m => m.generic_name && m.generic_name.toLowerCase() === existingGenName);
-          if (conflictingMed) {
-            await client.query(
-              `INSERT INTO interaction_flags (patient_id, new_medicine_id, existing_medicine_id, kb_entry_id, severity, confidence, status)
-               VALUES ($1, $2, $3, $4, $5, 1.0, 'shown')`,
-              [patient_id, newMed.id, conflictingMed.id, interaction.id, interaction.severity]
-            );
-          }
-        }
-      }
-
-      // Trigger LLM agent research in the background (asynchronous, fire-and-forget)
-      if (resolvedGeneric && existingMeds.length > 0) {
-        (async () => {
-          const { pool } = require('../config/db');
-          let bgClient;
-          try {
-            bgClient = await pool.connect();
-            for (const conflictingMed of existingMeds) {
-              if (!conflictingMed.generic_name) continue;
-              
-              const alreadyFlagged = flaggedInteractions.some(f => 
-                (f.generic_a.toLowerCase() === resolvedGeneric.toLowerCase() && f.generic_b.toLowerCase() === conflictingMed.generic_name.toLowerCase()) ||
-                (f.generic_b.toLowerCase() === resolvedGeneric.toLowerCase() && f.generic_a.toLowerCase() === conflictingMed.generic_name.toLowerCase())
-              );
-              
-              if (!alreadyFlagged) {
-                try {
-                  logger.info('AGENT_RESEARCH_TRIGGER_BG', `Triggering background LLM research agent for ${resolvedGeneric} and ${conflictingMed.generic_name}`);
-                  const ms2Res = await axios.post(`${MS2_BASE_URL}/api/research-interaction`, {
-                    generic_a: resolvedGeneric,
-                    generic_b: conflictingMed.generic_name
-                  }, { timeout: 45000 });
-                  
-                  if (ms2Res.data && ms2Res.data.success) {
-                    const researchResult = ms2Res.data.data;
-                    const explanation = researchResult.explanation || '';
-                    
-                    const lowercaseExp = explanation.toLowerCase();
-                    const isNoInteraction = lowercaseExp.includes("no significant interaction") || 
-                                            lowercaseExp.includes("no known interaction") || 
-                                            (lowercaseExp.includes("no interaction") && lowercaseExp.includes("safe"));
-                    
-                    if (explanation && !isNoInteraction) {
-                      const sorted = [resolvedGeneric.toLowerCase(), conflictingMed.generic_name.toLowerCase()].sort();
-                      const kbRes = await bgClient.query(
-                        `INSERT INTO interaction_kb (generic_a, generic_b, severity, explanation, source, version)
-                         VALUES ($1, $2, 'monitor_closely', $3, 'Groq Research Agent', 'v1')
-                         RETURNING id`,
-                        [sorted[0], sorted[1], explanation]
-                      );
-                      const kbEntryId = kbRes.rows[0].id;
-                      
-                      await bgClient.query(
-                        `INSERT INTO interaction_flags (patient_id, new_medicine_id, existing_medicine_id, kb_entry_id, severity, confidence, status)
-                         VALUES ($1, $2, $3, $4, 'monitor_closely', 1.0, 'shown')`,
-                        [patient_id, newMed.id, conflictingMed.id, kbEntryId]
-                      );
-                      logger.info('AGENT_ALERT_CREATED_BG', `Researched and created custom interaction flag in background for ${resolvedGeneric} and ${conflictingMed.generic_name}`);
-                    }
-                  }
-                } catch (agentErr) {
-                  logger.error('AGENT_RESEARCH_FAILED_BG', `Background research failed: ${agentErr.message}`);
-                }
-              }
-            }
-          } catch (connErr) {
-            logger.error('BG_DB_CONNECTION_FAILED', `Failed to open connection for background research: ${connErr.message}`);
-          } finally {
-            if (bgClient) bgClient.release();
-          }
-        })();
-      }
+      // Process interactions (RAG + db flags)
+      const { processInteractions } = require('../services/interactionService');
+      const flaggedInteractions = await processInteractions(patient_id, newMed, resolvedGeneric, existingMeds, client);
 
       await client.query('COMMIT');
 
       // === Side effects run AFTER successful COMMIT ===
-
       // Send alert emails outside the transaction
       if (flaggedInteractions.length > 0) {
         const { sendEmail } = require('../utils/email');
+        const { buildInteractionAlertEmail } = require('../templates/interactionAlertEmail');
+        
         const patientEmailRes = await query("SELECT email, name FROM users WHERE id = $1", [patient_id]);
         const patient = patientEmailRes.rows[0];
 
@@ -271,27 +216,13 @@ router.post('/medicines', authenticateUser, enforcePatientAccess('full_view'), e
         );
         const caregivers = caregiversRes.rows;
 
-        // Send alert emails
-        const alertSubject = `🛡️ MedGuard Safety Alert: Drug Interaction Flagged`;
-        const alertBody = `Hello,
-
-A drug interaction has been flagged in your MedGuard profile.
-
-Details:
-- New Medicine: ${newMed.brand_name} (${resolvedGeneric})
-- Flagged Interactions:
-${flaggedInteractions.map(i => `  * Conflicting drugs: ${i.generic_a} & ${i.generic_b} (Severity: ${i.severity.replace('_', ' ').toUpperCase()})\n    Explanation: ${i.explanation}`).join('\n')}
-
-Please review your dashboard and discuss these details with your doctor.
-
-Best,
-The MedGuard Team`;
+        const { subject, body } = buildInteractionAlertEmail(newMed, resolvedGeneric, flaggedInteractions);
 
         if (patient) {
-          await sendEmail({ to: patient.email, subject: alertSubject, body: alertBody });
+          await sendEmail({ to: patient.email, subject, body });
         }
         for (const cg of caregivers) {
-          await sendEmail({ to: cg.email, subject: alertSubject, body: alertBody });
+          await sendEmail({ to: cg.email, subject, body });
         }
       }
 
@@ -731,47 +662,88 @@ router.post('/medicines/batch', authenticateUser, enforcePatientAccess('full_vie
       const allFlaggedInteractions = [];
 
       for (const med of medicines) {
-        const { brand_name, generic_name, dosage, frequency, duration_text, brand_mapping_correction, resolution_status, added_at, source_photo_id } = med;
+        const { 
+          brand_name, 
+          generic_name, 
+          dosage, 
+          frequency, 
+          duration_text, 
+          duration_value, 
+          duration_unit, 
+          is_lifetime, 
+          brand_mapping_correction, 
+          resolution_status, 
+          added_at, 
+          source_photo_id 
+        } = med;
 
         // If user submitted a correction to brand generic map
         if (brand_mapping_correction) {
-          const { brand_name: correctedBrand, generic_name: correctedGeneric } = brand_mapping_correction;
-          const versionResult = await client.query(
-            'SELECT version FROM brand_generic_map WHERE brand_name = $1 ORDER BY effective_date DESC LIMIT 1',
-            [correctedBrand]
-          );
-          let nextVersion = 'v1';
-          if (versionResult.rows.length > 0) {
-            const currentVersion = versionResult.rows[0].version;
-            const currentNum = parseInt(currentVersion.replace('v', ''), 10) || 1;
-            nextVersion = `v${currentNum + 1}`;
+          const { brand_name: correctedBrand, generic_name: correctedGeneric, is_correction } = brand_mapping_correction;
+          await brandResolutionService.saveCorrection({
+            brandName: correctedBrand,
+            genericName: correctedGeneric,
+            resolutionSource: is_correction ? 'user_correction' : 'user_confirmed',
+            client
+          });
+        }
+
+        // Server-side validation of duration_value (clean positive integer check)
+        let cleanDurationValue = null;
+        if (duration_value !== undefined && duration_value !== null && duration_value !== '') {
+          const parsed = Number(duration_value);
+          if (Number.isInteger(parsed) && parsed > 0) {
+            cleanDurationValue = parsed;
           }
-          await client.query(
-            `INSERT INTO brand_generic_map (brand_name, generic_name, source, version, effective_date)
-             VALUES ($1, $2, 'user_confirmed', $3, NOW())
-             ON CONFLICT (brand_name, version) DO NOTHING`,
-            [correctedBrand, correctedGeneric, nextVersion]
-          );
+        }
+        
+        const cleanIsLifetime = !!is_lifetime;
+        const cleanDurationUnit = duration_unit || null;
+
+        // Compute course_end_date using calendar-correct logic
+        const addedDate = added_at ? new Date(added_at) : new Date();
+        const courseEndDate = computeCourseEndDate(addedDate, cleanDurationValue, cleanDurationUnit, cleanIsLifetime);
+
+        // Deterministic fallback: if generic_name wasn't extracted, look it up in brand_generic_map (Phase 5 Architectural Rule)
+        let fallbackGeneric = generic_name;
+        if (!fallbackGeneric && brand_name) {
+          const cacheRow = await brandResolutionService.queryCache(brand_name);
+          if (cacheRow && cacheRow.resolution_status === 'resolved') {
+            fallbackGeneric = cacheRow.generic_name;
+          }
         }
 
-        // Compute course_end_date if duration_text is provided
-        let courseEndDate = null;
-        if (duration_text) {
-          courseEndDate = computeCourseEndDate(new Date(), duration_text);
-        }
-
-        const resolvedGeneric = generic_name || (brand_mapping_correction && brand_mapping_correction.generic_name) || null;
+        const resolvedGeneric = fallbackGeneric || (brand_mapping_correction && brand_mapping_correction.generic_name) || null;
         let finalResolutionStatus = resolvedGeneric ? 'resolved' : 'generic_unresolved';
         if (resolution_status) {
           finalResolutionStatus = resolution_status;
         }
 
+        // Diagnostic log to verify parameter counts
+        const queryParams = [
+          patient_id,
+          brand_name,
+          resolvedGeneric,
+          dosage,
+          frequency,
+          duration_text || null,
+          courseEndDate,
+          finalResolutionStatus,
+          visit_id || null,
+          addedDate,
+          source_photo_id || null,
+          cleanDurationValue,
+          cleanDurationUnit,
+          cleanIsLifetime
+        ];
+        console.log(`[SQL DIAGNOSTIC] Placeholder count: 14, Parameter array length: ${queryParams.length}`);
+        
         // Save the medicine
         const result = await client.query(
-          `INSERT INTO medicines (patient_id, brand_name, generic_name, dosage, frequency, duration_text, course_end_date, resolution_status, status, visit_id, added_at, source_photo_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active', $9, $10, $11)
+          `INSERT INTO medicines (patient_id, brand_name, generic_name, dosage, frequency, duration_text, course_end_date, resolution_status, status, visit_id, added_at, source_photo_id, duration_value, duration_unit, is_lifetime)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active', $9, $10, $11, $12, $13, $14)
            RETURNING *`,
-          [patient_id, brand_name, resolvedGeneric, dosage, frequency, duration_text || null, courseEndDate, finalResolutionStatus, visit_id || null, added_at ? new Date(added_at) : new Date(), source_photo_id || null]
+          queryParams
         );
         const newMed = result.rows[0];
         savedMedicines.push(newMed);
@@ -964,6 +936,69 @@ router.get('/check-interaction', async (req, res, next) => {
       interaction: dbRes.rows[0] || null
     });
   } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/medicines/resolve-brand', authenticateUser, sanitizeInput, async (req, res, next) => {
+  try {
+    const { brand_name } = req.body;
+    if (!brand_name) {
+      return res.status(400).json({ success: false, error: 'brand_name is required.' });
+    }
+
+    const result = await brandResolutionService.resolveBrand(brand_name);
+    return res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/medicines/batch-delete
+ * Deletes multiple medicines in a single transaction.
+ */
+router.post('/medicines/batch-delete', authenticateUser, enforcePatientAccess('full_view'), async (req, res, next) => {
+  const { ids, patient_id } = req.body;
+
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'BAD_REQUEST', message: 'ids must be a non-empty array.' },
+    });
+  }
+
+  try {
+    const client = await require('../config/db').pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Delete the medicines (Postgres handles FK cascades for adherence_logs and interaction_flags automatically)
+      const result = await client.query(
+        `DELETE FROM medicines WHERE id = ANY($1) AND patient_id = $2 RETURNING *`,
+        [ids, patient_id]
+      );
+
+      await client.query('COMMIT');
+
+      logger.audit('MEDICINES_BATCH_DELETED', `Deleted ${result.rowCount} medicines for patient ${patient_id}`, {
+        patientId: patient_id,
+        deletedCount: result.rowCount,
+      });
+
+      res.json({
+        success: true,
+        message: `Successfully deleted ${result.rowCount} medicines.`,
+        data: result.rows,
+      });
+    } catch (dbErr) {
+      await client.query('ROLLBACK');
+      throw dbErr;
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    logger.error('BATCH_DELETE_MEDICINES_FAILED', `Failed to batch delete medicines: ${err.message}`);
     next(err);
   }
 });

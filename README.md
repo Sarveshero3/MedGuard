@@ -20,25 +20,15 @@ Here is a visual walk-through of MedGuard's premium clinical interface:
 
 ---
 
-## 🎯 What It Does
-
-1. **AI Prescription Extraction & Safety**: Upload a prescription photo ➜ AI extracts medicine details ➜ resolves Indian brand names to generics ➜ checks interactions against a curated knowledge base ➜ alerts patient + caregiver in plain language.
-2. **Real-Time Asynchronous Pipeline**: Uploads are processed asynchronously via a BullMQ worker queue with real-time progress updates streamed to the frontend via Server-Sent Events (SSE).
-3. **MFA Login & Security**: Multi-factor authentication is enforced at login. Invalid codes can be re-sent directly without resetting forms.
-4. **Caregiver OTP Linking**: Single-use caregiver link codes bind caregivers and patients securely.
-5. **Visit Preparation**: Upload lab reports ➜ track trends over time (elevation check on HbA1c/TSH) ➜ generate briefs with doctor questions.
-
----
-
 ## 🏗️ Architecture & Ports
 
 | Service | Technology Stack | Default Port | Role |
 |:---|:---|:---|:---|
 | **ms1-core-api** | Express.js + pg + BullMQ | `4000` | Auth, DB connection, deterministic logic, async queues |
-| **ms2-agent-service** | FastAPI + LangGraph | `8000` | Vision LLM extraction, brand resolution, brief generation |
+| **ms2-agent-service** | Python FastAPI + LangGraph | `8000` | Vision LLM extraction, brand resolution, brief generation |
 | **frontend** | React + Vite + Vanilla CSS | `5173` | Patient & Caregiver web portal |
 | **PostgreSQL** | PostgreSQL 16 | `5432` | System of record |
-| **NGINX** | nginx:alpine | `80` | Reverse proxy and SSL termination |
+| **Redis** | Redis 7 | `6379` | Queue message broker |
 
 ---
 
@@ -46,21 +36,17 @@ Here is a visual walk-through of MedGuard's premium clinical interface:
 
 ### Prerequisites
 - [Docker](https://docs.docker.com/get-docker/) & [Docker Compose](https://docs.docker.com/compose/install/)
-- [Node.js 20+](https://nodejs.org/) (for local development)
+- [Node.js 20+](https://nodejs.org/) & [Python 3.11+](https://www.python.org/) (for local development)
 
 ### Boot Services with Docker
 ```bash
-# 1. Clone the repository
-git clone https://github.com/Sarveshero3/MedGuard.git
-cd MedGuard
-
-# 2. Copy environment template
+# 1. Copy environment template
 cp .env.example .env
 
-# 3. Boot all services
+# 2. Boot all services
 docker-compose up --build
 ```
-Once booted, the reverse proxy exposes the app at `http://localhost`.
+Once booted, the app runs at `http://localhost`.
 
 ### Run Services Locally for Development
 1. **ms1 — Express Backend**:
@@ -80,29 +66,46 @@ Once booted, the reverse proxy exposes the app at `http://localhost`.
 
 ---
 
-## 📁 Project Structure
+## 🌐 Production Deployment Guide
 
-```
-MedGuard/
-├── ms1-core-api/          # Express.js backend & BullMQ worker
-├── ms2-agent-service/     # FastAPI + LangGraph assessment graphs
-├── frontend/              # React + Vite client (high-contrast inputs)
-├── infra/
-│   ├── nginx/             # NGINX reverse proxy configs
-│   └── db/                # PostgreSQL schemas
-├── docs/                  # Project specifications & screenshots
-└── docker-compose.yml     # Container orchestration
-```
+As per the Milestone guidelines, the system is designed to deploy on **Vercel** (frontend SPA) and **AWS** (backends).
 
----
+### 1. Frontend (Vercel)
+Deploy the `frontend/` folder directly to Vercel. 
+- **Vercel Client Routing**: Vite React Router requires rewrites to map all page requests back to `index.html`. We configure this using [vercel.json](frontend/vercel.json):
+  ```json
+  {
+    "rewrites": [
+      { "source": "/api/:path*", "destination": "http://<EC2_PUBLIC_IP>:4000/api/:path*" },
+      { "source": "/(.*)", "destination": "/index.html" }
+    ]
+  }
+  ```
+  Replace `<EC2_PUBLIC_IP>` with your EC2 public IPv4 address.
 
-## 📚 Technical Documentation
+### 2. Backends & Queue (AWS EC2)
+Launch a standard Ubuntu `t3.micro` EC2 instance to run the backend components:
+- Install Docker and Docker Compose.
+- Spin up the containers for `ms1-core-api`, `ms2-agent-service`, and `Redis` on the EC2 instance using Docker Compose.
+- Security Groups: Configure the EC2 instance security group to open port `80` (NGINX) publicly, while keeping ports `4000`, `8000`, and `6379` closed.
 
-- [`docs/prd.md`](docs/prd.md) — Product Requirements Document
-- [`docs/techspec.md`](docs/techspec.md) — Architecture & API specs
-- [`docs/auth.md`](docs/auth.md) — Security & MFA definitions
-- [`docs/schema.md`](docs/schema.md) — Database design & structures
-- [`docs/lessons.md`](docs/lessons.md) — Key design learnings & reviews
+### 3. Database (AWS RDS)
+Persist data using a managed **AWS RDS PostgreSQL** instance:
+- Set up a PostgreSQL 16 database on RDS.
+- Configure security groups on the RDS instance to only accept incoming connections from the EC2 instance's private IP (protecting against IDOR/unauthorized access).
+- Inject the connection string as `DATABASE_URL` in the `.env` on EC2.
+
+### 4. Upload Storage (AWS S3)
+To ensure cost efficiency and clinical compliance:
+- Configure an **AWS S3 Bucket** to store uploaded files.
+- Enable **Intelligent-Tiering** for active patient files, which automatically transitions files to cheaper tiers after periods of inactivity.
+- Configure a lifecycle policy to move files older than 90 days to **Glacier Deep Archive** for long-term storage.
+
+### 5. Email Dispatch (AWS SES)
+Configure **AWS SES** (Simple Email Service) to send OTP codes, verification links, and safety alerts:
+- Verify your domain in AWS Route 53 with SPF, DKIM, and DMARC settings.
+- Configure the SES credentials in `.env` for production email dispatch.
+- Verification and password-reset links fallback to mock logs in development/testing modes.
 
 ---
 
@@ -112,8 +115,3 @@ MedGuard/
 - **IDOR Protection** validating patient ownership records before read/write.
 - **Autofill Contrast Correction** fixing low-contrast blurred text in Chrome/Edge browsers.
 - **Rate limiting** and sanitization to prevent injection and brute-force access.
-
----
-
-## 📜 License
-[MIT](LICENSE)

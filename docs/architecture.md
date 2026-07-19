@@ -1,316 +1,100 @@
-# MedGuard System Architecture
+# MedGuard System Architecture & Deployment Guide
 
-This document defines the production architecture for MedGuard's microservices platform.
+This document defines the system architecture, network topologies, security boundaries, and production deployment configurations for MedGuard.
 
 ---
 
-## 1. Architecture Overview
+## 1. System Architecture
 
 ```mermaid
 graph TB
-    subgraph "Client Layer"
-        Browser["React SPA<br/>(Vite)"]
+    subgraph "Frontend Layer (Vercel)"
+        Browser["React SPA (Vite)<br/>vercel.json routing"]
     end
 
-    subgraph "Network Boundary"
-        NGINX["NGINX<br/>Reverse Proxy<br/>SSL/TLS Termination"]
+    subgraph "AWS EC2 Instance (Network Boundary)"
+        NGINX["NGINX Reverse Proxy<br/>Port 80 (routing/TLS)"]
+        MS1["ms1-core-api (Express.js)<br/>Port 4000"]
+        MS2["ms2-agent-service (FastAPI)<br/>Port 8000"]
+        Redis["Redis (BullMQ Broker)<br/>Port 6379"]
     end
 
-    subgraph "Application Layer"
-        MS1["ms1-core-api<br/>Express.js<br/>Port 4000"]
-        MS2["ms2-agent-service<br/>FastAPI + LangGraph<br/>Port 8000"]
+    subgraph "Data Layer (AWS Managed Services)"
+        RDS[("AWS RDS (PostgreSQL 16)<br/>System of Record")]
+        S3["AWS S3 Bucket<br/>(Intelligent-Tiering & Glacier)"]
     end
 
-    subgraph "Data Layer"
-        PG[("PostgreSQL 16<br/>System of Record")]
-        S3["File Storage<br/>(S3 / Local Disk)"]
-    end
-
-    subgraph "External Services"
-        SES["AWS SES<br/>Email"]
-        LLM["OpenAI Vision API<br/>GPT-4o"]
-    end
-
-    subgraph "Observability"
-        OTEL["OpenTelemetry<br/>Collector"]
-        JAEGER["Jaeger<br/>Trace Viewer"]
+    subgraph "External Integration Services"
+        SES["AWS SES (Simple Email Service)"]
+        Groq["Groq Vision / LLM API"]
     end
 
     Browser -->|"HTTPS"| NGINX
-    NGINX -->|"/ (frontend)"| Browser
     NGINX -->|"/api/*"| MS1
     MS1 -->|"Internal HTTP"| MS2
-    MS1 --> PG
+    MS1 --> RDS
     MS1 --> S3
     MS1 --> SES
-    MS2 --> LLM
-    MS1 -.-> OTEL
-    MS2 -.-> OTEL
-    OTEL --> JAEGER
-
-    style MS2 fill:#2d1b69,stroke:#7c3aed,color:#fff
-    style MS1 fill:#1e3a5f,stroke:#3b82f6,color:#fff
-    style PG fill:#0d3320,stroke:#22c55e,color:#fff
-    style NGINX fill:#4a3728,stroke:#f59e0b,color:#fff
+    MS2 --> Groq
 ```
 
 ---
 
-## 2. Service Responsibilities
+## 2. Microservice Descriptions
 
-### ms1-core-api (Express.js)
-> **Owns**: Database, Auth, Deterministic Logic, Side-effects
+### ms1-core-api (Node.js + Express)
+- **Path**: `ms1-core-api/`
+- **Role**: Coordinates authentication, stores user/caregiver profiles, manages clinical consent, stores medication lists and lab values, runs the deterministic drug interaction lookup engine, and dispatches background tasks.
+- **Port**: `4000` (Internal access only; external requests routed via NGINX proxy `/api`).
 
-| Responsibility | Details |
-|:---|:---|
-| Authentication | JWT login/refresh with `patient`, `caregiver` roles |
-| Medicine lifecycle | CRUD on `medicines` table, status management |
-| Interaction engine | Deterministic lookup against `interaction_kb` — pure, tested module |
-| Caregiver flows | Invitation, linking, permission tiers |
-| Email dispatch | AWS SES for alerts, confirmations, weekly summaries |
-| Calendar API | Merged view of medicine course end-dates and user-added appointments |
-| DPDP compliance | Consent logging, data deletion |
-| File storage | Upload handling (multer), photo ID management |
-
-### ms2-agent-service (FastAPI + LangGraph)
-> **Owns**: AI Extraction, Natural Language Generation
-
-| Responsibility | Details |
-|:---|:---|
-| Prescription Assessment Graph | Vision extraction → confidence scoring → follow-up question |
-| Brand-to-Generic Resolution | Mapping lookup against DB data (passed by ms1) |
-| Lab Report Extraction Graph | Parse lab values from report photos |
-| Visit-Brief Writer Graph | Generate plain-language brief with suggested questions |
-
-> [!IMPORTANT]
-> ms2 is **strictly internal**. It never writes to the database, sends emails, or performs any side-effects. It receives data, processes it, and returns structured JSON to ms1.
+### ms2-agent-service (Python + FastAPI)
+- **Path**: `ms2-agent-service/`
+- **Role**: Executes LangGraph AI workflows for vision-based prescription OCR, generic-name resolution, doctor-visit brief writing, lab report parsing, and patient Q&A.
+- **Port**: `8000` (Strictly internal; accessible only by `ms1-core-api`).
 
 ---
 
-## 3. Network Topology
+## 3. Production Deployment Guide (AWS & Vercel)
 
-```mermaid
-graph LR
-    subgraph "Public (frontend-net)"
-        NGINX
-        FE["Frontend :3000"]
-        MS1["ms1 :4000"]
-    end
+As per the Milestone guidelines, the production deployment is split between Vercel (for frontend) and AWS (for backend services).
 
-    subgraph "Internal (backend)"
-        MS1b["ms1 :4000"]
-        MS2["ms2 :8000"]
-        PG["PostgreSQL :5432"]
-    end
+### A. Frontend Deployment (Vercel)
+The React single-page app (SPA) is deployed on **Vercel** for optimal performance, edge caching, and scalability.
+- **Client-Side Routing**: Vite React Router requires all paths to route through `index.html`. We configure this using [vercel.json](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/frontend/vercel.json):
+  ```json
+  {
+    "rewrites": [
+      { "source": "/api/:path*", "destination": "http://<EC2_PUBLIC_IP>:4000/api/:path*" },
+      { "source": "/(.*)", "destination": "/index.html" }
+    ]
+  }
+  ```
+- **Axios Configuration**: The HTTP client in [api.js](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/frontend/src/services/api.js) resolves base paths to `/api`, which Vercel proxies directly to the AWS EC2 instance.
 
-    Internet -->|":80/:443"| NGINX
-    NGINX --> FE
-    NGINX --> MS1
-    MS1 --- MS1b
-    MS1b --> MS2
-    MS1b --> PG
+### B. Backend Deployment (AWS EC2 & RDS)
+The backend services run on an **AWS EC2** instance, with data persisted in **AWS RDS**.
+1. **AWS EC2 (Virtual Server)**:
+   - Launches a standard Ubuntu Server on an EC2 instance (e.g., `t3.micro` or `t3.small` to stay within free tier).
+   - Installs Docker and Docker Compose to containerize `ms1-core-api`, `ms2-agent-service`, and `Redis`.
+   - Security Groups block public access to ports `4000`, `8000`, and `6379`. Only port `80` (NGINX) is open to the public.
+2. **AWS RDS (PostgreSQL Database)**:
+   - Spawns a managed PostgreSQL 16 instance.
+   - Enforces RDS security groups to accept traffic exclusively from the EC2 instance's private IP.
+   - The connection URI is injected as `DATABASE_URL` into the EC2 environment.
 
-    style MS2 fill:#2d1b69,stroke:#7c3aed,color:#fff
-    style PG fill:#0d3320,stroke:#22c55e,color:#fff
-```
+### C. Object Storage (AWS S3)
+To minimize operational costs while satisfying clinical audit guidelines, document uploads (prescriptions and lab reports) are stored in an **AWS S3 Bucket**:
+- **Intelligent-Tiering**: Used for active patient uploads. Automatically moves files between frequent and infrequent access tiers based on usage patterns to reduce access costs.
+- **Glacier Deep Archive**: A lifecycle policy automatically transitions files older than 90 days to Glacier. This is ideal for archiving historical clinical documents that are rarely accessed but must be retained for compliance.
 
-- **frontend-net**: Bridge network connecting NGINX, frontend, and ms1
-- **backend**: Internal bridge network (no external access) connecting ms1, ms2, and PostgreSQL
-- ms2 and PostgreSQL are **never directly reachable** from the internet
+### D. Email Dispatch (AWS SES)
+All transactional emails (email verification codes, multi-factor authentication codes, caregiver invitations, and critical drug-drug interaction alerts) are dispatched via **AWS SES**:
+- The domain is verified in AWS Route 53 with SPF, DKIM, and DMARC records to prevent spoofing.
+- The `ms1-core-api` utilizes the `@aws-sdk/client-ses` SDK to send emails via SES.
 
----
-
-## 4. Data Flow — Medicine Add
-
-```mermaid
-sequenceDiagram
-    participant U as Patient (Browser)
-    participant N as NGINX
-    participant M1 as ms1-core-api
-    participant M2 as ms2-agent-service
-    participant DB as PostgreSQL
-    participant E as AWS SES
-
-    U->>N: POST /api/medicines/upload (photo)
-    N->>M1: Forward request
-    M1->>M1: Store photo (disk/S3)
-    M1->>M2: POST /api/extract/prescription (photo)
-    M2->>M2: Vision LLM extraction
-    M2->>M2: Brand-to-generic resolution
-
-    alt Low confidence (<85%) / Unresolved brand
-        M2-->>M1: needs_follow_up = true / resolution_status = generic_unresolved
-        M1-->>U: Follow-up question / Inline correction prompt
-        U->>M1: User answer / Brand correction
-        alt Brand name corrected
-            M1->>DB: INSERT INTO brand_generic_map (user_confirmed)
-        end
-    end
-
-    M2-->>M1: Structured extraction result
-    M1->>DB: INSERT INTO medicines
-    M1->>M1: Deterministic interaction check
-    M1->>DB: SELECT active medicines + interaction_kb
-
-    alt Interaction found
-        M1->>DB: INSERT INTO interaction_flags
-        M1->>E: Send alert email (patient + caregiver)
-        M1-->>U: Alert with plain-language explanation
-    end
-
-    M1-->>U: Success response
-```
-
----
-
-## 5. Database Schema Overview
-
-See [schema.md](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/docs/schema.md) for full table definitions.
-
-```mermaid
-erDiagram
-    users ||--o{ medicines : has
-    users ||--o{ caregiver_links : "patient/caregiver"
-    users ||--o{ lab_reports : uploads
-    users ||--o{ visits : schedules
-    users ||--o{ consent_records : grants
-
-    medicines ||--o{ interaction_flags : triggers
-    interaction_kb ||--o{ interaction_flags : references
-
-    lab_reports ||--o{ lab_values : contains
-    visits ||--o| briefs : generates
-
-    users {
-        uuid id PK
-        varchar name
-        varchar email
-        varchar password_hash
-        enum role
-    }
-
-    medicines {
-        uuid id PK
-        uuid patient_id FK
-        varchar brand_name
-        varchar generic_name
-        enum resolution_status
-        enum status
-    }
-
-    interaction_kb {
-        uuid id PK
-        varchar generic_a
-        varchar generic_b
-        enum severity
-        text explanation
-    }
-
-    interaction_flags {
-        uuid id PK
-        uuid patient_id FK
-        uuid new_medicine_id FK
-        uuid kb_entry_id FK
-        enum status
-    }
-```
-
----
-
-## 6. Security Boundaries
-
-| Control | Implementation |
-|:---|:---|
-| **Authentication** | Dual-token authentication: Short-lived access token (**15 minutes**, `JWT_ACCESS_TTL`) + rotated refresh token (**7 days**, `JWT_REFRESH_TTL`); bcrypt-12 password hashing; refresh tokens stored as SHA-256 hashes in `refresh_tokens` table. |
-| **Authorization (RBAC)** | `requireRoles()` middleware on every route; role-specific enforcement for patient and caregiver |
-| **IDOR protection** | `verifyPatientAccess()` + `enforcePatientAccess()` middleware on every data endpoint; ownership verified against DB before read/write/delete |
-| **Email verification** | `is_email_verified` tracked in DB; `enforceEmailVerified` middleware blocks medicine add, update, delete, and AI upload for unverified users |
-| **Password reset** | Crypto-random token with 1-hour expiry; generic response on forgot-password to prevent user enumeration |
-| **Rate limiting** | `express-rate-limit`: auth 5/15min, register 3/1hr, upload 5/10min, general API 100/15min |
-| **Input validation** | `security.js` middleware: body/query/param HTML-escaping, UUID format validation, multer file-type (JPEG/PNG only) and size (8MB) enforcement |
-| **Network isolation** | ms2 + PostgreSQL on internal Docker network; DB port bound to `127.0.0.1` only |
-| **Security headers** | NGINX: `X-Frame-Options`, `X-Content-Type-Options`, `X-XSS-Protection`, `Referrer-Policy`, `Content-Security-Policy`; HSTS ready for production |
-| **CORS lockdown** | ms2 CORS restricted to `ms1-core-api` origin only (not `*`) |
-| **Upload limits** | 8MB max (NGINX `client_max_body_size` + Express JSON limit + Multer `fileSize`) |
-| **Audit logging** | Structured JSON logger with automatic redaction of passwords, tokens, secrets; logs auth attempts, IDOR blocks, rate limit hits, unknown endpoints |
-| **Mock email gating** | Verification/reset token links logged to console ONLY when `NODE_ENV` is set to `development` or `test`; production path routes emails via AWS SES. |
-| **Append-only data** | `interaction_kb` and `brand_generic_map` have DB triggers preventing UPDATE/DELETE |
-| **Concurrency Locking** | Manual and confirmed medicine additions run inside a PostgreSQL transaction (`BEGIN`/`COMMIT`/`ROLLBACK`) with a `SELECT ... FOR UPDATE` lock on the patient's existing medicines to prevent write races. |
-| **HTTPS** | Certbot SSL/TLS at NGINX (production); HSTS header ready to uncomment |
-
-### Restricted Actions for Unverified Accounts
-
-The following actions require `is_email_verified = true` (enforced server-side, not just UI):
-
-| Action | Endpoint | Middleware |
-|:---|:---|:---|
-| Add medicine manually | `POST /api/medicines` | `enforceEmailVerified` |
-| Update medicine | `PUT /api/medicines/:id` | `enforceEmailVerified` |
-| Delete medicine | `DELETE /api/medicines/:id` | `enforceEmailVerified` |
-| Upload prescription photo (AI extraction) | `POST /api/medicines/upload` | `enforceEmailVerified` |
-
-Unverified users **can** still: log in, view their dashboard, read existing medicines, read alerts, and manage caregiver links.
-
-### Known Limitations / TODOs
-
-| Item | Status |
-|:---|:---|
-| Email dispatch via AWS SES | Fully implemented via `@aws-sdk/client-ses` in production. Falls back to mock logs in development/test. |
-| Refresh token rotation | Fully implemented. Uses dual token system, secure DB hash tracking, `FOR UPDATE` lock on rotation, and shared Axios interceptor. |
-| Account lockout after N failures | Rate limiter blocks IP, but per-account lockout is not implemented. |
-| CSRF protection | Not applicable (stateless JWT auth, no cookies). |
-
----
-
-## 7. Observability
-
-| Component | Tool |
-|:---|:---|
-| Distributed tracing | OpenTelemetry SDK in ms1 + ms2 |
-| Trace visualization | Jaeger (self-hosted in docker-compose) |
-| Span attributes | `cost_per_check`, `confidence_score`, `model_name` |
-| Logging | morgan (ms1) + uvicorn (ms2) → stdout |
-
----
-
-## 8. Directory Structure
-
-```
-MedGuard/
-├── ms1-core-api/          # Express.js — auth, DB, deterministic logic
-│   ├── src/
-│   │   ├── config/        # DB pool, env loading
-│   │   ├── middleware/     # auth, errors, validation
-│   │   ├── routes/        # Express routers
-│   │   ├── services/      # Business logic modules
-│   │   ├── models/        # DB query helpers
-│   │   └── utils/         # Shared utilities
-│   ├── tests/
-│   └── Dockerfile
-│
-├── ms2-agent-service/     # FastAPI + LangGraph — AI extraction
-│   ├── app/
-│   │   ├── api/           # FastAPI routers
-│   │   ├── graphs/        # LangGraph graph definitions
-│   │   ├── services/      # Brand resolution, extraction
-│   │   └── schemas/       # Pydantic models
-│   ├── tests/
-│   └── Dockerfile
-│
-├── frontend/              # React + Vite
-│   ├── src/
-│   │   ├── pages/         # Route-level components
-│   │   ├── components/    # Reusable UI
-│   │   ├── context/       # Auth state
-│   │   └── services/      # API client
-│   └── Dockerfile
-│
-├── infra/
-│   ├── nginx/nginx.conf   # Reverse proxy
-│   └── db/init.sql        # PostgreSQL schema v1
-│
-├── docs/                  # Project documentation
-├── skills/                # Agent skills
-├── docker-compose.yml     # Full stack orchestration
-└── .github/workflows/     # CI pipeline
-```
+### E. Domain and DNS Routing
+- A custom domain is purchased (e.g., via Amazon Route 53, GoDaddy, or Namecheap).
+- **DNS Records**:
+  - `A Record` pointing `api.yourdomain.com` to the EC2 Public Elastic IP.
+  - `CNAME Record` pointing `www.yourdomain.com` to the Vercel deployment address.
+- **SSL Certificates**: Let's Encrypt certificates are provisioned on the EC2 instance using Certbot to terminate SSL at NGINX for HTTPS traffic, ensuring fully encrypted transits (TLS 1.3).

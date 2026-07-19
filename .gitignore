@@ -45,3 +45,16 @@ htmlcov/
 # Misc
 *.bak
 *.tmp
+
+# Custom gitignores for project cleanliness
+vertical_stepper_scroll.webp
+scratch/
+skills/
+screenshots/
+.playwright-mcp/
+test_*.py
+* - Copy.*
+* - Copy.*
+*.img
+*.png
+*.webp

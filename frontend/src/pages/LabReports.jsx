@@ -3,6 +3,21 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import api from '../services/api'
 import { Skeleton } from '../components/ui/skeleton'
+import { unescapeHTML } from '../lib/utils'
+
+const HEALTHY_RANGES = {
+  'HBA1C': { min: 0, max: 5.7, unit: '%', label: '< 5.7%' },
+  'CREATININE': { min: 0.5, max: 1.3, unit: 'mg/dL', label: '0.5 - 1.3 mg/dL' },
+  'POTASSIUM': { min: 3.5, max: 5.1, unit: 'mmol/L', label: '3.5 - 5.1 mmol/L' },
+  'BLOOD PRESSURE': { min: 90, max: 120, unit: 'mmHg', label: '90 - 120 mmHg' },
+  'PLATELET COUNT': { min: 150, max: 450, unit: '10³/μL', label: '150 - 450 10³/μL' },
+  'PLATELETS': { min: 150, max: 450, unit: '10³/μL', label: '150 - 450 10³/μL' },
+  'HEMOGLOBIN': { min: 12.0, max: 17.5, unit: 'g/dL', label: '12.0 - 17.5 g/dL' },
+  'TSH': { min: 0.4, max: 4.5, unit: 'mIU/L', label: '0.4 - 4.5 mIU/L' },
+  'LDL': { min: 0, max: 100, unit: 'mg/dL', label: '< 100 mg/dL' },
+  'HDL': { min: 40, max: 100, unit: 'mg/dL', label: '> 40 mg/dL' },
+  'FBS': { min: 70, max: 100, unit: 'mg/dL', label: '70 - 100 mg/dL' }
+}
 
 export default function LabReports() {
   const { user, loading: authLoading } = useAuth()
@@ -117,23 +132,49 @@ export default function LabReports() {
     if (diff > 0) {
       return {
         direction: 'up',
-        color: 'text-amber-600 bg-amber-50 border border-amber-200',
         icon: 'trending_up',
-        text: `Increased by ${pct}% (previous: ${prev.value} ${prev.unit})`
+        text: `Increased by ${pct}% (previous: ${prev.value} ${unescapeHTML(prev.unit)})`
       }
     } else if (diff < 0) {
       return {
         direction: 'down',
-        color: 'text-emerald-700 bg-emerald-50 border border-emerald-200',
         icon: 'trending_down',
-        text: `Decreased by ${Math.abs(pct)}% (previous: ${prev.value} ${prev.unit})`
+        text: `Decreased by ${Math.abs(pct)}% (previous: ${prev.value} ${unescapeHTML(prev.unit)})`
       }
     }
     return {
       direction: 'stable',
-      color: 'text-slate-600 bg-slate-50 border border-slate-200',
       icon: 'trending_flat',
       text: 'Stable'
+    }
+  }
+
+  // Determine status and styling based on clinical normal range
+  const getTestStatus = (testType, value, trend) => {
+    const key = testType.trim().toUpperCase()
+    const range = HEALTHY_RANGES[key]
+    const val = parseFloat(value)
+    
+    let isHealthy = true
+    if (range && !isNaN(val)) {
+      isHealthy = val >= range.min && val <= range.max
+    }
+
+    const trendText = trend ? ` — ${trend.text}` : ''
+    const rangeLabel = range ? ` (Normal: ${range.label})` : ''
+
+    if (isHealthy) {
+      return {
+        color: 'text-emerald-700 bg-emerald-50 border border-emerald-250',
+        icon: 'check_circle',
+        text: `Normal${rangeLabel}${trendText}`
+      }
+    } else {
+      return {
+        color: 'text-amber-700 bg-amber-50 border border-amber-250',
+        icon: 'warning',
+        text: `Outside healthy range${rangeLabel}${trendText}`
+      }
     }
   }
 
@@ -249,26 +290,29 @@ export default function LabReports() {
                           >
                             <div className="flex justify-between items-start mb-2">
                               <div>
-                                <h4 className="font-bold text-slate-800 text-lg">{val.test_type}</h4>
+                                <h4 className="font-bold text-slate-800 text-lg">{unescapeHTML(val.test_type)}</h4>
                                 {val.panel_name && (
                                   <span className="text-[10px] text-slate-400 font-semibold bg-white border border-slate-200/50 px-2 py-0.5 rounded">
-                                    {val.panel_name}
+                                    {unescapeHTML(val.panel_name)}
                                   </span>
                                 )}
                               </div>
                               <div className="text-right">
                                 <span className="font-sans text-2xl font-extrabold text-[#0f766e]">
-                                  {val.value} <span className="text-sm font-semibold text-slate-500">{val.unit}</span>
+                                  {val.value} <span className="text-sm font-semibold text-slate-500">{unescapeHTML(val.unit)}</span>
                                 </span>
                               </div>
                             </div>
 
-                            {trend && (
-                              <div className={`mt-3 flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold ${trend.color}`}>
-                                <span className="material-symbols-outlined text-sm">{trend.icon}</span>
-                                <span>{trend.text}</span>
-                              </div>
-                            )}
+                            {(() => {
+                              const status = getTestStatus(val.test_type, val.value, trend)
+                              return (
+                                <div className={`mt-3 flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold ${status.color}`}>
+                                  <span className="material-symbols-outlined text-sm">{status.icon}</span>
+                                  <span>{status.text}</span>
+                                </div>
+                              )
+                            })()}
                           </div>
                         );
                       })
@@ -295,10 +339,10 @@ export default function LabReports() {
             MedGuard
           </div>
           <div className="flex flex-wrap justify-center gap-6">
-            <Link to="/privacy" className="hover:text-[#0F766E] transition-colors">Privacy Policy</Link>
-            <a className="hover:text-[#0F766E] transition-colors" href="#" onClick={(e) => e.preventDefault()}>Terms of Service</a>
-            <a className="hover:text-[#0F766E] transition-colors" href="#" onClick={(e) => e.preventDefault()}>Clinical Guidelines</a>
-            <a className="hover:text-[#0F766E] transition-colors" href="#" onClick={(e) => e.preventDefault()}>Contact Support</a>
+            <Link to="/privacy-policy" className="hover:text-[#0F766E] transition-colors">Privacy Policy</Link>
+            <Link to="/terms" className="hover:text-[#0F766E] transition-colors">Terms of Service</Link>
+            <Link to="/clinical-guidelines" className="hover:text-[#0F766E] transition-colors">Clinical Guidelines</Link>
+            <Link to="/support" className="hover:text-[#0F766E] transition-colors">Contact Support</Link>
           </div>
           <div className="text-xs text-slate-400 mt-4 md:mt-0">
             © 2026 MedGuard AI. Clinical Excellence in Medication Safety.

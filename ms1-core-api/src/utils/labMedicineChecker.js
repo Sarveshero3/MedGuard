@@ -1,5 +1,6 @@
 const { query } = require('../config/db');
 const logger = require('./logger');
+const brandResolutionService = require('../services/brandResolutionService');
 
 // Helper function for case-insensitive trim check
 function LOWER(str) {
@@ -76,15 +77,9 @@ async function checkLabMedicineConflicts(patientId, labValueIds) {
         // Try fallback if primary returned no rules (useful if LLM output had HCl etc, check brand map)
         if (matchedRules.length === 0 && brandName) {
           // Look up brand in brand_generic_map to find canonical generic
-          const brandMapRes = await query(
-            `SELECT generic_name 
-             FROM brand_generic_map 
-             WHERE LOWER(brand_name) = LOWER($1) 
-             ORDER BY effective_date DESC LIMIT 1`,
-            [brandName.trim()]
-          );
-          if (brandMapRes.rows.length > 0) {
-            const canonicalGeneric = brandMapRes.rows[0].generic_name;
+          const cacheRow = await brandResolutionService.queryCache(brandName.trim());
+          if (cacheRow && cacheRow.resolution_status === 'resolved') {
+            const canonicalGeneric = cacheRow.generic_name;
             if (canonicalGeneric && LOWER(canonicalGeneric) !== LOWER(genericName || '')) {
               const rulesRes = await query(
                 `SELECT id, generic_name, test_type, condition, threshold, unit, severity, rationale
@@ -124,16 +119,25 @@ async function checkLabMedicineConflicts(patientId, labValueIds) {
           }
 
           if (conditionMet) {
-            // Save flagged conflict
-            const insertRes = await query(
-              `INSERT INTO lab_medicine_flags (patient_id, medicine_id, lab_value_id, rule_id, severity, status)
-               VALUES ($1, $2, $3, $4, $5, 'shown')
-               RETURNING *`,
-              [patientId, medicine.id, labValue.id, rule.id, rule.severity]
+            // Check if already exists to prevent duplicate flags
+            const existingFlag = await query(
+              `SELECT id FROM lab_medicine_flags 
+               WHERE patient_id = $1 AND medicine_id = $2 AND lab_value_id = $3 AND rule_id = $4`,
+              [patientId, medicine.id, labValue.id, rule.id]
             );
             
-            logger.info('LAB_MEDICINE_ALERT_CREATED', `Created safety alert for ${rule.generic_name} + ${testType} (${numericVal} ${labValue.unit})`);
-            flaggedConflicts.push(insertRes.rows[0]);
+            if (existingFlag.rows.length === 0) {
+              // Save flagged conflict
+              const insertRes = await query(
+                `INSERT INTO lab_medicine_flags (patient_id, medicine_id, lab_value_id, rule_id, severity, status)
+                 VALUES ($1, $2, $3, $4, $5, 'shown')
+                 RETURNING *`,
+                [patientId, medicine.id, labValue.id, rule.id, rule.severity]
+              );
+              
+              logger.info('LAB_MEDICINE_ALERT_CREATED', `Created safety alert for ${rule.generic_name} + ${testType} (${numericVal} ${labValue.unit})`);
+              flaggedConflicts.push(insertRes.rows[0]);
+            }
           }
         }
       }

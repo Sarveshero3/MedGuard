@@ -137,13 +137,6 @@ export function MgNavbar() {
           >
             Logout
           </button>
-          <div className="w-10 h-10 rounded-full bg-slate-100 overflow-hidden border border-slate-200 flex items-center justify-center">
-            <img 
-              alt="User profile" 
-              className="w-full h-full object-cover" 
-              src="https://lh3.googleusercontent.com/aida-public/AB6AXuDc1UtHH_KPWlO__6M1SXW4Af__3PQftJcB63NS-gU9ePpgYv2SqA9sS5S2UyRIHbvORljvPJ8m326fgEezBvhtsSZMKobEH2pLwSEWG66u8ISmyDo33roqneTxuX2Vo4aUTrx9lzxoJa62UtRBhDw6JYB5LVK0nbmgD9g13VjrZV20on1Fgz49N49dxJeZEZrFZSyFSw3n0I3Ook_Wk1d7OUdEYTEOWaKBfFvVn-BncGy6RJ0BjRx2"
-            />
-          </div>
         </div>
 
       </div>

@@ -38,31 +38,31 @@ def research_generic_interactions_node(state: CritiqueResearchState) -> Dict[str
         # If the ms1 API connection fails, continue to LLM research fallback
         pass
 
-    # 2. If not found in interaction_kb, research it via GLM-5.2 (orchestrator_model)
-    client = get_client(settings.orchestrator_model)
+    # 2. If not found in interaction_kb, research it via GLM-5.2 (disambiguation_model)
+    client = get_client(settings.disambiguation_model)
 
     prompt = f"""
     Research the drug-drug interaction between the generic molecules '{gen_a}' and '{gen_b}' and write a structured summary.
     
     You MUST format your output with EXACTLY these 4 sections in this exact order:
     
-    **Introduction**
-    Provide a 1-line maximum introduction.
+    Patient Summary:
+    Provide a comforting, reassuring, 1-2 sentence explanation of the concern and what the patient should do in plain, simple English (avoiding medical jargon or scary terms).
     
     **Mechanism of Interaction**
-    Provide a 1-2 lines maximum explanation of the interaction mechanism. Do not write a separate Pharmacokinetics/Pharmacodynamics section; fold any essential kinetics details into this section.
+    Provide a 1-2 lines maximum explanation of the interaction mechanism in simple, patient-friendly terms. Fold any essential kinetics details into this section.
     
     **Clinically Significant Interactions**
-    List the key interaction warnings in short bullet points with tight, concise phrasing (no full paragraphs).
+    List the key interaction warnings in short bullet points with tight, concise phrasing.
     
     **Side Effects and Contraindications**
-    List the key side effects and contraindications when taken together.
+    List the key side effects and contraindications when taken together in short, concise bullet points.
     
-    Do NOT include a "Summary and Recommendation" or "Pharmacokinetics and Pharmacodynamics" section.
+    Do NOT include any technical jargon, enzyme names (like CYP), or scary medical terms. Speak directly to the patient in a clear, comforting way.
     """
 
     response = client.invoke([
-        SystemMessage(content="You are a clinical pharmacologist. Research drug-drug interactions objectively based on scientific literature. Always use the specified 4 headers: **Introduction**, **Mechanism of Interaction**, **Clinically Significant Interactions**, and **Side Effects and Contraindications**."),
+        SystemMessage(content="You are a senior medical communicator. Research drug-drug interactions and explain them in clear, comforting, and layperson-friendly English for patients, avoiding scary terminology or jargon. Always use the specified 4 headers: Patient Summary:, **Mechanism of Interaction**, **Clinically Significant Interactions**, and **Side Effects and Contraindications**."),
         HumanMessage(content=prompt)
     ])
 
@@ -88,7 +88,7 @@ def critique_findings_node(state: CritiqueResearchState) -> Dict[str, Any]:
             "critique_iterations": iterations + 1
         }
 
-    client = get_client(settings.orchestrator_model)
+    client = get_client(settings.disambiguation_model)
 
     critique_prompt = f"""
     Analyze the following drug-drug interaction research finding between '{gen_a}' and '{gen_b}':
@@ -99,20 +99,20 @@ def critique_findings_node(state: CritiqueResearchState) -> Dict[str, Any]:
     Verify:
     1. Does it accurately identify the drug classes for both '{gen_a}' and '{gen_b}'?
     2. Did it miss any crucial synonyms or related warnings?
-    3. Is the explanation clinically precise and clear?
+    3. Is the explanation patient-friendly, comforting, and clear? Does it avoid technical jargon like enzyme names or scary medical terms?
     4. Does it strictly follow the requested structure:
-       - **Introduction** (1 line max)
-       - **Mechanism of Interaction** (1-2 lines max)
+       - Patient Summary: (1-2 sentences, plain reassuring English)
+       - **Mechanism of Interaction** (1-2 lines max, simple)
        - **Clinically Significant Interactions** (short concise bullet points)
-       - **Side Effects and Contraindications** (detailed)
+       - **Side Effects and Contraindications** (concise, non-alarmist)
        With NO other sections?
     
     If the findings are fully correct, accurate, and follow this structure exactly, respond with exactly: VALID.
-    If there are inaccuracies or formatting/structural violations, provide a revised explanation correcting these details.
+    If there are inaccuracies, technical jargon, formatting/structural violations, or alarmist terms, provide a revised explanation correcting these details.
     """
 
     response = client.invoke([
-        SystemMessage(content="You are a senior medical reviewer auditing drug safety descriptions. Correct any inaccuracies or missing drug-class/mechanism details. Ensure the output strictly follows the 4 specified headers and length limits."),
+        SystemMessage(content="You are a senior patient safety reviewer auditing drug interaction warnings. Ensure the description is written in a comforting, non-alarmist, plain English format for patients, with zero technical jargon. Ensure the output strictly follows the 4 specified headers and length limits."),
         HumanMessage(content=critique_prompt)
     ])
 
