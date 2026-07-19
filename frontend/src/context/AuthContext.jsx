@@ -7,6 +7,8 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [token, setToken] = useState(() => localStorage.getItem('medguard_token'))
   const [loading, setLoading] = useState(true)
+  const [linkedPatients, setLinkedPatients] = useState([])
+  const [activePatient, setActivePatient] = useState(null)
 
   useEffect(() => {
     if (token) {
@@ -25,9 +27,56 @@ export function AuthProvider({ children }) {
         localStorage.removeItem('medguard_refresh_token')
         setToken(null)
       }
+    } else {
+      setUser(null)
     }
     setLoading(false)
   }, [token])
+
+  // Fetch linked patients for caregivers
+  useEffect(() => {
+    if (!user) {
+      setLinkedPatients([])
+      setActivePatient(null)
+      return
+    }
+
+    if (user.role === 'caregiver') {
+      const fetchLinks = async () => {
+        try {
+          const res = await api.get('/caregivers/links')
+          const patients = res.data.data || []
+          setLinkedPatients(patients)
+          if (patients.length > 0) {
+            const savedId = localStorage.getItem('medguard_active_patient_id')
+            const matched = patients.find(p => p.patient_id === savedId)
+            if (matched) {
+              setActivePatient(matched)
+            } else {
+              setActivePatient(patients[0])
+            }
+          } else {
+            setActivePatient(null)
+          }
+        } catch {
+          // Gracefully ignore link errors
+        }
+      }
+      fetchLinks()
+    } else {
+      setLinkedPatients([])
+      setActivePatient(null)
+    }
+  }, [user])
+
+  const selectPatient = (patient) => {
+    setActivePatient(patient)
+    if (patient) {
+      localStorage.setItem('medguard_active_patient_id', patient.patient_id)
+    } else {
+      localStorage.removeItem('medguard_active_patient_id')
+    }
+  }
 
   const login = (accessToken, refreshToken) => {
     localStorage.setItem('medguard_token', accessToken)
@@ -49,12 +98,27 @@ export function AuthProvider({ children }) {
     }
     localStorage.removeItem('medguard_token')
     localStorage.removeItem('medguard_refresh_token')
+    localStorage.removeItem('medguard_active_patient_id')
     setToken(null)
     setUser(null)
+    setLinkedPatients([])
+    setActivePatient(null)
   }
 
+  const activePatientId = user?.role === 'caregiver' ? activePatient?.patient_id : user?.id
+
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, logout }}>
+    <AuthContext.Provider value={{ 
+      user, 
+      token, 
+      loading, 
+      login, 
+      logout,
+      linkedPatients,
+      activePatient,
+      activePatientId,
+      selectPatient
+    }}>
       {children}
     </AuthContext.Provider>
   )

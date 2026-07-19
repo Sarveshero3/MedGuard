@@ -5,19 +5,13 @@ import api from '../services/api'
 import { Skeleton } from '../components/ui/skeleton'
 
 export default function Dashboard() {
-  const { user, loading: authLoading } = useAuth()
+  const { user, loading: authLoading, linkedPatients, activePatient, selectPatient } = useAuth()
   const navigate = useNavigate()
 
-  // Common stats state
   // Common stats state
   const [stats, setStats] = useState({ medicines: 0, alerts: 0, visits: [], labs: 0 })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-
-  // Caregiver-specific state
-  const [linkedPatients, setLinkedPatients] = useState([])
-  const [selectedPatientId, setSelectedPatientId] = useState('')
-  const [selectedPatientName, setSelectedPatientName] = useState('')
 
   // Patient-specific caregiver link state
   const [linkedCaregivers, setLinkedCaregivers] = useState([])
@@ -25,40 +19,28 @@ export default function Dashboard() {
   const [otpExpiry, setOtpExpiry] = useState(null)
   const [generatingOtp, setGeneratingOtp] = useState(false)
 
-
-
   useEffect(() => {
     if (!authLoading && !user) {
       navigate('/login')
     }
   }, [user, authLoading, navigate])
 
-  // Fetch initial caregiver links or patient links
+  // Fetch initial patient caregiver links (only for patient)
   useEffect(() => {
     if (!user) return
+    if (user.role === 'caregiver') return
+
     const initDashboard = async () => {
       setLoading(true)
       try {
         const res = await api.get('/caregivers/links')
-        if (user.role === 'caregiver') {
-          const patients = res.data.data
-          setLinkedPatients(patients)
-          if (patients.length > 0) {
-            setSelectedPatientId(patients[0].patient_id)
-            setSelectedPatientName(patients[0].name)
-          } else {
-            setLoading(false)
-          }
-        } else {
-          // Patient: load linked caregivers
-          setLinkedCaregivers(res.data.data)
-        }
+        setLinkedCaregivers(res.data.data)
       } catch (err) {
-        // Only show error for actual HTTP failures, not empty results
         if (err.response && err.response.status >= 400) {
           setError('Failed to load caregiver linkage details.')
         }
-        // If no response (network error), silently degrade — caregivers section will show empty
+      } finally {
+        setLoading(false)
       }
     }
     initDashboard()
@@ -67,8 +49,11 @@ export default function Dashboard() {
   // Fetch statistics based on selected patient (for caregiver) or self (for patient)
   useEffect(() => {
     if (!user) return
-    const targetId = user.role === 'caregiver' ? selectedPatientId : user.id
-    if (!targetId) return
+    const targetId = user.role === 'caregiver' ? activePatient?.patient_id : user.id
+    if (!targetId) {
+      setLoading(false)
+      return
+    }
 
     const fetchStats = async () => {
       setLoading(true)
@@ -98,7 +83,7 @@ export default function Dashboard() {
       }
     }
     fetchStats()
-  }, [user, selectedPatientId])
+  }, [user, activePatient])
 
   // Patient: Generate caregiver OTP
   const handleGenerateOtp = async () => {
@@ -127,14 +112,22 @@ export default function Dashboard() {
     }
   }
 
-  const handlePatientChange = (e) => {
-    const pId = e.target.value
-    setSelectedPatientId(pId)
-    const patientObj = linkedPatients.find(p => p.patient_id === pId)
-    setSelectedPatientName(patientObj ? patientObj.name : '')
+  // Patient: Update caregiver permission
+  const handleUpdatePermission = async (linkId, newPermission) => {
+    setError('')
+    try {
+      await api.put(`/caregivers/links/${linkId}/permission`, { permission_level: newPermission })
+      setLinkedCaregivers(prev => prev.map(cg => cg.id === linkId ? { ...cg, permission_level: newPermission } : cg))
+    } catch {
+      setError('Failed to update caregiver permission level.')
+    }
   }
 
-
+  const handlePatientChange = (e) => {
+    const pId = e.target.value
+    const patientObj = linkedPatients.find(p => p.patient_id === pId)
+    selectPatient(patientObj)
+  }
 
   if (authLoading || !user) {
     return (
@@ -163,7 +156,7 @@ export default function Dashboard() {
             </h1>
             <p className="text-sm text-slate-500">
               {user.role === 'caregiver' 
-                ? `Viewing data as caregiver for ${selectedPatientName || 'your patient'}`
+                ? `Viewing data as caregiver for ${activePatient?.name || 'your patient'}`
                 : 'A summary of active clinical protocols.'
               }
             </p>
@@ -174,7 +167,7 @@ export default function Dashboard() {
             <div className="relative w-full md:w-64">
               <select
                 id="patient-select"
-                value={selectedPatientId}
+                value={activePatient?.patient_id || ''}
                 onChange={handlePatientChange}
                 className="block w-full pl-4 pr-10 py-3 text-sm border border-slate-200 focus:outline-none focus:border-[#0F766E] focus:ring-1 focus:ring-[#0F766E] rounded-lg bg-white appearance-none cursor-pointer font-medium"
               >
@@ -416,17 +409,31 @@ export default function Dashboard() {
                 ) : (
                   <div className="space-y-4">
                     {linkedCaregivers.map(cg => (
-                      <div key={cg.id} className="flex justify-between items-center p-4 border border-slate-100 rounded-lg hover:bg-slate-50/50 transition-colors">
+                      <div key={cg.id} className="flex flex-col sm:flex-row justify-between sm:items-center p-4 border border-slate-100 rounded-lg hover:bg-slate-50/50 gap-4 transition-colors">
                         <div>
                           <p className="text-sm font-semibold text-slate-900">{cg.name}</p>
                           <p className="text-xs text-slate-500">{cg.email}</p>
                         </div>
-                        <button
-                          onClick={() => handleRevokeCaregiver(cg.id)}
-                          className="text-xs font-bold text-red-600 hover:text-red-700 transition-colors px-3 py-1.5 border border-red-200 hover:border-red-300 rounded bg-red-50/50"
-                        >
-                          Revoke Access
-                        </button>
+                        <div className="flex items-center gap-4">
+                          <div className="flex items-center gap-2">
+                            <label htmlFor={`perm-select-${cg.id}`} className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Access:</label>
+                            <select
+                              id={`perm-select-${cg.id}`}
+                              value={cg.permission_level || 'full_view'}
+                              onChange={(e) => handleUpdatePermission(cg.id, e.target.value)}
+                              className="text-xs bg-white border border-slate-200 rounded px-2 py-1 font-semibold text-slate-700 focus:outline-none focus:border-[#0F766E]"
+                            >
+                              <option value="full_view">Full View (All Data)</option>
+                              <option value="alerts_only">Alerts Only</option>
+                            </select>
+                          </div>
+                          <button
+                            onClick={() => handleRevokeCaregiver(cg.id)}
+                            className="text-xs font-bold text-red-600 hover:text-red-700 transition-colors px-3 py-1.5 border border-red-200 hover:border-red-300 rounded bg-red-50/50 whitespace-nowrap"
+                          >
+                            Revoke Access
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>

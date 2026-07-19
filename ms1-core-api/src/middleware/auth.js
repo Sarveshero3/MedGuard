@@ -99,7 +99,7 @@ function requireRoles(allowedRoles = []) {
 
 // Access validator helper (IDOR protection)
 // Checks if the logged-in user has permission to access patientId's data
-async function verifyPatientAccess(req, patientId, _requiredAccessLevel = 'alerts_only') {
+async function verifyPatientAccess(req, patientId, requiredAccessLevel = 'alerts_only') {
   if (!req.user) return false;
 
   // 1. Patient accessing their own data: always allowed
@@ -107,10 +107,10 @@ async function verifyPatientAccess(req, patientId, _requiredAccessLevel = 'alert
     return true;
   }
 
-  // 2. Caregiver accessing linked patient data: verify caregiver link and status
+  // 2. Caregiver accessing linked patient data: verify caregiver link, status, and permissions
   if (req.user.role === 'caregiver') {
     const linkResult = await query(
-      `SELECT status 
+      `SELECT status, permission_level 
        FROM caregiver_links 
        WHERE patient_id = $1 AND caregiver_id = $2 AND status = 'active'`,
       [patientId, req.user.id]
@@ -118,6 +118,15 @@ async function verifyPatientAccess(req, patientId, _requiredAccessLevel = 'alert
 
     if (linkResult.rows.length === 0) {
       logger.warn('IDOR_PREVENTED', `Caregiver ${req.user.id} attempted unauthorized access to patient ${patientId}`, {
+        caregiverId: req.user.id,
+        patientId,
+      });
+      return false;
+    }
+
+    const link = linkResult.rows[0];
+    if (requiredAccessLevel === 'full_view' && link.permission_level === 'alerts_only') {
+      logger.warn('ACCESS_DENIED_INSUFFICIENT_PERMISSIONS', `Caregiver ${req.user.id} denied full_view access to patient ${patientId} (has alerts_only)`, {
         caregiverId: req.user.id,
         patientId,
       });

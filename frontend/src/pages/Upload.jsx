@@ -10,7 +10,7 @@ import { MedicineReviewTable } from '../components/MedicineReviewTable'
 import { LabReportReviewForm } from '../components/LabReportReviewForm'
 
 export default function Upload() {
-  const { user, loading: authLoading } = useAuth()
+  const { user, loading: authLoading, activePatientId } = useAuth()
   const navigate = useNavigate()
   const resolvingFilesRef = useRef(new Set())
 
@@ -36,7 +36,7 @@ export default function Upload() {
     handleRemoveFromQueue,
     duplicateFiles,
     setDuplicateFiles
-  } = useUploadQueue(docType, user)
+  } = useUploadQueue(docType, activePatientId)
 
   const [isQueueCollapsed, setIsQueueCollapsed] = useState(false)
   const [error, setError] = useState('')
@@ -330,7 +330,7 @@ export default function Upload() {
           throw new Error('Please select an appointment date for the new visit.')
         }
         const visitRes = await api.post('/calendar/visits', {
-          patient_id: user.id,
+          patient_id: activePatientId,
           doctor_name: newVisitData.doctor_name,
           specialty: newVisitData.specialty,
           scheduled_date: newVisitData.scheduled_date,
@@ -347,10 +347,10 @@ export default function Upload() {
           ...m,
           added_at: prescriptionDate
         }))
-        const payload = buildPrescriptionPayload(user.id, finalVisitId, medsWithDate, activeItem)
+        const payload = buildPrescriptionPayload(activePatientId, finalVisitId, medsWithDate, activeItem)
         await api.post('/medicines/batch', payload)
       } else {
-        const payload = buildLabReportPayload(user.id, finalVisitId, labTests, labFields, activeItem)
+        const payload = buildLabReportPayload(activePatientId, finalVisitId, labTests, labFields, activeItem)
         await api.post('/lab-reports/confirm', payload)
       }
 

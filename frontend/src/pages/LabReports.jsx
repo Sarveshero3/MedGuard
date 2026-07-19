@@ -20,7 +20,7 @@ const HEALTHY_RANGES = {
 }
 
 export default function LabReports() {
-  const { user, loading: authLoading } = useAuth()
+  const { user, loading: authLoading, activePatientId } = useAuth()
   const navigate = useNavigate()
   const [reports, setReports] = useState([])
   const [activeReportId, setActiveReportId] = useState(null)
@@ -40,14 +40,18 @@ export default function LabReports() {
 
   useEffect(() => {
     if (!user) return
+    if (user.role === 'caregiver' && !activePatientId) {
+      setLoading(false)
+      return
+    }
     fetchLabReports()
-  }, [user])
+  }, [user, activePatientId])
 
   const fetchLabReports = async () => {
     setLoading(true)
     setError('')
     try {
-      const res = await api.get('/lab-reports', { params: { patient_id: user.id } })
+      const res = await api.get('/lab-reports', { params: { patient_id: activePatientId } })
       const reportsList = res.data.data
       setReports(reportsList)
       

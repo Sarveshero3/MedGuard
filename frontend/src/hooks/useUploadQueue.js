@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import api from '../services/api'
 import { useDocumentExtractionStream } from './useDocumentExtractionStream'
 
-export function useUploadQueue(docType, user) {
+export function useUploadQueue(docType, patientId) {
   const [uploadedFiles, setUploadedFiles] = useState([])
   const [activeFileId, setActiveFileId] = useState(null)
   const [duplicateFiles, setDuplicateFiles] = useState([])
@@ -152,8 +152,8 @@ export function useUploadQueue(docType, user) {
     if (fileObj) {
       formData.append('photo', fileObj)
     }
-    if (user) {
-      formData.append('patient_id', user.id)
+    if (patientId) {
+      formData.append('patient_id', patientId)
     }
 
     const endpoint = '/documents/upload'

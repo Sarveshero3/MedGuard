@@ -5,7 +5,7 @@ import api from '../services/api'
 import { Skeleton } from '../components/ui/skeleton'
 
 export default function Calendar() {
-  const { user, loading: authLoading } = useAuth()
+  const { user, loading: authLoading, activePatientId } = useAuth()
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -39,15 +39,20 @@ export default function Calendar() {
   const [briefsLoading, setBriefsLoading] = useState(true)
 
   useEffect(() => {
-    if (!user?.id) return
+    if (!user) return
+    if (user.role === 'caregiver' && !activePatientId) {
+      setLoading(false)
+      setBriefsLoading(false)
+      return
+    }
     fetchCalendarData()
     fetchBriefs()
-  }, [user?.id])
+  }, [user, activePatientId])
 
   const fetchBriefs = async () => {
     setBriefsLoading(true)
     try {
-      const res = await api.get('/briefs', { params: { patient_id: user.id } })
+      const res = await api.get('/briefs', { params: { patient_id: activePatientId } })
       setBriefs(res.data.data || [])
     } catch (err) {
       console.error('Failed to fetch briefs', err)
@@ -61,8 +66,8 @@ export default function Calendar() {
     setError('')
     try {
       const [calRes, adhRes] = await Promise.all([
-        api.get('/calendar', { params: { patient_id: user.id } }),
-        api.get('/adherence', { params: { patient_id: user.id } }).catch(() => ({ data: { data: [] } }))
+        api.get('/calendar', { params: { patient_id: activePatientId } }),
+        api.get('/adherence', { params: { patient_id: activePatientId } }).catch(() => ({ data: { data: [] } }))
       ])
       
       setAppointments(calRes.data.data?.visits || [])
@@ -80,7 +85,7 @@ export default function Calendar() {
     const newStatus = currentStatus === 'taken' ? 'missed' : 'taken'
     try {
       await api.post('/adherence', {
-        patient_id: user.id,
+        patient_id: activePatientId,
         medicine_id: medicineId,
         scheduled_date: dateStr,
         status: newStatus
@@ -96,7 +101,7 @@ export default function Calendar() {
     setError('')
     try {
       await api.post('/appointments', {
-        patient_id: user.id,
+        patient_id: activePatientId,
         doctor_name: formData.doctor_name,
         visit_type: formData.visit_type,
         scheduled_date: formData.scheduled_date,

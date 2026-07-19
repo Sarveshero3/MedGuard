@@ -5,7 +5,7 @@ import api from '../services/api'
 import { Skeleton } from '../components/ui/skeleton'
 
 export default function WriteBrief() {
-  const { user, loading: authLoading } = useAuth()
+  const { user, loading: authLoading, activePatientId } = useAuth()
   const { id } = useParams()
   const navigate = useNavigate()
   const didGenerate = useRef(false)
@@ -35,6 +35,11 @@ export default function WriteBrief() {
 
   useEffect(() => {
     if (!user) return
+    if (user.role === 'caregiver' && !activePatientId) {
+      setLoading(false)
+      setError('Please select a linked patient on the dashboard first.')
+      return
+    }
     
     if (id) {
       // Load existing brief
@@ -45,7 +50,7 @@ export default function WriteBrief() {
       didGenerate.current = true
       generateBrief()
     }
-  }, [user, id])
+  }, [user, activePatientId, id])
 
   const fetchBrief = async (briefUuid) => {
     setLoading(true)
@@ -73,7 +78,7 @@ export default function WriteBrief() {
     setLoading(true)
     setError('')
     try {
-      const res = await api.post('/briefs', { patient_id: user.id })
+      const res = await api.post('/briefs', { patient_id: activePatientId })
       setBriefId(res.data.data.id)
       const content = res.data.data.content
       setBriefContent({

@@ -6,7 +6,7 @@ import { MgTabs } from '../components/ui/MgTabs'
 import { Skeleton } from '../components/ui/skeleton'
 
 export default function MedicineList() {
-  const { user, loading: authLoading } = useAuth()
+  const { user, loading: authLoading, activePatientId } = useAuth()
   const navigate = useNavigate()
   
   const [medicines, setMedicines] = useState([])
@@ -26,8 +26,12 @@ export default function MedicineList() {
 
   useEffect(() => {
     if (!user) return
+    if (user.role === 'caregiver' && !activePatientId) {
+      setLoading(false)
+      return
+    }
     fetchMedicines()
-  }, [user])
+  }, [user, activePatientId])
 
   // Clear selection whenever filter tab changes
   useEffect(() => {
@@ -38,7 +42,7 @@ export default function MedicineList() {
     setLoading(true)
     setError('')
     try {
-      const res = await api.get('/medicines', { params: { patient_id: user.id } })
+      const res = await api.get('/medicines', { params: { patient_id: activePatientId } })
       setMedicines(res.data.data || [])
     } catch (err) {
       setError(err.response?.data?.error?.message || 'Failed to fetch medicines')
@@ -91,7 +95,7 @@ export default function MedicineList() {
     try {
       const res = await api.post('/medicines/batch-delete', {
         ids: selectedIds,
-        patient_id: user.id
+        patient_id: activePatientId
       })
       
       setSuccess(res.data.message || `Successfully deleted ${selectedIds.length} medicine(s).`)

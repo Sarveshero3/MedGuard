@@ -47,6 +47,7 @@ CREATE TABLE caregiver_links (
     id               UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     patient_id       UUID             NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     caregiver_id     UUID             NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    permission_level VARCHAR(25)      NOT NULL DEFAULT 'full_view',
     status           link_status      NOT NULL DEFAULT 'active',
     created_at       TIMESTAMPTZ      NOT NULL DEFAULT NOW(),
     CONSTRAINT uq_caregiver_link UNIQUE (patient_id, caregiver_id)

@@ -47,7 +47,7 @@ router.get('/caregivers/links', authenticateUser, async (req, res, next) => {
     let result;
     if (req.user.role === 'patient') {
       result = await query(
-        `SELECT cl.id, cl.status, cl.created_at, u.id as caregiver_id, u.name, u.email 
+        `SELECT cl.id, cl.status, cl.permission_level, cl.created_at, u.id as caregiver_id, u.name, u.email 
          FROM caregiver_links cl 
          JOIN users u ON cl.caregiver_id = u.id 
          WHERE cl.patient_id = $1 AND cl.status = 'active'`,
@@ -55,7 +55,7 @@ router.get('/caregivers/links', authenticateUser, async (req, res, next) => {
       );
     } else if (req.user.role === 'caregiver') {
       result = await query(
-        `SELECT cl.id, cl.status, cl.created_at, u.id as patient_id, u.name, u.email 
+        `SELECT cl.id, cl.status, cl.permission_level, cl.created_at, u.id as patient_id, u.name, u.email 
          FROM caregiver_links cl 
          JOIN users u ON cl.patient_id = u.id 
          WHERE cl.caregiver_id = $1 AND cl.status = 'active'`,
@@ -74,6 +74,63 @@ router.get('/caregivers/links', authenticateUser, async (req, res, next) => {
     });
   } catch (err) {
     logger.error('CAREGIVER_LINKS_FETCH_ERROR', `Error fetching links for user ${req.user.id}: ${err.message}`);
+    next(err);
+  }
+});
+
+/**
+ * PUT /api/caregivers/links/:id/permission
+ * Patient updates the permission level of a linked caregiver.
+ */
+router.put('/caregivers/links/:id/permission', authenticateUser, requireRoles(['patient']), validateUUID('id'), async (req, res, next) => {
+  const linkId = req.params.id;
+  const { permission_level } = req.body;
+
+  if (permission_level !== 'full_view' && permission_level !== 'alerts_only') {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'BAD_REQUEST', message: 'permission_level must be either full_view or alerts_only.' },
+    });
+  }
+
+  try {
+    const linkResult = await query('SELECT patient_id FROM caregiver_links WHERE id = $1', [linkId]);
+    
+    if (linkResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: { code: 'NOT_FOUND', message: 'Caregiver link not found.' },
+      });
+    }
+
+    if (linkResult.rows[0].patient_id !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        error: { code: 'FORBIDDEN', message: 'Access denied. You can only update permissions for your own caregivers.' },
+      });
+    }
+
+    const result = await query(
+      `UPDATE caregiver_links 
+       SET permission_level = $1 
+       WHERE id = $2 
+       RETURNING *`,
+      [permission_level, linkId]
+    );
+
+    logger.audit('CAREGIVER_PERMISSION_UPDATED', `Patient ${req.user.id} updated caregiver link ${linkId} permission to ${permission_level}`, {
+      patientId: req.user.id,
+      linkId,
+      permissionLevel: permission_level,
+    });
+
+    res.json({
+      success: true,
+      message: 'Caregiver permission updated successfully.',
+      data: result.rows[0],
+    });
+  } catch (err) {
+    logger.error('CAREGIVER_PERMISSION_UPDATE_ERROR', `Error updating caregiver permission: ${err.message}`);
     next(err);
   }
 });

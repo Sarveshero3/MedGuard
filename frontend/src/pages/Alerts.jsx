@@ -38,7 +38,7 @@ const SEVERITY_CONFIG = {
 }
 
 export default function Alerts() {
-  const { user, loading: authLoading, logout } = useAuth()
+  const { user, loading: authLoading, logout, activePatientId } = useAuth()
   const navigate = useNavigate()
   const [alerts, setAlerts] = useState([])
   const [loading, setLoading] = useState(true)
@@ -61,13 +61,17 @@ export default function Alerts() {
 
   useEffect(() => {
     if (!user) return
+    if (user.role === 'caregiver' && !activePatientId) {
+      setLoading(false)
+      return
+    }
     fetchAlerts()
-  }, [user])
+  }, [user, activePatientId])
 
   const fetchAlerts = async () => {
     setLoading(true)
     try {
-      const res = await api.get('/alerts', { params: { patient_id: user.id } })
+      const res = await api.get('/alerts', { params: { patient_id: activePatientId } })
       setAlerts(res.data.data)
     } catch (err) {
       setError(err.response?.data?.error?.message || 'Failed to fetch alerts')
@@ -92,7 +96,7 @@ export default function Alerts() {
     setInfoMsg('')
     
     try {
-      const res = await api.post('/alerts/safety-check', { patient_id: user.id })
+      const res = await api.post('/alerts/safety-check', { patient_id: activePatientId })
       if (res.data.success) {
         setSuccessMsg(`✔ ${res.data.message}`)
         fetchAlerts() // refresh the alerts list

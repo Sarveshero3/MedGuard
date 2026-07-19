@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext'
 import api from '../services/api'
 
 export function MgNavbar() {
-  const { user, logout } = useAuth()
+  const { user, logout, activePatientId } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [alertCount, setAlertCount] = useState(0)
@@ -13,10 +13,14 @@ export function MgNavbar() {
   
   useEffect(() => {
     if (!user) return;
+    if (user.role === 'caregiver' && !activePatientId) {
+      setAlertCount(0);
+      return;
+    }
     
     const checkAlerts = async () => {
       try {
-        const res = await api.get('/alerts', { params: { patient_id: user.id } });
+        const res = await api.get('/alerts', { params: { patient_id: activePatientId } });
         const active = res.data.data.filter(a => a.status === 'shown');
         setAlertCount(active.length);
         if (active.length > lastCountRef.current) {
@@ -33,7 +37,7 @@ export function MgNavbar() {
     checkAlerts();
     const interval = setInterval(checkAlerts, 8000);
     return () => clearInterval(interval);
-  }, [user]);
+  }, [user, activePatientId]);
 
   const tabs = [
     { name: 'Dashboard', path: '/dashboard' },
