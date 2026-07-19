@@ -200,9 +200,14 @@ export default function Login() {
                     setError('')
                     setLoading(true)
                     try {
+                      let recaptchaToken = 'mock_token'
+                      if (executeRecaptcha) {
+                        recaptchaToken = await executeRecaptcha('login')
+                      }
                       const res = await api.post('/auth/login', {
                         email: formData.email,
                         password: formData.password,
+                        recaptchaToken,
                       })
                       setMfaToken(res.data.data.mfaToken)
                       setMfaOtp('')
