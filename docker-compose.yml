@@ -39,7 +39,7 @@ services:
       MS2_BASE_URL: http://ms2-agent-service:8000
       REDIS_URL: redis://redis:6379
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
-      CLEAN_DB: "true"
+      CLEAN_DB: "false"
       NODE_ENV: "development"
       RECAPTCHA_SECRET_KEY: ${RECAPTCHA_SECRET_KEY:-}
       RECAPTCHA_ENABLED: ${RECAPTCHA_ENABLED:-true}
