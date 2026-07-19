@@ -1,7 +1,9 @@
 export function useDocumentExtractionStream() {
   const startStream = (jobId, fileId, setUploadedFiles) => {
-    // Establish relative SSE stream routing through Nginx to prevent CSP blocks
-    const sseUrl = `/api/status/stream/${jobId}`
+    const apiBase = import.meta.env.VITE_API_BASE_URL || '/api'
+    const sseUrl = apiBase.startsWith('http')
+      ? `${apiBase}/status/stream/${jobId}`
+      : `${window.location.origin}${apiBase}/status/stream/${jobId}`
     const eventSource = new EventSource(sseUrl)
 
     eventSource.onmessage = (event) => {
