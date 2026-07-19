@@ -58,3 +58,6 @@ test_*.py
 *.img
 *.png
 *.webp
+
+# Ignore ms1 tests folder in remote git repo
+ms1-core-api/tests/
