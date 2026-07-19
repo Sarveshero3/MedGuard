@@ -78,10 +78,13 @@ export default function Login() {
         return
       }
 
-      let recaptchaToken = 'mock_token'
-      if (executeRecaptcha) {
-        recaptchaToken = await executeRecaptcha(isSignup ? 'register' : 'login')
+      // Verify reCAPTCHA is available — fail loudly instead of silently submitting a fake token
+      if (!executeRecaptcha) {
+        setError('Security verification failed to load. Please refresh the page and try again.')
+        setLoading(false)
+        return
       }
+      const recaptchaToken = await executeRecaptcha(isSignup ? 'register' : 'login')
 
       const endpoint = isSignup ? '/auth/register' : '/auth/login'
       const payload = isSignup ? {

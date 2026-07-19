@@ -25,7 +25,9 @@ Upon successful login or registration, the backend signs a JWT with the followin
 
 ### 3. Two-Step MFA Login (Gmail-Style 2FA)
 - Logging in triggers a verification flow where the user must supply a 6-digit one-time passcode (OTP).
-- The code is dispatched via AWS SES (or logged to the backend console in development mock mode) with a 5-minute expiry.
+- The code is dispatched via **AWS SES** in production (using `sendEmail()` from `src/utils/email.js`) or logged to the backend console in development mode.
+- **SES Sandbox limitation**: As of July 2025, the AWS SES account is in Sandbox mode (support case ID 178446489800777 pending). Until production access is approved, SES only delivers to email addresses manually verified in the SES console (ap-south-1 region). Sandbox rejection errors are logged distinctly as `EMAIL_SEND_FAILED` with `isSandboxRejection: true`.
+- Email send failures are caught and logged but do **not** crash the auth endpoint — the user still receives their MFA token and can use the "Resend Code" button.
 - A "Resend Code" utility allows the user to re-trigger OTP dispatch directly from the login screen without losing form states.
 - 401 Unauthorized responses on MFA routes are bypassed by Axios interceptors to prevent page-reload resets.
 
@@ -38,6 +40,16 @@ Upon successful login or registration, the backend signs a JWT with the followin
   - **Caregivers** are allowed to switch contexts, view linked patient statistics, and read regimen entries in a clinical, read-only mode.
   - **Patients** have access to upload prescriptions, edit metadata, and modify calendar visits.
   - Caregiver access to patient data is strictly validated against links configured in the caregiver-link mapping table.
+
+### 6. Server-Side reCAPTCHA v3 Verification
+- Both `/auth/login` and `/auth/register` verify the client-supplied `recaptchaToken` against Google's `siteverify` API before processing business logic.
+- Verification is performed by `src/utils/recaptcha.js`, which:
+  - POSTs the token + `RECAPTCHA_SECRET_KEY` (from env) to `https://www.google.com/recaptcha/api/siteverify`
+  - Rejects if `success` is `false` or `score < 0.5` (configurable threshold)
+  - Logs action mismatches as warnings but does not reject on mismatch alone
+- Verification can be bypassed in development by setting `RECAPTCHA_ENABLED=false` in the environment.
+- The frontend (`Login.jsx`) no longer silently falls back to a fake `'mock_token'` — if the reCAPTCHA provider fails to initialize, form submission is blocked with a user-facing error message.
+- The reCAPTCHA site key is read from `VITE_RECAPTCHA_SITE_KEY` (with a hardcoded fallback) in `main.jsx`. Since Vite bakes `VITE_`-prefixed vars at build time, any key change requires a fresh production build/deploy (Vercel redeploy).
 
 ---
 
@@ -53,6 +65,18 @@ The system uses `express-rate-limit` handlers to mitigate brute-force and Denial
 
 ### 2. Implementation & Production Enforcement
 - Rate limits are fully enabled in both development and production. Violations log `RATE_LIMIT_EXCEEDED` warnings via the system logger and return a standardized `429 Too Many Requests` JSON response.
+
+---
+
+## Email Dispatch (`src/utils/email.js`)
+
+The `sendEmail({ to, subject, body })` utility handles all outbound emails across the application:
+
+- **Development/Test**: Logs the email content to the console (mock mode) — no actual email sent.
+- **Production**: Sends via AWS SES (`@aws-sdk/client-ses` SDK v3) using `SendEmailCommand`.
+  - Required env vars: `AWS_SES_REGION`, `AWS_SES_FROM_ADDRESS`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`
+  - Sending identity: `noreply@medguard.living` (DKIM-verified)
+  - **Sandbox limitation**: See section 3 above. Sandbox rejection errors (`MessageRejected`) are logged distinctly with the support case ID for easy diagnosis.
 
 ---
 
@@ -76,3 +100,4 @@ MedGuard implements strict defensive patterns to satisfy clinical security guide
   - `Content-Security-Policy`: Restricts scripts, frames, and style sources to trusted origins only.
   - `X-Frame-Options: DENY`: Prevents rendering MedGuard inside external frames.
   - `X-Content-Type-Options: nosniff`: Mitigates mime-type sniffing.
+

@@ -4,6 +4,8 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { query } = require('../config/db');
 const logger = require('../utils/logger');
+const { sendEmail } = require('../utils/email');
+const { verifyRecaptcha } = require('../utils/recaptcha');
 const { sanitizeInput, validateBody } = require('../middleware/security');
 const { authLimiter, registerLimiter, otpCooldownLimiter, otpLockoutLimiter } = require('../middleware/rateLimiter');
 
@@ -66,9 +68,21 @@ async function issueTokenPair(user, dbClient) {
  * Registers a new user (patient or caregiver) and records DPDP consent.
  */
 router.post('/auth/register', registerLimiter, otpCooldownLimiter, otpLockoutLimiter, sanitizeInput, validateBody('register'), async (req, res, next) => {
-  const { name, email, password, role, linking_otp } = req.body;
+  const { name, email, password, role, linking_otp, recaptchaToken } = req.body;
 
   try {
+    // Server-side reCAPTCHA v3 verification
+    const recaptchaResult = await verifyRecaptcha(recaptchaToken, 'register');
+    if (!recaptchaResult.valid) {
+      logger.warn('RECAPTCHA_REJECTED', `Registration blocked by reCAPTCHA: ${recaptchaResult.reason}`, { email, ip: req.ip });
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'RECAPTCHA_FAILED',
+          message: 'Security verification failed. Please try again.',
+        },
+      });
+    }
     // Check if email already registered
     const existingUser = await query('SELECT id FROM users WHERE email = $1', [email]);
     if (existingUser.rows.length > 0) {
@@ -162,13 +176,17 @@ router.post('/auth/register', registerLimiter, otpCooldownLimiter, otpLockoutLim
         role: newUser.role,
       });
 
-      // Mock Send Email Verification or Production AWS SES Integration
-      if (process.env.NODE_ENV === 'development') {
-        logger.info('EMAIL_DISPATCHED', `[MOCK EMAIL] To: ${newUser.email} | Verification OTP: ${mfaCode}`, {
-          email: newUser.email,
+      // Dispatch OTP email (mock in development, real SES in production)
+      try {
+        await sendEmail({
+          to: newUser.email,
+          subject: 'MedGuard — Verify Your Email',
+          body: `Welcome to MedGuard!\n\nYour email verification code is: ${mfaCode}\n\nThis code expires in 15 minutes.\n\nIf you did not register for MedGuard, please ignore this email.`,
         });
-      } else {
-        logger.info('EMAIL_DISPATCHED', `[AWS SES] Production OTP dispatch initiated for: ${newUser.email}`, {
+      } catch (emailErr) {
+        // Log but don't crash — user still gets their mfaToken to verify if email arrives
+        logger.error('EMAIL_DISPATCH_FAILED', `Failed to send registration OTP to ${newUser.email}: ${emailErr.message}`, {
+          userId: newUser.id,
           email: newUser.email,
         });
       }
@@ -206,9 +224,21 @@ router.post('/auth/register', registerLimiter, otpCooldownLimiter, otpLockoutLim
  * Standard user credentials verification, issuing temporary MFA token.
  */
 router.post('/auth/login', authLimiter, otpCooldownLimiter, otpLockoutLimiter, sanitizeInput, validateBody('login'), async (req, res, next) => {
-  const { email, password } = req.body;
+  const { email, password, recaptchaToken } = req.body;
 
   try {
+    // Server-side reCAPTCHA v3 verification
+    const recaptchaResult = await verifyRecaptcha(recaptchaToken, 'login');
+    if (!recaptchaResult.valid) {
+      logger.warn('RECAPTCHA_REJECTED', `Login blocked by reCAPTCHA: ${recaptchaResult.reason}`, { email, ip: req.ip });
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'RECAPTCHA_FAILED',
+          message: 'Security verification failed. Please try again.',
+        },
+      });
+    }
     const userResult = await query(
       'SELECT id, name, email, password_hash, role, is_email_verified FROM users WHERE email = $1',
       [email]
@@ -248,10 +278,20 @@ router.post('/auth/login', authLimiter, otpCooldownLimiter, otpLockoutLimiter, s
       [mfaCode, mfaExpiresAt, user.id]
     );
 
-    // Mock Send Email Verification Code
-    logger.info('MFA_DISPATCHED', `[MOCK MFA EMAIL] To: ${user.email} | Security Code: ${mfaCode}`, {
-      email: user.email,
-    });
+    // Dispatch MFA OTP email (mock in development, real SES in production)
+    try {
+      await sendEmail({
+        to: user.email,
+        subject: 'MedGuard — Your Security Code',
+        body: `Your MedGuard security code is: ${mfaCode}\n\nThis code expires in 5 minutes.\n\nIf you did not attempt to log in, please secure your account immediately.`,
+      });
+    } catch (emailErr) {
+      // Log but don't crash — user still gets mfaToken; if email doesn't arrive they can resend
+      logger.error('EMAIL_DISPATCH_FAILED', `Failed to send login OTP to ${user.email}: ${emailErr.message}`, {
+        userId: user.id,
+        email: user.email,
+      });
+    }
 
     // Generate temporary 5-minute pending token
     const mfaToken = jwt.sign(
@@ -577,13 +617,18 @@ router.post('/auth/forgot-password', authLimiter, sanitizeInput, validateBody('f
 
     logger.audit('PASSWORD_RESET_TOKEN_GENERATED', `Password reset token generated for user ${user.id}`, { userId: user.id });
 
-    // Mock Send Password Reset Email or Production AWS SES Integration
-    if (process.env.NODE_ENV === 'development') {
-      logger.info('EMAIL_DISPATCHED', `[MOCK EMAIL] To: ${email} | Reset link: http://localhost:3000/reset-password?token=${resetToken}&email=${encodeURIComponent(email)}`, {
-        email,
+    // Dispatch password reset email (mock in development, real SES in production)
+    const resetBaseUrl = process.env.FRONTEND_URL || 'https://medguard.living';
+    const resetLink = `${resetBaseUrl}/reset-password?token=${resetToken}&email=${encodeURIComponent(email)}`;
+    try {
+      await sendEmail({
+        to: email,
+        subject: 'MedGuard — Password Reset Request',
+        body: `Hello ${user.name},\n\nWe received a request to reset your MedGuard password.\n\nClick the link below to reset your password:\n${resetLink}\n\nThis link expires in 1 hour.\n\nIf you did not request a password reset, please ignore this email.`,
       });
-    } else {
-      logger.info('EMAIL_DISPATCHED', `[AWS SES] Password reset link sent to: ${email} (link redacted)`, {
+    } catch (emailErr) {
+      // Log but don't crash — generic success response is still returned to prevent user enumeration
+      logger.error('EMAIL_DISPATCH_FAILED', `Failed to send password reset email to ${email}: ${emailErr.message}`, {
         email,
       });
     }
