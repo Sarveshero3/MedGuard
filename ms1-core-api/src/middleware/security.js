@@ -37,7 +37,11 @@ function sanitize(input) {
 
 // Request sanitization middleware
 const sanitizeInput = (req, res, next) => {
+  const recaptchaToken = req.body?.recaptchaToken;
   req.body = sanitize(req.body);
+  if (recaptchaToken !== undefined) {
+    req.body.recaptchaToken = recaptchaToken;
+  }
   req.query = sanitize(req.query);
   req.params = sanitize(req.params);
   next();
