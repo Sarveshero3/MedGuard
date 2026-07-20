@@ -8,35 +8,40 @@ This document defines the system architecture, network topologies, security boun
 
 ```mermaid
 graph TB
-    subgraph "Frontend Layer (Vercel)"
-        Browser["React SPA (Vite)<br/>vercel.json routing"]
+    subgraph "Client"
+        Browser["React SPA (Vite)\nServed by NGINX on EC2"]
     end
 
-    subgraph "AWS EC2 Instance (Network Boundary)"
-        NGINX["NGINX Reverse Proxy<br/>Port 80 (routing/TLS)"]
-        MS1["ms1-core-api (Express.js)<br/>Port 4000"]
-        MS2["ms2-agent-service (FastAPI)<br/>Port 8000"]
-        Redis["Redis (BullMQ Broker)<br/>Port 6379"]
-    end
-
-    subgraph "Data Layer (AWS Managed Services)"
-        RDS[("AWS RDS (PostgreSQL 16)<br/>System of Record")]
-        S3["AWS S3 Bucket<br/>(Intelligent-Tiering & Glacier)"]
+    subgraph "AWS EC2 Instance (Single Host — Docker Compose)"
+        NGINX["NGINX Reverse Proxy\nPort 80 (HTTP) / 443 (HTTPS/TLS)"]
+        Frontend["frontend container\n(React + Vite, Port 3000)"]
+        MS1["ms1-core-api (Express.js)\nPort 4000"]
+        MS2["ms2-agent-service (FastAPI)\nPort 8000 — internal only"]
+        Redis["Redis (BullMQ Broker)\nPort 6379 — internal only"]
+        Postgres[("PostgreSQL 16 container\nPort 5432 — internal only")]
+        Jaeger["Jaeger (OTel Tracing UI)\nPort 16686"]
     end
 
     subgraph "External Integration Services"
         SES["AWS SES (Simple Email Service)"]
-        Groq["Groq Vision / LLM API"]
+        Groq["Groq API\n(LLM / Vision inference)"]
+        Tavily["Tavily Search API\n(web grounding fallback)"]
     end
 
     Browser -->|"HTTPS"| NGINX
+    NGINX -->|"/ (React SPA)"| Frontend
     NGINX -->|"/api/*"| MS1
-    MS1 -->|"Internal HTTP"| MS2
-    MS1 --> RDS
-    MS1 --> S3
+    MS1 -->|"Internal HTTP + x-internal-auth"| MS2
+    MS1 --> Postgres
+    MS1 --> Redis
     MS1 --> SES
     MS2 --> Groq
+    MS2 -->|"Tavily fallback only"| Tavily
+    MS1 -.->|"OTel spans"| Jaeger
+    MS2 -.->|"OTel spans"| Jaeger
 ```
+
+> **Note on S3**: AWS S3 is **not currently implemented**. Document files are stored as temporary files during extraction and then deleted. The `source_photo_id` column in `medicines` and `lab_reports` is a placeholder field. If persistent photo storage is required in future, S3 integration would be added here.
 
 ---
 
@@ -44,57 +49,69 @@ graph TB
 
 ### ms1-core-api (Node.js + Express)
 - **Path**: `ms1-core-api/`
-- **Role**: Coordinates authentication, stores user/caregiver profiles, manages clinical consent, stores medication lists and lab values, runs the deterministic drug interaction lookup engine, and dispatches background tasks.
-- **Port**: `4000` (Internal access only; external requests routed via NGINX proxy `/api`).
+- **Role**: Coordinates authentication, stores user/caregiver profiles, manages clinical consent, stores medication lists and lab values, runs the deterministic drug interaction lookup engine, and dispatches background tasks via BullMQ.
+- **Port**: `4000` (internal; all external requests route via NGINX at `/api`).
 
 ### ms2-agent-service (Python + FastAPI)
 - **Path**: `ms2-agent-service/`
-- **Role**: Executes LangGraph AI workflows for vision-based prescription OCR, generic-name resolution, doctor-visit brief writing, lab report parsing, and patient Q&A.
-- **Port**: `8000` (Strictly internal; accessible only by `ms1-core-api`).
+- **Role**: Executes LangGraph AI workflows for vision-based prescription OCR, generic-name resolution (brand → active ingredient via Groq LLM + Tavily fallback), lab report parsing, doctor-visit brief writing, and patient Q&A.
+- **Port**: `8000` (strictly internal; all `/api/extract/*` routes require `x-internal-auth: <MS2_INTERNAL_SECRET>` header — enforced by FastAPI middleware in `app/main.py`). ms2 never receives user JWTs and makes no authorization decisions.
+
+### PostgreSQL (Container)
+- **Image**: `postgres:16-alpine`
+- **Role**: System of record for all clinical and user data.
+- **Deployment**: Runs as a Docker container on the same EC2 host. **This is not AWS RDS.** Data is persisted via a named Docker volume (`postgres_data`). The container is exposed only on `127.0.0.1:5432` — not publicly reachable.
+
+### Redis (Container)
+- **Image**: `redis:7-alpine`
+- **Role**: BullMQ job queue broker and idempotency cache.
+- **Deployment**: Container, exposed only on `127.0.0.1:6379`.
+
+### Jaeger (Container)
+- **Image**: `jaegertracing/all-in-one:1.57`
+- **Role**: OpenTelemetry trace collection and visualization UI.
+- **Ports**: OTLP gRPC on `4317` (internal); Jaeger UI on `16686`.
+- Both `ms1-core-api` and `ms2-agent-service` export OTel spans to Jaeger via `OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317`. Tracing is confirmed operational in production.
 
 ---
 
-## 3. Production Deployment Guide (AWS & Vercel)
+## 3. Production Deployment (AWS EC2 — Single Host)
 
-As per the Milestone guidelines, the production deployment is split between Vercel (for frontend) and AWS (for backend services).
+All services (frontend, API, agent, database, queue, tracing, reverse proxy) run as Docker containers on a **single AWS EC2 instance** orchestrated by Docker Compose.
 
-### A. Frontend Deployment (Vercel)
-The React single-page app (SPA) is deployed on **Vercel** for optimal performance, edge caching, and scalability.
-- **Client-Side Routing**: Vite React Router requires all paths to route through `index.html`. We configure this using [vercel.json](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/frontend/vercel.json):
-  ```json
-  {
-    "rewrites": [
-      { "source": "/api/:path*", "destination": "http://<EC2_PUBLIC_IP>:4000/api/:path*" },
-      { "source": "/(.*)", "destination": "/index.html" }
-    ]
-  }
-  ```
-- **Axios Configuration**: The HTTP client in [api.js](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/frontend/src/services/api.js) resolves base paths to `/api`, which Vercel proxies directly to the AWS EC2 instance.
+### A. Frontend Serving (NGINX on EC2)
+The React SPA is **not deployed on Vercel**. It runs as a Docker container (`frontend` service, Vite dev/build server on port 3000) and is reverse-proxied by NGINX:
 
-### B. Backend Deployment (AWS EC2 & RDS)
-The backend services run on an **AWS EC2** instance, with data persisted in **AWS RDS**.
-1. **AWS EC2 (Virtual Server)**:
-   - Launches a standard Ubuntu Server on an EC2 instance (e.g., `t3.micro` or `t3.small` to stay within free tier).
-   - Installs Docker and Docker Compose to containerize `ms1-core-api`, `ms2-agent-service`, and `Redis`.
-   - Security Groups block public access to ports `4000`, `8000`, and `6379`. Only port `80` (NGINX) is open to the public.
-2. **AWS RDS (PostgreSQL Database)**:
-   - Spawns a managed PostgreSQL 16 instance.
-   - Enforces RDS security groups to accept traffic exclusively from the EC2 instance's private IP.
-   - The connection URI is injected as `DATABASE_URL` into the EC2 environment.
+```nginx
+# nginx.conf — / routes to the frontend container
+location / {
+    proxy_pass http://frontend:3000;
+}
 
-### C. Object Storage (AWS S3)
-To minimize operational costs while satisfying clinical audit guidelines, document uploads (prescriptions and lab reports) are stored in an **AWS S3 Bucket**:
-- **Intelligent-Tiering**: Used for active patient uploads. Automatically moves files between frequent and infrequent access tiers based on usage patterns to reduce access costs.
-- **Glacier Deep Archive**: A lifecycle policy automatically transitions files older than 90 days to Glacier. This is ideal for archiving historical clinical documents that are rarely accessed but must be retained for compliance.
+# /api/ routes to ms1-core-api
+location /api/ {
+    proxy_pass http://ms1-core-api:4000;
+}
+```
 
-### D. Email Dispatch (AWS SES)
-All transactional emails (email verification codes, multi-factor authentication codes, caregiver invitations, and critical drug-drug interaction alerts) are dispatched via **AWS SES**:
-- The domain is verified in AWS Route 53 with SPF, DKIM, and DMARC records to prevent spoofing.
-- The `ms1-core-api` utilizes the `@aws-sdk/client-ses` SDK to send emails via SES.
+The `vercel.json` file in `frontend/` is a leftover development artifact (it points to `localhost:4000`) and is **not used** in the production deployment.
 
-### E. Domain and DNS Routing
-- A custom domain is purchased (e.g., via Amazon Route 53, GoDaddy, or Namecheap).
-- **DNS Records**:
-  - `A Record` pointing `api.yourdomain.com` to the EC2 Public Elastic IP.
-  - `CNAME Record` pointing `www.yourdomain.com` to the Vercel deployment address.
-- **SSL Certificates**: Let's Encrypt certificates are provisioned on the EC2 instance using Certbot to terminate SSL at NGINX for HTTPS traffic, ensuring fully encrypted transits (TLS 1.3).
+### B. Database (PostgreSQL Container — Not RDS)
+PostgreSQL runs as a container on the EC2 instance. There is **no AWS RDS instance**. The `DATABASE_URL` points to the internal Docker network hostname `postgres:5432`. Data is persisted in the `postgres_data` named volume.
+
+### C. Email Dispatch (AWS SES)
+All transactional emails (email verification codes, MFA codes, caregiver invitations) are dispatched via **AWS SES**:
+- Sending identity: `noreply@medguard.living` (DKIM-verified, region `ap-south-1`).
+- The `ms1-core-api` uses `@aws-sdk/client-ses` SDK (`SendEmailCommand`).
+- **SES Sandbox limitation**: As of July 2026, the account remains in Sandbox mode (support case ID 178446489800777). Only manually verified email addresses receive emails. Sends to unverified addresses fail with `MessageRejected` — logged as `EMAIL_SEND_FAILED` with `isSandboxRejection: true`.
+
+### D. Domain and DNS Routing
+- The custom domain `medguard.living` is configured.
+- **DNS Record**: Single `A Record` pointing `medguard.living` (and/or `www.medguard.living`) to the EC2 Public Elastic IP.
+- There is **no separate Vercel CNAME** — the frontend is served from the same EC2 host as the API.
+- **SSL Certificates**: Let's Encrypt certificates are provisioned via Certbot. The NGINX container mounts `/etc/letsencrypt` to terminate TLS (ports 80 and 443 are both exposed).
+
+### E. Network Security
+- Security Groups block public access to internal ports: `4000` (ms1), `8000` (ms2), `5432` (PostgreSQL), `6379` (Redis).
+- Only ports `80` (HTTP) and `443` (HTTPS) on NGINX are publicly accessible.
+- The `backend` Docker network is marked `internal: true`, preventing ms2 and PostgreSQL from making arbitrary outbound connections.
