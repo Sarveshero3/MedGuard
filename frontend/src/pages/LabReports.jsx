@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext'
 import api from '../services/api'
 import { Skeleton } from '../components/ui/skeleton'
 import { unescapeHTML } from '../lib/utils'
+import { LabReportSourceModal } from '../components/LabReportSourceModal'
 
 const HEALTHY_RANGES = {
   'HBA1C': { min: 0, max: 5.7, unit: '%', label: '< 5.7%' },
@@ -28,6 +29,7 @@ export default function LabReports() {
   const [loading, setLoading] = useState(true)
   const [detailsLoading, setDetailsLoading] = useState(false)
   const [error, setError] = useState('')
+  const [modalReport, setModalReport] = useState(null)
 
   // Map to hold historical values for trend calculations
   const [testHistory, setTestHistory] = useState({})
@@ -276,11 +278,22 @@ export default function LabReports() {
                         Recorded on: {new Date(activeReportDetails.uploaded_at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
                       </p>
                     </div>
-                    {activeReportDetails.doctor_name && (
-                      <span className="bg-teal-50 border border-teal-200 text-teal-800 text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider">
-                        Dr. {activeReportDetails.doctor_name}
-                      </span>
-                    )}
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setModalReport(activeReportDetails)}
+                        className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs px-3.5 py-1.5 rounded-xl border border-slate-200 flex items-center gap-1.5 transition-all cursor-pointer"
+                        title="View Lab Report Source Document"
+                      >
+                        <span className="material-symbols-outlined text-sm">description</span>
+                        <span>Report Source</span>
+                      </button>
+                      {activeReportDetails.doctor_name && (
+                        <span className="bg-teal-50 border border-teal-200 text-teal-800 text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider">
+                          Dr. {activeReportDetails.doctor_name}
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   <div className="space-y-6 flex-grow">
@@ -335,6 +348,11 @@ export default function LabReports() {
           </div>
         )}
 
+        {/* Lab Report Source Modal Popup */}
+        <LabReportSourceModal
+          report={modalReport}
+          onClose={() => setModalReport(null)}
+        />
       </main>
 
       <footer className="bg-[#f6fafa] border-t border-slate-200 mt-auto">
