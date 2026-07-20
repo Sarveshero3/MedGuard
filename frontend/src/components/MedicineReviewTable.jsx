@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { InfoButton } from './InfoButton';
 
 export function MedicineReviewTable({
@@ -7,6 +7,9 @@ export function MedicineReviewTable({
   onResolveBrand,
   onShowInfo
 }) {
+  const [retryCount, setRetryCount] = useState(0);
+  const [isRetrying, setIsRetrying] = useState(false);
+
   // Use medicines prop directly (not function updaters) so the parent callback
   // in Upload.jsx always receives a plain array, not a function reference.
   const updateMedicine = (index, fieldOrObject, value) => {
@@ -36,8 +39,71 @@ export function MedicineReviewTable({
     }]);
   };
 
+  const failedMedicines = medicines.filter(
+    (med) => med.brand_name && med.generic_name === 'no such medicine found'
+  );
+
+  const handleRetryUnresolved = async () => {
+    if (isRetrying || retryCount >= 5 || !onResolveBrand) return;
+
+    setIsRetrying(true);
+    setRetryCount((prev) => prev + 1);
+
+    const indicesToRetry = medicines
+      .map((med, idx) => ({ med, idx }))
+      .filter(({ med }) => med.brand_name && med.generic_name === 'no such medicine found')
+      .map(({ idx }) => idx);
+
+    try {
+      await Promise.all(
+        indicesToRetry.map((idx) => onResolveBrand(idx.idx, medicines[idx.idx].brand_name))
+      );
+    } catch (err) {
+      console.error('Error during retry resolution:', err);
+    } finally {
+      setIsRetrying(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
+      {/* Header Toolbar with Retry Button at Top Right */}
+      <div className="flex justify-between items-center mb-2 px-1">
+        <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+          <span>Extracted Medicines</span>
+          {failedMedicines.length > 0 && (
+            <span className="text-[10px] font-semibold text-rose-600 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full lowercase">
+              {failedMedicines.length} unresolved
+            </span>
+          )}
+        </h3>
+
+        {failedMedicines.length > 0 && (
+          <button
+            type="button"
+            disabled={isRetrying || retryCount >= 5}
+            onClick={handleRetryUnresolved}
+            className={`text-xs font-bold px-3.5 py-1.5 rounded-lg flex items-center gap-1.5 transition-all shadow-sm ${
+              retryCount >= 5
+                ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
+                : isRetrying
+                ? 'bg-teal-50 text-teal-700 border border-teal-200 cursor-wait'
+                : 'bg-[#0f766e] hover:bg-[#0d645c] text-white cursor-pointer active:scale-95'
+            }`}
+            title={retryCount >= 5 ? 'Maximum 5 retries reached' : 'Retry research for unresolved brand names'}
+          >
+            <span className={`material-symbols-outlined text-sm ${isRetrying ? 'animate-spin' : ''}`}>
+              {isRetrying ? 'sync' : 'replay'}
+            </span>
+            {isRetrying
+              ? 'Researching...'
+              : retryCount >= 5
+              ? 'Max Retries Reached (5/5)'
+              : `Retry Unresolved (${retryCount}/5)`}
+          </button>
+        )}
+      </div>
+
       <div className="overflow-x-auto border border-slate-200 rounded-xl">
         <table className="w-full text-left text-xs text-slate-700 table-fixed">
           <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider font-semibold border-b border-slate-200">
@@ -101,10 +167,26 @@ export function MedicineReviewTable({
                 <td className="px-3 py-2">
                   <div className="break-words whitespace-normal max-w-[200px] leading-relaxed">
                     {med.generic_name === 'no such medicine found' ? (
-                      <span className="inline-flex items-center gap-1 text-rose-600 bg-rose-50 border border-rose-100 rounded px-2 py-0.5 font-semibold text-[10px]">
-                        <span className="material-symbols-outlined text-xs">warning</span>
-                        No such medicine found
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="inline-flex items-center gap-1 text-rose-600 bg-rose-50 border border-rose-100 rounded px-2 py-0.5 font-semibold text-[10px]">
+                          <span className="material-symbols-outlined text-xs">warning</span>
+                          No such medicine found
+                        </span>
+                        {onResolveBrand && med.brand_name && retryCount < 5 && (
+                          <button
+                            type="button"
+                            disabled={isRetrying}
+                            onClick={() => {
+                              setRetryCount((prev) => prev + 1);
+                              onResolveBrand(index, med.brand_name);
+                            }}
+                            className="p-1 text-slate-400 hover:text-[#0f766e] hover:bg-teal-50 rounded transition-colors cursor-pointer"
+                            title="Retry research for this medicine"
+                          >
+                            <span className="material-symbols-outlined text-xs font-bold">refresh</span>
+                          </button>
+                        )}
+                      </div>
                     ) : med.generic_name ? (
                       <span className="text-slate-650 font-bold block">{med.generic_name}</span>
                     ) : med.brand_name ? (
@@ -178,7 +260,6 @@ export function MedicineReviewTable({
                           onChange={(e) => {
                             const val = e.target.checked;
                             if (val) {
-                              // Only clear duration fields — leave brand, dosage, frequency untouched
                               updateMedicine(index, {
                                 is_lifetime: true,
                                 duration_value: null,
