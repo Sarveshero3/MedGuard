@@ -109,7 +109,7 @@ export function MedicineReviewTable({
           <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider font-semibold border-b border-slate-200">
             <tr>
               <th className="px-3 py-2 w-[150px]">Brand Name</th>
-              <th className="px-3 py-2 w-[210px]">Generic Name</th>
+              <th className="px-3 py-2 w-[220px]">Generic / Composition</th>
               <th className="px-3 py-2 w-[90px]">
                 <span className="flex items-center gap-1">Dosage
                   <InfoButton
@@ -163,9 +163,9 @@ export function MedicineReviewTable({
                   />
                 </td>
 
-                {/* Generic Name - Read-Only Display (AI-generated, never user-editable) */}
+                {/* Generic Name / Composition - Read-Only Display with Tooltip */}
                 <td className="px-3 py-2">
-                  <div className="break-words whitespace-normal max-w-[200px] leading-relaxed">
+                  <div className="max-w-[210px] leading-snug">
                     {med.generic_name === 'no such medicine found' ? (
                       <div className="flex items-center gap-1.5">
                         <span className="inline-flex items-center gap-1 text-rose-600 bg-rose-50 border border-rose-100 rounded px-2 py-0.5 font-semibold text-[10px]">
@@ -188,7 +188,12 @@ export function MedicineReviewTable({
                         )}
                       </div>
                     ) : med.generic_name ? (
-                      <span className="text-slate-650 font-bold block">{med.generic_name}</span>
+                      <span
+                        className="text-slate-700 font-bold block text-[11px] line-clamp-2 break-words cursor-help"
+                        title={med.generic_name}
+                      >
+                        {med.generic_name}
+                      </span>
                     ) : med.brand_name ? (
                       <span className="text-[#0f766e] italic flex items-center gap-1.5 font-semibold">
                         <span className="w-1.5 h-1.5 rounded-full bg-[#0f766e] animate-ping"></span>

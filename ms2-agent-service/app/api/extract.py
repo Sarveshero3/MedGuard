@@ -502,20 +502,21 @@ async def resolve_brand(req: ResolveBrandRequest):
 
     # 1. Ask LLM directly
     direct_prompt = f"""
-    You are a clinical pharmacist assistant. Resolve the active pharmaceutical ingredient (generic name) of the brand medicine name: '{brand}' (Cleaned: '{cleaned_brand}').
+    You are a senior clinical pharmacist assistant. Resolve the active generic ingredient(s), composition, or therapeutic formula for the brand medicine name: '{brand}' (Cleaned: '{cleaned_brand}').
     
     Clinical Instructions:
+    - Many medications (e.g. ORS, probiotics, multivitamins, iron/calcium supplements, digestive enzymes) do not have a single chemical generic name. For combination products, probiotics, or supplements, return the active composition separated by " + " (e.g. "lactobacillus acidophilus + streptococcus faecalis + bifidobacterium + fructooligosaccharide", "ferrous ascorbate + folic acid + zinc", "sodium chloride + sodium citrate + potassium chloride + dextrose").
+    - If exact active ingredients cannot be listed concisely, return the therapeutic drug class or formula (e.g. "probiotic + prebiotic supplement", "multivitamin + mineral complex").
     - Account for OCR typos or spelling variations (e.g. 'Disprn' -> 'aspirin', 'Crocn' -> 'paracetamol').
     - Strip form prefixes like 'Cap', 'Tab', 'Syp' or strength annotations when identifying the core brand.
-    - If '{brand}' or '{cleaned_brand}' is a real brand name (or recognizable typo/abbreviation), identify its active generic ingredient(s).
     
     You must answer in a JSON format with exactly two keys:
-    1. "generic_name": The lowercase canonical generic name (active ingredient) of this medicine (e.g. "cefixime", "paracetamol", "aspirin", "mebeverine", "racecadotril"). If it's a combination medicine, list the main ingredients separated by " + " (e.g. "ferrous ascorbate + folic acid + zinc"). If there is NO such medicine or it is not a real brand, write "no such medicine found".
-    2. "exists": boolean (true if it's a real medicine brand or recognizable typo, false if not).
+    1. "generic_name": The lowercase active generic ingredient(s), composition, or formula of this medicine (e.g. "cefixime", "aspirin", "mebeverine", "racecadotril", "lactobacillus acidophilus + streptococcus faecalis + bifidobacterium + fructooligosaccharide", "probiotic + prebiotic supplement"). Only return "no such medicine found" if '{brand}' is completely non-medical random gibberish.
+    2. "exists": boolean (true if it's a real medicine brand, probiotic, supplement, or recognizable typo, false if not).
     
     Example:
     {{
-        "generic_name": "cefixime",
+        "generic_name": "lactobacillus acidophilus + streptococcus faecalis + bifidobacterium + fructooligosaccharide",
         "exists": true
     }}
     """
@@ -523,7 +524,7 @@ async def resolve_brand(req: ResolveBrandRequest):
     parsed = {}
     try:
         messages = [
-            SystemMessage(content="You are a clinical pharmacist assistant who resolves brand names to their active generic ingredients. Be extremely precise and objective. Return ONLY valid JSON."),
+            SystemMessage(content="You are a clinical pharmacist assistant who resolves brand names to their active generic ingredients or compositions. Be extremely precise and objective. Return ONLY valid JSON."),
             HumanMessage(content=direct_prompt)
         ]
         response = client.invoke(messages)
@@ -556,28 +557,29 @@ async def resolve_brand(req: ResolveBrandRequest):
     if not is_confident:
         search_query_term = cleaned_brand if cleaned_brand else brand
         logger.info(f"Direct LLM was not confident for '{brand}'. Falling back to Tavily search for '{search_query_term}'.")
-        query = f"{search_query_term} medicine composition active generic ingredient"
+        query = f"{search_query_term} medicine composition active generic ingredients formula"
         search_context = await _search_web_grounding(query)
         logger.info(f"Search results context for '{search_query_term}': {search_context}")
         
         search_prompt = f"""
-        You are a clinical pharmacist assistant. Resolve the active pharmaceutical ingredient (generic name) of the brand medicine name: '{brand}' (Cleaned: '{cleaned_brand}').
+        You are a clinical pharmacist assistant. Resolve the active generic ingredient(s), composition, or formula of the brand medicine name: '{brand}' (Cleaned: '{cleaned_brand}').
         
-        We performed a real-time web search for '{search_query_term} medicine composition active generic ingredient':
+        We performed a real-time web search for '{search_query_term} medicine composition active generic ingredients formula':
         ---
         {search_context}
         ---
         
-        Based on the search results and your clinical knowledge, resolve the active generic ingredient of '{brand}'.
+        Based on the search results and your clinical knowledge, resolve the active generic ingredients or composition of '{brand}'.
+        For probiotics, multivitamins, ORS, or combination products, list the key active ingredients separated by " + " (e.g. "lactobacillus acidophilus + streptococcus faecalis + bifidobacterium + fructooligosaccharide").
         
         You must answer in a JSON format with exactly two keys:
-        1. "generic_name": The lowercase canonical generic name (active ingredient) of this medicine (e.g. "cefixime", "aspirin", "racecadotril", "ferrous ascorbate + folic acid + zinc"). If it's a combination medicine, list the main ingredients separated by " + ". If there is NO such medicine, write "no such medicine found".
-        2. "exists": boolean (true if it's a real medicine brand, false if not).
+        1. "generic_name": The lowercase generic active ingredient(s), composition, or formula (e.g. "cefixime", "aspirin", "racecadotril", "lactobacillus acidophilus + bifidobacterium", "probiotic + prebiotic supplement"). Only write "no such medicine found" if non-medical gibberish.
+        2. "exists": boolean (true if it's a real medicine brand or supplement, false if not).
         """
         
         try:
             messages = [
-                SystemMessage(content="You are a clinical pharmacist assistant using web search grounding to resolve brand names. Return ONLY valid JSON."),
+                SystemMessage(content="You are a clinical pharmacist assistant using web search grounding to resolve brand names and compositions. Return ONLY valid JSON."),
                 HumanMessage(content=search_prompt)
             ]
             response = client.invoke(messages)
@@ -612,18 +614,18 @@ async def resolve_brand(req: ResolveBrandRequest):
         The brand name '{brand}' (Cleaned: '{cleaned_brand}') was extracted from a doctor's handwritten prescription.
         
         It may contain a minor OCR typo, handwriting misreading, or regional trade brand variant.
-        Identify the most probable active generic ingredient(s) or composition for this prescription medication.
+        Identify the most probable active generic ingredient(s), composition, or formula for this prescription medication.
         
         Example matches:
-        - "Zugut XT" / "Zigut XT" / "Zuvit XT" -> "ferrous ascorbate + folic acid + zinc"
+        - "Zugut XT" / "Zigut XT" -> "lactobacillus acidophilus + streptococcus faecalis + bifidobacterium + fructooligosaccharide" (probiotic + prebiotic)
         - "Disprn" -> "aspirin"
         - "Taxim-OF" -> "cefixime + ofloxacin"
         - "Dexarab DSR" -> "dexlansoprazole + domperidone"
         - "Redotil" -> "racecadotril"
         
         Return ONLY a JSON with:
-        1. "generic_name": The lowercase generic active ingredient(s) (e.g. "ferrous ascorbate + folic acid + zinc" or "cefixime"). Only return "no such medicine found" if it is completely non-medical gibberish.
-        2. "exists": boolean (true if it's a real medicine brand or recognizable typo, false if not).
+        1. "generic_name": The lowercase generic active ingredient(s), composition, or formula (e.g. "lactobacillus acidophilus + streptococcus faecalis + bifidobacterium + fructooligosaccharide" or "cefixime"). Only return "no such medicine found" if it is completely non-medical gibberish.
+        2. "exists": boolean (true if it's a real medicine brand, probiotic, supplement, or recognizable typo, false if not).
         """
         try:
             messages = [
