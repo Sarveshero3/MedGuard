@@ -192,9 +192,9 @@ Relevant auth fields include identity (`id`, `email`, `password_hash`, `role`), 
 
 A refresh-token row stores a SHA-256 token hash rather than the bearer token itself, plus user ownership, expiry, creation time, and revocation time. Rotation uses a transaction and row locking so two refresh attempts cannot both successfully reuse the same token. The client stores the raw token; database disclosure alone is insufficient to replay it.
 
-### `consent_records`
+### Consent Tracking (DPDP Compliance)
 
-Consent is an auditable domain record separate from authentication. `enforceConsent('health_data_processing')` runs after authentication and access checks on health-data routes. A valid JWT therefore does not imply permission to process clinical data.
+Consent is tracked directly on the `users` table via the `consent_given_at` timestamp. `enforceConsent('health_data_processing')` middleware runs after authentication and access checks on health-data routes. A valid JWT therefore does not imply permission to process clinical data unless consent is granted (non-null).
 
 ### `caregiver_links`
 
