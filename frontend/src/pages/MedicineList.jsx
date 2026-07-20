@@ -287,9 +287,9 @@ export default function MedicineList() {
                         }`}>
                           {med.status}
                         </span>
-                        <span className="text-[10px] text-[#0f766e] font-semibold hover:underline flex items-center gap-0.5">
-                          <span className="material-symbols-outlined text-xs">visibility</span>
-                          View Rx
+                        <span className="text-[11px] text-[#0f766e] font-semibold hover:underline flex items-center gap-1 cursor-pointer">
+                          <span className="material-symbols-outlined text-[13px]">visibility</span>
+                          <span>View Rx</span>
                         </span>
                       </div>
                     </div>
@@ -319,21 +319,11 @@ export default function MedicineList() {
                   </div>
 
                   {/* Actions Button */}
-                  <div className="border-t border-slate-100 pt-3 flex items-center justify-between gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setActiveModalMed(med)}
-                      className="text-slate-600 hover:text-[#0f766e] hover:bg-slate-100 font-semibold text-xs py-1.5 px-2.5 rounded-lg transition-colors flex items-center justify-center gap-1 cursor-pointer"
-                      title="View Prescription Source Document"
-                    >
-                      <span className="material-symbols-outlined text-[16px]">description</span>
-                      <span>Rx Source</span>
-                    </button>
-
+                  <div className="border-t border-slate-100 pt-3 flex items-center justify-end">
                     {isActive ? (
                       <button 
                         onClick={() => toggleStatus(med.id, med.status)}
-                        className="text-[#ba1a1a] hover:bg-[#ba1a1a]/5 font-semibold text-xs py-1.5 px-3 rounded-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                        className="bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs py-2 px-4 rounded-xl shadow-2xs transition-all cursor-pointer flex items-center justify-center gap-1.5 w-full"
                       >
                         <span className="material-symbols-outlined text-[16px]">block</span>
                         Discontinue
@@ -341,7 +331,7 @@ export default function MedicineList() {
                     ) : (
                       <button 
                         onClick={() => toggleStatus(med.id, med.status)}
-                        className="text-[#0f766e] hover:bg-[#0f766e]/5 font-semibold text-xs py-1.5 px-3 rounded-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2 px-4 rounded-xl shadow-2xs transition-all cursor-pointer flex items-center justify-center gap-1.5 w-full"
                       >
                         <span className="material-symbols-outlined text-[16px]">restart_alt</span>
                         Reactivate
@@ -422,21 +412,11 @@ export default function MedicineList() {
                   </div>
 
                   {/* Actions Column */}
-                  <div className="flex items-center gap-2 justify-end md:border-l md:border-slate-100 md:pl-4">
-                    <button
-                      type="button"
-                      onClick={() => setActiveModalMed(med)}
-                      className="text-slate-600 hover:text-[#0f766e] hover:bg-slate-100 font-semibold text-xs py-1.5 px-2.5 rounded-lg transition-colors flex items-center justify-center gap-1 cursor-pointer"
-                      title="View Prescription Source Document"
-                    >
-                      <span className="material-symbols-outlined text-[16px]">description</span>
-                      <span>Rx Source</span>
-                    </button>
-
+                  <div className="flex items-center justify-end md:border-l md:border-slate-100 md:pl-4">
                     {isActive ? (
                       <button 
                         onClick={() => toggleStatus(med.id, med.status)}
-                        className="text-[#ba1a1a] hover:bg-[#ba1a1a]/5 font-semibold text-xs px-3.5 py-2 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer w-full md:w-auto justify-center"
+                        className="bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs py-2 px-4 rounded-xl shadow-2xs transition-all cursor-pointer flex items-center justify-center gap-1.5 w-full md:w-auto"
                       >
                         <span className="material-symbols-outlined text-[16px]">block</span>
                         Discontinue
@@ -444,7 +424,7 @@ export default function MedicineList() {
                     ) : (
                       <button 
                         onClick={() => toggleStatus(med.id, med.status)}
-                        className="text-[#0f766e] hover:bg-[#0f766e]/5 font-semibold text-xs px-3.5 py-2 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer w-full md:w-auto justify-center"
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2 px-4 rounded-xl shadow-2xs transition-all cursor-pointer flex items-center justify-center gap-1.5 w-full md:w-auto"
                       >
                         <span className="material-symbols-outlined text-[16px]">restart_alt</span>
                         Reactivate

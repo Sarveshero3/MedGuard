@@ -1,4 +1,5 @@
 export function buildPrescriptionPayload(userId, finalVisitId, prescriptionMedicines, activeItem) {
+  const photoSource = activeItem?.base64 || activeItem?.preview || activeItem?.extraction?.source_photo_id || null;
   return {
     patient_id: userId,
     visit_id: finalVisitId,
@@ -12,7 +13,7 @@ export function buildPrescriptionPayload(userId, finalVisitId, prescriptionMedic
       duration_unit: m.duration_unit,
       is_lifetime: m.is_lifetime,
       added_at: m.added_at,
-      source_photo_id: activeItem.extraction.source_photo_id,
+      source_photo_id: photoSource,
       brand_mapping_correction: m.generic_name && (m.generic_name !== 'generic_unresolved' && m.generic_name !== 'no such medicine found') ? {
         brand_name: m.brand_name,
         generic_name: m.generic_name,

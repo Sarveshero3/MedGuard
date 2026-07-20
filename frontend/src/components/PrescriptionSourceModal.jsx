@@ -3,22 +3,26 @@ import React from 'react';
 export function PrescriptionSourceModal({ medicine, onClose }) {
   if (!medicine) return null;
 
+  const documentUrl = medicine.source_photo_url || medicine.source_photo_id || medicine.base64 || medicine.preview;
+  const isPdf = typeof documentUrl === 'string' && (documentUrl.includes('application/pdf') || documentUrl.toLowerCase().endsWith('.pdf'));
+
   const downloadDocument = () => {
-    if (medicine.source_photo_url || medicine.base64) {
+    if (documentUrl && typeof documentUrl === 'string' && (documentUrl.startsWith('data:') || documentUrl.startsWith('http') || documentUrl.startsWith('blob:'))) {
+      const ext = isPdf ? 'pdf' : 'png';
       const link = document.createElement('a');
-      link.href = medicine.source_photo_url || medicine.base64;
-      link.download = `Prescription_${medicine.brand_name || 'Medicine'}.png`;
+      link.href = documentUrl;
+      link.download = `Prescription_${(medicine.brand_name || 'Document').replace(/[^a-zA-Z0-9]/g, '_')}.${ext}`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
     } else {
-      // Create a clean summary text download if raw photo url is not directly attached
+      // Clean text record download fallback
       const content = `MEDGUARD PRESCRIPTION VERIFICATION RECORD\n\nBrand Name: ${medicine.brand_name || 'N/A'}\nGeneric/Composition: ${medicine.generic_name || 'N/A'}\nDosage: ${medicine.dosage || 'N/A'}\nFrequency: ${medicine.frequency || 'N/A'}\nAdded Date: ${medicine.added_at ? new Date(medicine.added_at).toLocaleDateString() : 'N/A'}\nStatus: ${medicine.status || 'Active'}\n`;
       const blob = new Blob([content], { type: 'text/plain' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `Prescription_Record_${medicine.brand_name || 'Medicine'}.txt`;
+      link.download = `Prescription_Record_${(medicine.brand_name || 'Medicine').replace(/[^a-zA-Z0-9]/g, '_')}.txt`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -40,7 +44,7 @@ export function PrescriptionSourceModal({ medicine, onClose }) {
                 Source Prescription: {medicine.brand_name || 'Medicine Record'}
               </h3>
               <p className="text-[11px] text-slate-500 font-medium">
-                Extracted Clinical Record & Source Verification
+                Original Uploaded Prescription File & Extraction Details
               </p>
             </div>
           </div>
@@ -77,17 +81,29 @@ export function PrescriptionSourceModal({ medicine, onClose }) {
           </div>
 
           {/* Document Preview Box */}
-          <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-100/70 min-h-[220px] flex flex-col items-center justify-center p-4">
-            {medicine.source_photo_url || medicine.base64 ? (
-              <img
-                src={medicine.source_photo_url || medicine.base64}
-                alt="Source Prescription"
-                className="max-h-[380px] w-auto object-contain rounded border border-slate-200 shadow-xs"
-              />
+          <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-100/70 min-h-[240px] flex flex-col items-center justify-center p-4">
+            {documentUrl && typeof documentUrl === 'string' && (documentUrl.startsWith('data:') || documentUrl.startsWith('http') || documentUrl.startsWith('blob:')) ? (
+              isPdf ? (
+                <object
+                  data={documentUrl}
+                  type="application/pdf"
+                  className="w-full h-[380px] rounded border border-slate-200 shadow-xs"
+                >
+                  <div className="text-center p-4 text-xs text-slate-500">
+                    PDF Document Preview — Use download button below to view.
+                  </div>
+                </object>
+              ) : (
+                <img
+                  src={documentUrl}
+                  alt="Original Source Prescription"
+                  className="max-h-[380px] w-auto object-contain rounded border border-slate-200 shadow-xs"
+                />
+              )
             ) : (
               <div className="text-center p-6 space-y-2">
                 <span className="material-symbols-outlined text-5xl text-slate-300">receipt_long</span>
-                <p className="text-xs font-bold text-slate-700">Digital Clinical Extraction Record</p>
+                <p className="text-xs font-bold text-slate-700">Digital Clinical Record</p>
                 <p className="text-[11px] text-slate-500 max-w-sm mx-auto leading-relaxed">
                   Extracted from verified clinical record on {medicine.added_at ? new Date(medicine.added_at).toLocaleDateString() : 'Prescription Upload'}.
                 </p>
@@ -104,7 +120,7 @@ export function PrescriptionSourceModal({ medicine, onClose }) {
             className="bg-[#0f766e] hover:bg-[#0d645c] text-white font-semibold text-xs px-4 py-2 rounded-xl flex items-center gap-1.5 cursor-pointer shadow-sm transition-all hover:scale-[1.02] active:scale-[0.98]"
           >
             <span className="material-symbols-outlined text-sm">download</span>
-            Download Document
+            Download File
           </button>
           <button
             type="button"
