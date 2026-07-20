@@ -37,10 +37,10 @@ class BrandResolutionService {
         };
       }
 
-      if (resolution_status === 'not_found' || resolution_status === 'not_found_unconfirmed') {
+      if (resolution_status === 'not_found') {
         const age = Date.now() - new Date(resolved_at).getTime();
         if (age < NOT_FOUND_TTL_MS) {
-          logger.info('BRAND_RESOLUTION_CACHE_HIT', `Cache hit: '${brand}' is known ${resolution_status}.`);
+          logger.info('BRAND_RESOLUTION_CACHE_HIT', `Cache hit: '${brand}' is known confirmed ${resolution_status}.`);
           return {
             success: true,
             generic_name: 'no such medicine found',
@@ -50,9 +50,9 @@ class BrandResolutionService {
         logger.info('BRAND_RESOLUTION_CACHE_EXPIRED', `Cache expired for ${resolution_status} entry '${brand}'. Retrying resolution.`);
       }
 
-      // If 'unresolved_error', we automatically retry.
-      if (resolution_status === 'unresolved_error') {
-        logger.info('BRAND_RESOLUTION_RETRY', `Retrying resolution for unresolved_error entry '${brand}'.`);
+      // If 'not_found_unconfirmed' or 'unresolved_error', we automatically retry MS2/Tavily research
+      if (resolution_status === 'not_found_unconfirmed' || resolution_status === 'unresolved_error') {
+        logger.info('BRAND_RESOLUTION_RETRY', `Retrying resolution for ${resolution_status} entry '${brand}'.`);
       }
     }
 

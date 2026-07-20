@@ -423,9 +423,10 @@ RESOLUTION_METRICS = {
 def clean_brand_name(brand: str) -> str:
     import re
     # Remove common dosage form prefixes (case-insensitive)
-    cleaned = re.sub(r'^(tab\b|cap\b|syp\b|tablet\b|capsule\b|syrup\b|inj\b|injection\b)\.?\s*', '', brand, flags=re.IGNORECASE)
-    # Remove trailing open parenthesis and common punctuation symbols
-    cleaned = re.sub(r'\s*\(\s*$', '', cleaned)
+    cleaned = re.sub(r'^(tab\b|cap\b|syp\b|tablet\b|capsule\b|syrup\b|inj\b|injection\b|ors\b|dr\b|dtr\b)\.?\s*', '', brand, flags=re.IGNORECASE)
+    # Remove strength numbers and parenthetical noise e.g. (1mg), (Electral), (200), (;)
+    cleaned = re.sub(r'\s*\([^\)]*\)?', '', cleaned)
+    cleaned = re.sub(r'\b\d+(\.\d+)?\s*(mg|g|mcg|ml|l|iu|units?|sachet|tabs?|caps?)\b', '', cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r'[\(\[\{\-\:\;\,\.\+\*\/]+$', '', cleaned)
     return cleaned.strip()
 
@@ -487,10 +488,8 @@ async def resolve_brand(req: ResolveBrandRequest):
     if not brand:
         return {"success": True, "generic_name": "no such medicine found", "exists": False}
         
-    # Explicit safety decision: brand resolution uses the 70B model by default.
-    # Do not replace it with the faster 8B disambiguation model without rerunning
-    # and documenting the scored medication benchmark.
     client = get_client(settings.brand_resolution_model)
+    cleaned_brand = clean_brand_name(brand)
     
     def parse_llm_json(content_str: str) -> dict:
         cleaned = content_str.strip()
@@ -503,13 +502,16 @@ async def resolve_brand(req: ResolveBrandRequest):
 
     # 1. Ask LLM directly
     direct_prompt = f"""
-    You are a clinical pharmacist assistant. Resolve the active pharmaceutical ingredient (generic name) of the brand medicine name: '{brand}'.
+    You are a clinical pharmacist assistant. Resolve the active pharmaceutical ingredient (generic name) of the brand medicine name: '{brand}' (Cleaned: '{cleaned_brand}').
     
-    Based on your clinical knowledge, resolve the active ingredient (generic name) of '{brand}'.
+    Clinical Instructions:
+    - Account for OCR typos or spelling variations (e.g. 'Disprn' -> 'aspirin', 'Crocn' -> 'paracetamol').
+    - Strip form prefixes like 'Cap', 'Tab', 'Syp' or strength annotations when identifying the core brand.
+    - If '{brand}' or '{cleaned_brand}' is a real brand name (or recognizable typo/abbreviation), identify its active generic ingredient(s).
     
     You must answer in a JSON format with exactly two keys:
-    1. "generic_name": The lowercase canonical generic name (active ingredient) of this medicine (e.g. "cefixime", "paracetamol", "atorvastatin"). If it's a combination medicine, list the main ingredients separated by " + " (e.g. "amoxicillin + clavulanic acid"). If there is NO such medicine or it is a generic name already, write "no such medicine found".
-    2. "exists": boolean (true if it's a real medicine brand, false if it's not a real medicine brand or not found).
+    1. "generic_name": The lowercase canonical generic name (active ingredient) of this medicine (e.g. "cefixime", "paracetamol", "aspirin", "mebeverine", "racecadotril"). If it's a combination medicine, list the main ingredients separated by " + " (e.g. "ferrous ascorbate + folic acid + zinc"). If there is NO such medicine or it is not a real brand, write "no such medicine found".
+    2. "exists": boolean (true if it's a real medicine brand or recognizable typo, false if not).
     
     Example:
     {{
@@ -526,20 +528,19 @@ async def resolve_brand(req: ResolveBrandRequest):
         ]
         response = client.invoke(messages)
         content = response.content.strip()
-        logger.info(f"Direct LLM response: {content}")
+        logger.info(f"Direct LLM response for '{brand}': {content}")
         
         try:
             parsed = parse_llm_json(content)
         except Exception as parse_err:
             logger.warning(f"Initial JSON parsing failed: {str(parse_err)}. Retrying once with strict instructions.")
-            retry_prompt = direct_prompt + "\n\nCRITICAL: Return ONLY valid JSON. Your previous response failed to parse as valid JSON. Ensure your output is strict JSON-only format with no extra text or markdown code blocks."
+            retry_prompt = direct_prompt + "\n\nCRITICAL: Return ONLY valid JSON. Your previous response failed to parse as valid JSON."
             retry_messages = [
-                SystemMessage(content="You are a clinical pharmacist assistant. Be extremely precise and objective. Return ONLY valid JSON."),
+                SystemMessage(content="You are a clinical pharmacist assistant. Return ONLY valid JSON."),
                 HumanMessage(content=retry_prompt)
             ]
             retry_response = client.invoke(retry_messages)
             retry_content = retry_response.content.strip()
-            logger.info(f"Retry direct LLM response: {retry_content}")
             parsed = parse_llm_json(retry_content)
             
     except Exception as e:
@@ -551,59 +552,57 @@ async def resolve_brand(req: ResolveBrandRequest):
     generic_name_str = str(generic_name or "no such medicine found").lower()
     is_confident = (exists is True) and (generic_name_str != "no such medicine found")
     
-    # 2. Fallback to Search if not confident
+    # 2. Fallback to Tavily Search Grounding if direct LLM not confident
     if not is_confident:
-        logger.info(f"Direct LLM was not confident for '{brand}'. Falling back to one Tavily search.")
-        cleaned_brand = clean_brand_name(brand)
-        if cleaned_brand:
-            query = f"{cleaned_brand} medicine active ingredient composition"
-            search_context = await _search_web_grounding(query)
-            logger.info(f"Search results context for '{brand}': {search_context}")
-            
-            search_prompt = f"""
-            You are a clinical pharmacist assistant. Resolve the active pharmaceutical ingredient (generic name) of the brand medicine name: '{brand}'.
-            
-            To help you, we performed a real-time web search for '{brand} medicine generic name composition' and found these results:
-            ---
-            {search_context}
-            ---
-            
-            Based on the search results and your clinical knowledge, resolve the active ingredient (generic name) of '{brand}'.
-            
-            You must answer in a JSON format with exactly two keys:
-            1. "generic_name": The lowercase canonical generic name (active ingredient) of this medicine (e.g. "cefixime", "paracetamol", "atorvastatin"). If it's a combination medicine, list the main ingredients separated by " + " (e.g. "amoxicillin + clavulanic acid"). If there is NO such medicine or it is a generic name already, write "no such medicine found".
-            2. "exists": boolean (true if it's a real medicine brand, false if it's not a real medicine brand or not found).
-            """
+        search_query_term = cleaned_brand if cleaned_brand else brand
+        logger.info(f"Direct LLM was not confident for '{brand}'. Falling back to Tavily search for '{search_query_term}'.")
+        query = f"{search_query_term} medicine composition active generic ingredient"
+        search_context = await _search_web_grounding(query)
+        logger.info(f"Search results context for '{search_query_term}': {search_context}")
+        
+        search_prompt = f"""
+        You are a clinical pharmacist assistant. Resolve the active pharmaceutical ingredient (generic name) of the brand medicine name: '{brand}' (Cleaned: '{cleaned_brand}').
+        
+        We performed a real-time web search for '{search_query_term} medicine composition active generic ingredient':
+        ---
+        {search_context}
+        ---
+        
+        Based on the search results and your clinical knowledge, resolve the active generic ingredient of '{brand}'.
+        
+        You must answer in a JSON format with exactly two keys:
+        1. "generic_name": The lowercase canonical generic name (active ingredient) of this medicine (e.g. "cefixime", "aspirin", "racecadotril", "ferrous ascorbate + folic acid + zinc"). If it's a combination medicine, list the main ingredients separated by " + ". If there is NO such medicine, write "no such medicine found".
+        2. "exists": boolean (true if it's a real medicine brand, false if not).
+        """
+        
+        try:
+            messages = [
+                SystemMessage(content="You are a clinical pharmacist assistant using web search grounding to resolve brand names. Return ONLY valid JSON."),
+                HumanMessage(content=search_prompt)
+            ]
+            response = client.invoke(messages)
+            content = response.content.strip()
+            logger.info(f"Search-grounded LLM response for '{brand}': {content}")
             
             try:
-                messages = [
-                    SystemMessage(content="You are a clinical pharmacist assistant who resolves brand names using web search grounding. Be extremely precise and objective. Return ONLY valid JSON."),
-                    HumanMessage(content=search_prompt)
+                parsed = parse_llm_json(content)
+            except Exception as parse_err:
+                logger.warning(f"Search-grounded JSON parsing failed: {str(parse_err)}.")
+                retry_prompt = search_prompt + "\n\nCRITICAL: Return ONLY valid JSON."
+                retry_messages = [
+                    SystemMessage(content="You are a clinical pharmacist assistant. Return ONLY valid JSON."),
+                    HumanMessage(content=retry_prompt)
                 ]
-                response = client.invoke(messages)
-                content = response.content.strip()
-                logger.info(f"Search-grounded LLM response: {content}")
+                retry_response = client.invoke(retry_messages)
+                retry_content = retry_response.content.strip()
+                parsed = parse_llm_json(retry_content)
                 
-                try:
-                    parsed = parse_llm_json(content)
-                except Exception as parse_err:
-                    logger.warning(f"Search-grounded JSON parsing failed: {str(parse_err)}. Retrying once with strict instructions.")
-                    retry_prompt = search_prompt + "\n\nCRITICAL: Return ONLY valid JSON. Your previous response failed to parse as valid JSON. Ensure your output is strict JSON-only format with no extra text or markdown code blocks."
-                    retry_messages = [
-                        SystemMessage(content="You are a clinical pharmacist assistant. Be extremely precise and objective. Return ONLY valid JSON."),
-                        HumanMessage(content=retry_prompt)
-                    ]
-                    retry_response = client.invoke(retry_messages)
-                    retry_content = retry_response.content.strip()
-                    logger.info(f"Retry search-grounded LLM response: {retry_content}")
-                    parsed = parse_llm_json(retry_content)
-                    
-            except Exception as e:
-                logger.error(f"Search-grounded LLM call failed: {str(e)}")
-                
-            generic_name = parsed.get("generic_name")
-            exists = parsed.get("exists", False)
-            generic_name_str = str(generic_name or "no such medicine found").lower()
+        except Exception as e:
+            logger.error(f"Search-grounded LLM call failed: {str(e)}")
+            
+        generic_name = parsed.get("generic_name")
+        exists = parsed.get("exists", False)
+        generic_name_str = str(generic_name or "no such medicine found").lower()
 
     # Final validation & metrics update
     if generic_name_str == "no such medicine found" or not exists:
