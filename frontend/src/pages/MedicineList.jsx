@@ -354,11 +354,6 @@ export default function MedicineList() {
           </div>
         ) : (
           <div className="flex flex-col gap-3">
-            {/* Prescription Source Modal Popup */}
-            <PrescriptionSourceModal
-              medicine={activeModalMed}
-              onClose={() => setActiveModalMed(null)}
-            />
             {filteredMeds.map((med) => {
               const isActive = med.status === 'active'
               const isChecked = selectedIds.includes(med.id)
@@ -384,8 +379,8 @@ export default function MedicineList() {
                     />
 
                     <div className="flex-grow flex flex-col md:flex-row md:items-center gap-4 md:gap-8 min-w-0">
-                      <div className="min-w-[180px] max-w-[240px] truncate text-left">
-                        <h4 className={`text-base font-bold truncate ${isActive ? 'text-slate-900' : 'text-slate-400 line-through'}`} title={med.brand_name || med.generic_name}>
+                      <div className="min-w-[180px] max-w-[240px] truncate text-left cursor-pointer" onClick={() => setActiveModalMed(med)}>
+                        <h4 className={`text-base font-bold truncate hover:text-[#0f766e] transition-colors ${isActive ? 'text-slate-900' : 'text-slate-400 line-through'}`} title={med.brand_name || med.generic_name}>
                           {med.brand_name || med.generic_name}
                         </h4>
                         {med.brand_name && med.generic_name && med.brand_name.toLowerCase() !== med.generic_name.toLowerCase() && (
@@ -402,7 +397,7 @@ export default function MedicineList() {
                         </span>
                       </div>
 
-                      <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-6 text-xs text-slate-500">
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-6 text-xs text-slate-500 cursor-pointer" onClick={() => setActiveModalMed(med)}>
                         <p className="flex items-center gap-1.5 font-medium">
                           <span className="material-symbols-outlined text-slate-400 text-[18px]">medication</span>
                           <span className="font-bold text-slate-700">Dosage:</span> {med.dosage}
@@ -427,7 +422,17 @@ export default function MedicineList() {
                   </div>
 
                   {/* Actions Column */}
-                  <div className="flex items-center justify-end md:border-l md:border-slate-100 md:pl-4">
+                  <div className="flex items-center gap-2 justify-end md:border-l md:border-slate-100 md:pl-4">
+                    <button
+                      type="button"
+                      onClick={() => setActiveModalMed(med)}
+                      className="text-slate-600 hover:text-[#0f766e] hover:bg-slate-100 font-semibold text-xs py-1.5 px-2.5 rounded-lg transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                      title="View Prescription Source Document"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">description</span>
+                      <span>Rx Source</span>
+                    </button>
+
                     {isActive ? (
                       <button 
                         onClick={() => toggleStatus(med.id, med.status)}
@@ -451,6 +456,12 @@ export default function MedicineList() {
             })}
           </div>
         )}
+
+        {/* Global Prescription Source Modal Popup */}
+        <PrescriptionSourceModal
+          medicine={activeModalMed}
+          onClose={() => setActiveModalMed(null)}
+        />
       </main>
 
       {/* Footer */}
