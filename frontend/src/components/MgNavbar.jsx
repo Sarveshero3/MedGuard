@@ -8,8 +8,6 @@ export function MgNavbar() {
   const navigate = useNavigate()
   const location = useLocation()
   const [alertCount, setAlertCount] = useState(0)
-  const lastCountRef = useRef(0)
-  const [showToast, setShowToast] = useState(null)
   
   useEffect(() => {
     if (!user) return;
@@ -23,12 +21,6 @@ export function MgNavbar() {
         const res = await api.get('/alerts', { params: { patient_id: activePatientId } });
         const active = res.data.data.filter(a => a.status === 'shown');
         setAlertCount(active.length);
-        if (active.length > lastCountRef.current) {
-          const newAlert = active[active.length - 1];
-          setShowToast(`⚠️ New Drug Interaction Flagged: ${newAlert.drug_name_a} & ${newAlert.drug_name_b}`);
-          setTimeout(() => setShowToast(null), 6000);
-        }
-        lastCountRef.current = active.length;
       } catch (err) {
         // Silence errors
       }
@@ -63,8 +55,6 @@ export function MgNavbar() {
       const activeEl = tabRefs.current[activeIndex]
       const containerEl = containerRef.current
       if (activeEl && containerEl) {
-        const activeRect = activeEl.getBoundingClientRect()
-        const containerRect = containerEl.getBoundingClientRect()
         setPillStyle({
           left: activeEl.offsetLeft,
           width: activeEl.offsetWidth
@@ -75,13 +65,6 @@ export function MgNavbar() {
 
   return (
     <header className="bg-white border-b border-slate-200/80 sticky top-0 z-50 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
-      {showToast && (
-        <div className="fixed top-24 right-6 bg-slate-900 text-white px-5 py-3 rounded-xl shadow-lg border border-slate-800 z-50 flex items-center gap-3 transition-all duration-300 animate-pulse">
-          <span className="material-symbols-outlined text-amber-400">warning</span>
-          <div className="text-xs font-semibold">{showToast}</div>
-          <button onClick={() => setShowToast(null)} className="text-slate-400 hover:text-white ml-2 text-xs font-bold">×</button>
-        </div>
-      )}
       <div className="flex justify-between items-center w-full px-6 md:px-16 max-w-[1200px] mx-auto h-20">
         
         {/* Brand Wordmark Logo */}
@@ -122,8 +105,8 @@ export function MgNavbar() {
               >
                 <span>{tab.name}</span>
                 {tab.name === 'Alerts' && alertCount > 0 && (
-                  <span className={`px-1.5 py-0.5 text-[9px] rounded-full font-bold shadow-sm ${
-                    isActive ? 'bg-white text-[#0f766e]' : 'bg-red-600 text-white animate-pulse'
+                  <span className={`px-1.5 py-0.5 text-[9px] rounded-full font-bold shadow-2xs ${
+                    isActive ? 'bg-white text-[#0f766e]' : 'bg-rose-600 text-white'
                   }`}>
                     {alertCount}
                   </span>
