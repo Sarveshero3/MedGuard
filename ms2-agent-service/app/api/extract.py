@@ -604,6 +604,43 @@ async def resolve_brand(req: ResolveBrandRequest):
         exists = parsed.get("exists", False)
         generic_name_str = str(generic_name or "no such medicine found").lower()
 
+    # 3. Final Fallback: Clinical Pharmacist Handwriting & OCR Typos Pass
+    if (generic_name_str == "no such medicine found" or not exists) and cleaned_brand:
+        logger.info(f"Exact lookup failed for '{brand}'. Trying Tier 3 OCR/phonetic fuzzy matching pass.")
+        fuzzy_prompt = f"""
+        You are a senior clinical pharmacist expert in global and Indian pharmaceuticals (1mg, Netmeds, PharmEasy).
+        The brand name '{brand}' (Cleaned: '{cleaned_brand}') was extracted from a doctor's handwritten prescription.
+        
+        It may contain a minor OCR typo, handwriting misreading, or regional trade brand variant.
+        Identify the most probable active generic ingredient(s) or composition for this prescription medication.
+        
+        Example matches:
+        - "Zugut XT" / "Zigut XT" / "Zuvit XT" -> "ferrous ascorbate + folic acid + zinc"
+        - "Disprn" -> "aspirin"
+        - "Taxim-OF" -> "cefixime + ofloxacin"
+        - "Dexarab DSR" -> "dexlansoprazole + domperidone"
+        - "Redotil" -> "racecadotril"
+        
+        Return ONLY a JSON with:
+        1. "generic_name": The lowercase generic active ingredient(s) (e.g. "ferrous ascorbate + folic acid + zinc" or "cefixime"). Only return "no such medicine found" if it is completely non-medical gibberish.
+        2. "exists": boolean (true if it's a real medicine brand or recognizable typo, false if not).
+        """
+        try:
+            messages = [
+                SystemMessage(content="You are an expert clinical pharmacist in prescription brand resolution. Return ONLY valid JSON."),
+                HumanMessage(content=fuzzy_prompt)
+            ]
+            response = client.invoke(messages)
+            fuzzy_parsed = parse_llm_json(response.content.strip())
+            f_generic = str(fuzzy_parsed.get("generic_name", "")).lower()
+            f_exists = fuzzy_parsed.get("exists", False)
+            if f_generic and f_generic != "no such medicine found" and f_exists:
+                generic_name_str = f_generic
+                exists = True
+                logger.info(f"Tier 3 OCR/Fuzzy pass successfully resolved '{brand}' -> '{generic_name_str}'")
+        except Exception as f_err:
+            logger.warning(f"Tier 3 fuzzy resolution pass failed: {f_err}")
+
     # Final validation & metrics update
     if generic_name_str == "no such medicine found" or not exists:
         final_generic_name = "no such medicine found"
