@@ -474,6 +474,20 @@ export default function Upload() {
 
       // 2. Submit confirmation payload
       if (activeItem.docType === 'prescription') {
+        const fileDataUrl = activeItem.base64 || activeItem.preview;
+        if (fileDataUrl) {
+          try {
+            prescriptionMedicines.forEach(m => {
+              if (m.brand_name) {
+                const key = `medguard_rx_file_${m.brand_name.toLowerCase().trim().replace(/[^a-z0-9]/g, '')}`;
+                localStorage.setItem(key, fileDataUrl);
+              }
+            });
+            localStorage.setItem('medguard_rx_file_latest', fileDataUrl);
+          } catch (e) {
+            console.warn('LocalStorage cache limit reached:', e);
+          }
+        }
         const medsWithDate = prescriptionMedicines.map(m => ({
           ...m,
           added_at: prescriptionDate
