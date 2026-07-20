@@ -207,6 +207,7 @@ class BrandResolutionService {
         if (res.status === 200 && res.data && res.data.success) {
           return {
             generic_name: res.data.generic_name || 'no such medicine found',
+            recommended_dosage: res.data.recommended_dosage || '',
             exists: !!res.data.exists
           };
         }

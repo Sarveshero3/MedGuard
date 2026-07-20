@@ -119,9 +119,10 @@ export default function Upload() {
             try {
               const res = await api.post('/medicines/resolve-brand', { brand_name: med.brand_name });
               const resolved = res.data.generic_name || 'no such medicine found';
-              return { index: absoluteIndex, generic_name: resolved };
+              const recommended = res.data.recommended_dosage || '';
+              return { index: absoluteIndex, generic_name: resolved, recommended_dosage: recommended };
             } catch (e) {
-              return { index: absoluteIndex, generic_name: 'no such medicine found' };
+              return { index: absoluteIndex, generic_name: 'no such medicine found', recommended_dosage: '' };
             }
           }
           return null;
@@ -130,7 +131,7 @@ export default function Upload() {
         const results = await Promise.allSettled(promises);
         results.forEach(result => {
           if (result.status === 'fulfilled' && result.value) {
-            const { index, generic_name } = result.value;
+            const { index, generic_name, recommended_dosage } = result.value;
             // Additional layer of safety: once resolved, never overwrite it
             const currentMed = updated[index];
             const isAlreadyResolved = currentMed &&
@@ -139,10 +140,14 @@ export default function Upload() {
               currentMed.generic_name !== 'generic_unresolved';
 
             if (!isAlreadyResolved) {
+              const currentDosage = currentMed?.dosage || '';
+              const shouldImputeDosage = !currentDosage.trim() && recommended_dosage;
+
               updated[index] = {
                 ...updated[index],
                 generic_name,
-                original_generic_name: generic_name
+                original_generic_name: generic_name,
+                ...(shouldImputeDosage ? { dosage: recommended_dosage, is_ai_dosage: true } : {})
               };
             }
           }
@@ -168,14 +173,23 @@ export default function Upload() {
 
   const handleResolveBrand = async (index, brandName) => {
     if (!brandName.trim()) return;
-
-    setPrescriptionMedicines(prev => prev.map((m, idx) => idx === index ? { ...m, generic_name: '', original_generic_name: '' } : m));
-
     try {
       const res = await api.post('/medicines/resolve-brand', { brand_name: brandName });
-      const resolved = res.data.generic_name || 'no such medicine found';
+      const generic_name = res.data.generic_name || 'no such medicine found';
+      const recommended_dosage = res.data.recommended_dosage || '';
+
       setPrescriptionMedicines(prev => {
-        const updated = prev.map((m, idx) => idx === index ? { ...m, generic_name: resolved, original_generic_name: resolved } : m);
+        const updated = [...prev];
+        if (updated[index]) {
+          const currentDosage = updated[index].dosage || '';
+          const shouldImputeDosage = !currentDosage.trim() && recommended_dosage;
+          updated[index] = {
+            ...updated[index],
+            generic_name,
+            original_generic_name: generic_name,
+            ...(shouldImputeDosage ? { dosage: recommended_dosage, is_ai_dosage: true } : {})
+          };
+        }
         setUploadedFiles(queue => queue.map(f => f.id === activeFileId ? {
           ...f,
           extraction: {
@@ -207,6 +221,60 @@ export default function Upload() {
     }
   };
 
+  // Helper to calculate mode of extracted duration_value and impute missing dosage/duration
+  const imputeMissingFields = (meds) => {
+    if (!Array.isArray(meds) || meds.length === 0) return meds;
+
+    // 1. Collect all non-null, non-zero, non-lifetime duration values
+    const extractedDurations = meds
+      .map(m => m.duration_value)
+      .filter(val => val !== null && val !== undefined && val !== '' && !isNaN(Number(val)) && Number(val) > 0);
+
+    let modeDuration = 1;
+    if (extractedDurations.length > 0) {
+      const freqMap = {};
+      let maxFreq = 0;
+      extractedDurations.forEach(val => {
+        const num = Number(val);
+        freqMap[num] = (freqMap[num] || 0) + 1;
+        if (freqMap[num] > maxFreq) {
+          maxFreq = freqMap[num];
+          modeDuration = num;
+        }
+      });
+    }
+
+    return meds.map(med => {
+      let is_ai_duration = !!med.is_ai_duration;
+      let duration_value = med.duration_value;
+      let duration_unit = med.duration_unit;
+
+      // If duration is missing and not lifetime
+      if (!med.is_lifetime && (duration_value === null || duration_value === undefined || duration_value === '')) {
+        duration_value = modeDuration;
+        duration_unit = duration_unit || 'day';
+        is_ai_duration = true;
+      }
+
+      let is_ai_dosage = !!med.is_ai_dosage;
+      let dosage = med.dosage || '';
+
+      if (!dosage.trim() && med.recommended_dosage) {
+        dosage = med.recommended_dosage;
+        is_ai_dosage = true;
+      }
+
+      return {
+        ...med,
+        dosage,
+        duration_value,
+        duration_unit,
+        is_ai_duration,
+        is_ai_dosage
+      };
+    });
+  };
+
   // Initialize form fields helper
   const initializeFormFields = (type, data) => {
     const raw = data?.raw_extraction || {}
@@ -224,9 +292,12 @@ export default function Upload() {
           duration_value: m.duration_value !== undefined ? m.duration_value : null,
           duration_unit: m.duration_unit || null,
           is_lifetime: !!m.is_lifetime,
+          is_ai_duration: !!m.is_ai_duration,
+          is_ai_dosage: !!m.is_ai_dosage
         }));
-        setPrescriptionMedicines(initialMeds);
-        resolveExtractedMeds(initialMeds);
+        const imputed = imputeMissingFields(initialMeds);
+        setPrescriptionMedicines(imputed);
+        resolveExtractedMeds(imputed);
       } else {
         const initialMeds = [{
           brand_name: raw.brand_name || '',
@@ -238,9 +309,12 @@ export default function Upload() {
           duration_value: raw.duration_value !== undefined ? raw.duration_value : null,
           duration_unit: raw.duration_unit || null,
           is_lifetime: !!raw.is_lifetime,
+          is_ai_duration: !!raw.is_ai_duration,
+          is_ai_dosage: !!raw.is_ai_dosage
         }];
-        setPrescriptionMedicines(initialMeds);
-        resolveExtractedMeds(initialMeds);
+        const imputed = imputeMissingFields(initialMeds);
+        setPrescriptionMedicines(imputed);
+        resolveExtractedMeds(imputed);
       }
     } else {
       let parsedTests = [];
@@ -656,6 +730,8 @@ export default function Upload() {
 
                     // 5. Completed review form
                     if (activeItem.status === 'completed' && activeExtraction) {
+                      const hasAiFields = activeItem.docType === 'prescription' && prescriptionMedicines.some(m => m.is_ai_dosage || m.is_ai_duration);
+
                       return (
                         <div className="flex flex-col w-full text-left">
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8 border-b border-slate-100 pb-4">
@@ -666,21 +742,35 @@ export default function Upload() {
                               </span>
                             </div>
 
-                            {activeItem.docType === 'prescription' && (
-                              <div className="flex items-center gap-3 border border-slate-200 bg-slate-50/50 rounded-xl px-4 py-2 text-xs">
-                                <label htmlFor="prescription_date_top" className="font-bold text-slate-500 uppercase tracking-wider">
-                                  Prescription Date
-                                </label>
-                                <input
-                                  id="prescription_date_top"
-                                  type="date"
-                                  required
-                                  value={prescriptionDate}
-                                  onChange={(e) => setPrescriptionDate(e.target.value)}
-                                  className="bg-white border border-slate-200 focus:border-[#0f766e] rounded px-3 py-1.5 focus:outline-none transition-all font-semibold text-slate-800"
-                                />
-                              </div>
-                            )}
+                            <div className="flex items-center gap-3">
+                              {hidePreview && (
+                                <button
+                                  type="button"
+                                  onClick={() => setHidePreview(false)}
+                                  className="text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 border border-slate-200 px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition-all cursor-pointer"
+                                  title="Show Document Preview Panel"
+                                >
+                                  <span className="material-symbols-outlined text-sm">visibility</span>
+                                  <span>Show Document</span>
+                                </button>
+                              )}
+
+                              {activeItem.docType === 'prescription' && (
+                                <div className="flex items-center gap-3 border border-slate-200 bg-slate-50/50 rounded-xl px-4 py-2 text-xs">
+                                  <label htmlFor="prescription_date_top" className="font-bold text-slate-500 uppercase tracking-wider">
+                                    Prescription Date
+                                  </label>
+                                  <input
+                                    id="prescription_date_top"
+                                    type="date"
+                                    required
+                                    value={prescriptionDate}
+                                    onChange={(e) => setPrescriptionDate(e.target.value)}
+                                    className="bg-white border border-slate-200 focus:border-[#0f766e] rounded px-3 py-1.5 focus:outline-none transition-all font-semibold text-slate-800"
+                                  />
+                                </div>
+                              )}
+                            </div>
                           </div>
 
                           {activeExtraction.needs_follow_up && (
@@ -693,51 +783,80 @@ export default function Upload() {
                           <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
 
                             {/* Left: Document View Panel */}
-                            <div className="xl:col-span-4 self-start flex flex-col border border-slate-200 rounded-xl bg-slate-50 overflow-hidden shadow-sm">
-                              <div className="bg-slate-100 border-b border-slate-200 p-3 flex justify-between items-center text-xs text-slate-500 font-semibold">
-                                <span>Preview Panel</span>
-                                <div className="flex items-center gap-1.5">
-                                  <button type="button" onClick={() => setZoom(z => Math.max(0.25, z - 0.25))} className="p-1 rounded hover:bg-slate-200 transition-colors cursor-pointer" title="Zoom Out">
-                                    <span className="material-symbols-outlined text-sm">zoom_out</span>
-                                  </button>
-                                  <span className="text-[10px] font-mono min-w-[3ch] text-center select-none">{Math.round(zoom * 100)}%</span>
-                                  <button type="button" onClick={() => setZoom(z => Math.min(3, z + 0.25))} className="p-1 rounded hover:bg-slate-200 transition-colors cursor-pointer" title="Zoom In">
-                                    <span className="material-symbols-outlined text-sm">zoom_in</span>
-                                  </button>
-                                  <button type="button" onClick={() => setZoom(1)} className="p-1 rounded hover:bg-slate-200 transition-colors cursor-pointer" title="Reset Zoom">
-                                    <span className="material-symbols-outlined text-sm">fit_screen</span>
-                                  </button>
-                                  <span className="text-slate-300 mx-0.5">|</span>
-                                  <span>{activeItem.isPdf ? 'PDF' : 'Image'}</span>
-                                </div>
-                              </div>
-                              <div className="p-4 overflow-auto max-h-[550px] bg-slate-150">
-                                <div style={{ width: `${zoom * 100}%`, transformOrigin: 'top left' }}>
-                                  {activeItem.isPdf ? (
-                                    <object
-                                      data={activeItem.base64}
-                                      type="application/pdf"
-                                      style={{ width: '100%', minHeight: `${450 * zoom}px` }}
-                                      className="rounded border border-slate-200 shadow-sm"
+                            {!hidePreview && (
+                              <div className="xl:col-span-4 self-start flex flex-col border border-slate-200 rounded-xl bg-slate-50 overflow-hidden shadow-sm">
+                                <div className="bg-slate-100 border-b border-slate-200 p-3 flex justify-between items-center text-xs text-slate-500 font-semibold">
+                                  <span>Preview Panel</span>
+                                  <div className="flex items-center gap-1.5">
+                                    <button type="button" onClick={() => setZoom(z => Math.max(0.25, z - 0.25))} className="p-1 rounded hover:bg-slate-200 transition-colors cursor-pointer" title="Zoom Out">
+                                      <span className="material-symbols-outlined text-sm">zoom_out</span>
+                                    </button>
+                                    <span className="text-[10px] font-mono min-w-[3ch] text-center select-none">{Math.round(zoom * 100)}%</span>
+                                    <button type="button" onClick={() => setZoom(z => Math.min(3, z + 0.25))} className="p-1 rounded hover:bg-slate-200 transition-colors cursor-pointer" title="Zoom In">
+                                      <span className="material-symbols-outlined text-sm">zoom_in</span>
+                                    </button>
+                                    <button type="button" onClick={() => setZoom(1)} className="p-1 rounded hover:bg-slate-200 transition-colors cursor-pointer" title="Reset Zoom">
+                                      <span className="material-symbols-outlined text-sm">fit_screen</span>
+                                    </button>
+                                    <span className="text-slate-300 mx-0.5">|</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => setHidePreview(true)}
+                                      className="p-1 rounded hover:bg-slate-200 text-slate-600 transition-colors cursor-pointer flex items-center gap-1 text-[11px]"
+                                      title="Hide Document Preview"
                                     >
-                                      <div className="flex flex-col items-center justify-center text-center gap-3 p-8">
-                                        <span className="material-symbols-outlined text-6xl text-rose-500">picture_as_pdf</span>
-                                        <span className="text-xs font-bold text-slate-700 truncate max-w-[200px]" title={activeItem.name}>
-                                          {activeItem.name}
-                                        </span>
-                                        <span className="text-[10px] bg-slate-200 text-slate-600 px-2 py-0.5 rounded font-semibold uppercase">
-                                          PDF Preview Unavailable
-                                        </span>
-                                      </div>
-                                    </object>
-                                  ) : (
-                                    <img className="object-contain w-full rounded border border-slate-200 shadow-sm" src={activeItem.preview || activeItem.base64} alt="Document preview" />
-                                  )}
+                                      <span className="material-symbols-outlined text-sm">visibility_off</span>
+                                      <span>Hide</span>
+                                    </button>
+                                  </div>
+                                </div>
+                                <div className="p-4 overflow-auto max-h-[550px] bg-slate-150">
+                                  <div style={{ width: `${zoom * 100}%`, transformOrigin: 'top left' }}>
+                                    {activeItem.isPdf ? (
+                                      <object
+                                        data={activeItem.base64}
+                                        type="application/pdf"
+                                        style={{ width: '100%', minHeight: `${450 * zoom}px` }}
+                                        className="rounded border border-slate-200 shadow-sm"
+                                      >
+                                        <div className="flex flex-col items-center justify-center text-center gap-3 p-8">
+                                          <span className="material-symbols-outlined text-6xl text-rose-500">picture_as_pdf</span>
+                                          <span className="text-xs font-bold text-slate-700 truncate max-w-[200px]" title={activeItem.name}>
+                                            {activeItem.name}
+                                          </span>
+                                          <span className="text-[10px] bg-slate-200 text-slate-600 px-2 py-0.5 rounded font-semibold uppercase">
+                                            PDF Preview Unavailable
+                                          </span>
+                                        </div>
+                                      </object>
+                                    ) : (
+                                      <img className="object-contain w-full rounded border border-slate-200 shadow-sm" src={activeItem.preview || activeItem.base64} alt="Document preview" />
+                                    )}
+                                  </div>
                                 </div>
                               </div>
-                            </div>
+                            )}
+
                             {/* Right: Validation Forms */}
-                            <form onSubmit={handleSaveActive} className="xl:col-span-8 space-y-5">
+                            <form onSubmit={handleSaveActive} className={hidePreview ? "xl:col-span-12 space-y-5" : "xl:col-span-8 space-y-5"}>
+
+                              {/* Section 11.C Disclaimer Banner */}
+                              {hasAiFields && (
+                                <div
+                                  className="p-4 mb-4 rounded-xl flex items-start gap-3 border shadow-xs transition-all"
+                                  style={{
+                                    backgroundColor: 'var(--mg-ai-bg)',
+                                    borderColor: 'var(--mg-ai-border)',
+                                    color: 'var(--mg-ai-text)'
+                                  }}
+                                >
+                                  <span className="material-symbols-outlined text-lg mt-0.5 flex-shrink-0">auto_awesome</span>
+                                  <div className="text-xs leading-relaxed">
+                                    <strong className="font-bold block mb-0.5">AI-Suggested Values Present:</strong>
+                                    Highlighted fields (dosage or duration) were AI-suggested or calculated from prescription averages. Please verify and confirm all values before saving.
+                                  </div>
+                                </div>
+                              )}
 
                               {activeItem.needsClassificationConfirmation ? (
                                 <div className="bg-amber-50 border border-amber-200 p-5 rounded-xl mb-6 text-left shadow-sm">

@@ -104,13 +104,13 @@ export function MedicineReviewTable({
         )}
       </div>
 
-      <div className="overflow-x-auto border border-slate-200 rounded-xl">
+      <div className="overflow-x-auto border border-slate-200 rounded-xl shadow-xs">
         <table className="w-full text-left text-xs text-slate-700 table-fixed">
           <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider font-semibold border-b border-slate-200">
             <tr>
-              <th className="px-3 py-2 w-[150px]">Brand Name</th>
-              <th className="px-3 py-2 w-[220px]">Generic / Composition</th>
-              <th className="px-3 py-2 w-[90px]">
+              <th className="px-3 py-3 w-[20%]">Brand Name</th>
+              <th className="px-3 py-3 w-[26%]">Generic / Composition</th>
+              <th className="px-3 py-3 w-[15%]">
                 <span className="flex items-center gap-1">Dosage
                   <InfoButton
                     onShowInfo={onShowInfo}
@@ -120,7 +120,7 @@ export function MedicineReviewTable({
                   />
                 </span>
               </th>
-              <th className="px-3 py-2 w-[105px]">
+              <th className="px-3 py-3 w-[16%]">
                 <span className="flex items-center gap-1">Frequency
                   <InfoButton
                     onShowInfo={onShowInfo}
@@ -130,7 +130,7 @@ export function MedicineReviewTable({
                   />
                 </span>
               </th>
-              <th className="px-3 py-2 w-[185px]">
+              <th className="px-3 py-3 w-[18%]">
                 <span className="flex items-center gap-1">Duration
                   <InfoButton
                     onShowInfo={onShowInfo}
@@ -140,14 +140,14 @@ export function MedicineReviewTable({
                   />
                 </span>
               </th>
-              <th className="px-3 py-2 w-[40px]"></th>
+              <th className="px-3 py-3 w-[5%]"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 bg-white">
             {medicines.map((med, index) => (
-              <tr key={index} className="hover:bg-slate-50/50 transition-colors">
+              <tr key={index} className="hover:bg-slate-50/70 transition-colors">
                 {/* Brand Name Input */}
-                <td className="px-2 py-2">
+                <td className="px-2 py-3">
                   <input
                     type="text"
                     required
@@ -164,8 +164,8 @@ export function MedicineReviewTable({
                 </td>
 
                 {/* Generic Name / Composition - Read-Only Display with Tooltip */}
-                <td className="px-3 py-2">
-                  <div className="max-w-[210px] leading-snug">
+                <td className="px-3 py-3">
+                  <div className="w-full leading-snug">
                     {med.generic_name === 'no such medicine found' ? (
                       <div className="flex items-center gap-1.5">
                         <span className="inline-flex items-center gap-1 text-rose-600 bg-rose-50 border border-rose-100 rounded px-2 py-0.5 font-semibold text-[10px]">
@@ -205,32 +205,62 @@ export function MedicineReviewTable({
                   </div>
                 </td>
 
-                {/* Dosage Input */}
-                <td className="px-2 py-2">
-                  <input
-                    type="text"
-                    required
-                    value={med.dosage}
-                    onChange={(e) => updateMedicine(index, 'dosage', e.target.value)}
-                    className="w-full bg-transparent border border-transparent hover:border-slate-300 focus:border-[#0f766e] focus:bg-white rounded px-2 py-1.5 focus:outline-none transition-all"
-                    placeholder="e.g. 500mg"
-                  />
+                {/* Dosage Input with AI Recommendation Styling */}
+                <td className="px-2 py-3">
+                  <div className="flex flex-col gap-1">
+                    <input
+                      type="text"
+                      required
+                      value={med.dosage}
+                      onChange={(e) => {
+                        updateMedicine(index, {
+                          dosage: e.target.value,
+                          is_ai_dosage: false
+                        });
+                      }}
+                      style={med.is_ai_dosage ? {
+                        backgroundColor: 'var(--mg-ai-bg)',
+                        borderColor: 'var(--mg-ai-border)',
+                        color: 'var(--mg-ai-text)'
+                      } : {}}
+                      className={`w-full rounded px-2 py-1.5 text-xs font-medium focus:outline-none transition-all ${
+                        med.is_ai_dosage
+                          ? 'border shadow-2xs font-semibold'
+                          : 'bg-transparent border border-transparent hover:border-slate-300 focus:border-[#0f766e] focus:bg-white text-slate-800'
+                      }`}
+                      placeholder="e.g. 500mg"
+                    />
+                    {med.is_ai_dosage && (
+                      <span
+                        className="text-[9px] font-semibold tracking-tight self-start px-1.5 py-0.5 rounded flex items-center gap-0.5"
+                        style={{
+                          backgroundColor: 'var(--mg-ai-bg)',
+                          borderColor: 'var(--mg-ai-border)',
+                          color: 'var(--mg-ai-text)',
+                          border: '1px solid var(--mg-ai-border)'
+                        }}
+                      >
+                        <span className="material-symbols-outlined text-[10px]">auto_awesome</span>
+                        AI Recommended
+                      </span>
+                    )}
+                  </div>
                 </td>
 
                 {/* Frequency Input */}
-                <td className="px-2 py-2">
+                <td className="px-2 py-3">
                   <input
                     type="text"
                     required
                     value={med.frequency}
                     onChange={(e) => updateMedicine(index, 'frequency', e.target.value)}
-                    className="w-full bg-transparent border border-transparent hover:border-slate-300 focus:border-[#0f766e] focus:bg-white rounded px-2 py-1.5 focus:outline-none transition-all"
+                    className="w-full bg-transparent border border-transparent hover:border-slate-300 focus:border-[#0f766e] focus:bg-white rounded px-2 py-1.5 focus:outline-none transition-all font-medium text-slate-800"
                     placeholder="e.g. Twice daily"
                   />
                 </td>
 
-                {/* Duration — Lifetime only disables duration fields */}
-                <td className="px-2 py-2">
+                {/* Duration Input with AI Inferred Styling */}
+                <td className="px-2 py-3">
                   <div className="flex flex-col gap-1 text-[11px]">
                     <div className="flex items-center gap-1">
                       <input
@@ -239,15 +269,43 @@ export function MedicineReviewTable({
                         required={!med.is_lifetime}
                         disabled={med.is_lifetime}
                         value={med.is_lifetime ? '' : (med.duration_value || '')}
-                        onChange={(e) => updateMedicine(index, 'duration_value', e.target.value ? parseInt(e.target.value, 10) : '')}
-                        className="w-12 bg-transparent border border-slate-200 focus:border-[#0f766e] focus:bg-white rounded px-1 py-1 focus:outline-none transition-all text-center text-xs font-semibold disabled:opacity-50 disabled:bg-slate-50"
+                        onChange={(e) => {
+                          updateMedicine(index, {
+                            duration_value: e.target.value ? parseInt(e.target.value, 10) : '',
+                            is_ai_duration: false
+                          });
+                        }}
+                        style={med.is_ai_duration && !med.is_lifetime ? {
+                          backgroundColor: 'var(--mg-ai-bg)',
+                          borderColor: 'var(--mg-ai-border)',
+                          color: 'var(--mg-ai-text)'
+                        } : {}}
+                        className={`w-14 rounded px-1.5 py-1 focus:outline-none transition-all text-center text-xs font-semibold disabled:opacity-50 disabled:bg-slate-50 ${
+                          med.is_ai_duration && !med.is_lifetime
+                            ? 'border shadow-2xs'
+                            : 'bg-transparent border border-slate-200 focus:border-[#0f766e] focus:bg-white text-slate-800'
+                        }`}
                         placeholder="e.g. 5"
                       />
                       <select
                         disabled={med.is_lifetime}
                         value={med.is_lifetime ? '' : (med.duration_unit || 'day')}
-                        onChange={(e) => updateMedicine(index, 'duration_unit', e.target.value)}
-                        className="bg-transparent border border-slate-200 focus:border-[#0f766e] focus:bg-white rounded px-0.5 py-1 focus:outline-none transition-all text-[11px] disabled:opacity-50 disabled:bg-slate-50"
+                        onChange={(e) => {
+                          updateMedicine(index, {
+                            duration_unit: e.target.value,
+                            is_ai_duration: false
+                          });
+                        }}
+                        style={med.is_ai_duration && !med.is_lifetime ? {
+                          backgroundColor: 'var(--mg-ai-bg)',
+                          borderColor: 'var(--mg-ai-border)',
+                          color: 'var(--mg-ai-text)'
+                        } : {}}
+                        className={`rounded px-1 py-1 focus:outline-none transition-all text-[11px] font-medium disabled:opacity-50 disabled:bg-slate-50 ${
+                          med.is_ai_duration && !med.is_lifetime
+                            ? 'border'
+                            : 'bg-transparent border border-slate-200 focus:border-[#0f766e] focus:bg-white text-slate-800'
+                        }`}
                       >
                         {med.is_lifetime && <option value=""></option>}
                         <option value="day">days</option>
@@ -256,6 +314,21 @@ export function MedicineReviewTable({
                         <option value="year">years</option>
                       </select>
                     </div>
+
+                    {med.is_ai_duration && !med.is_lifetime && (
+                      <span
+                        className="text-[9px] font-semibold tracking-tight self-start px-1.5 py-0.5 rounded flex items-center gap-0.5"
+                        style={{
+                          backgroundColor: 'var(--mg-ai-bg)',
+                          borderColor: 'var(--mg-ai-border)',
+                          color: 'var(--mg-ai-text)',
+                          border: '1px solid var(--mg-ai-border)'
+                        }}
+                      >
+                        <span className="material-symbols-outlined text-[10px]">auto_awesome</span>
+                        AI Inferred (Mode)
+                      </span>
+                    )}
 
                     <div className="flex gap-2.5 mt-0.5">
                       <label className="flex items-center gap-1 text-[10px] text-slate-500 cursor-pointer select-none font-medium">
@@ -268,13 +341,15 @@ export function MedicineReviewTable({
                               updateMedicine(index, {
                                 is_lifetime: true,
                                 duration_value: null,
-                                duration_unit: null
+                                duration_unit: null,
+                                is_ai_duration: false
                               });
                             } else {
                               updateMedicine(index, {
                                 is_lifetime: false,
                                 duration_value: 1,
-                                duration_unit: 'day'
+                                duration_unit: 'day',
+                                is_ai_duration: false
                               });
                             }
                           }}
@@ -287,7 +362,7 @@ export function MedicineReviewTable({
                 </td>
 
                 {/* Delete Button */}
-                <td className="px-2 py-2 text-center">
+                <td className="px-2 py-3 text-center">
                   <button
                     type="button"
                     onClick={() => removeMedicine(index)}

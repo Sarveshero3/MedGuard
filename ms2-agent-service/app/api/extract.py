@@ -502,7 +502,7 @@ async def resolve_brand(req: ResolveBrandRequest):
 
     # 1. Ask LLM directly
     direct_prompt = f"""
-    You are a senior clinical pharmacist assistant. Resolve the active generic ingredient(s), composition, or therapeutic formula for the brand medicine name: '{brand}' (Cleaned: '{cleaned_brand}').
+    You are a senior clinical pharmacist assistant. Resolve the active generic ingredient(s), composition, or therapeutic formula AND standard recommended adult dosage for the brand medicine name: '{brand}' (Cleaned: '{cleaned_brand}').
     
     Clinical Instructions:
     - Many medications (e.g. ORS, probiotics, multivitamins, iron/calcium supplements, digestive enzymes) do not have a single chemical generic name. For combination products, probiotics, or supplements, return the active composition separated by " + " (e.g. "lactobacillus acidophilus + streptococcus faecalis + bifidobacterium + fructooligosaccharide", "ferrous ascorbate + folic acid + zinc", "sodium chloride + sodium citrate + potassium chloride + dextrose").
@@ -510,13 +510,15 @@ async def resolve_brand(req: ResolveBrandRequest):
     - Account for OCR typos or spelling variations (e.g. 'Disprn' -> 'aspirin', 'Crocn' -> 'paracetamol').
     - Strip form prefixes like 'Cap', 'Tab', 'Syp' or strength annotations when identifying the core brand.
     
-    You must answer in a JSON format with exactly two keys:
+    You must answer in a JSON format with exactly three keys:
     1. "generic_name": The lowercase active generic ingredient(s), composition, or formula of this medicine (e.g. "cefixime", "aspirin", "mebeverine", "racecadotril", "lactobacillus acidophilus + streptococcus faecalis + bifidobacterium + fructooligosaccharide", "probiotic + prebiotic supplement"). Only return "no such medicine found" if '{brand}' is completely non-medical random gibberish.
-    2. "exists": boolean (true if it's a real medicine brand, probiotic, supplement, or recognizable typo, false if not).
+    2. "recommended_dosage": Standard adult dosage string (e.g. "500mg", "1 tablet", "1 capsule", "1 sachet", "10ml", "325mg").
+    3. "exists": boolean (true if it's a real medicine brand, probiotic, supplement, or recognizable typo, false if not).
     
     Example:
     {{
         "generic_name": "lactobacillus acidophilus + streptococcus faecalis + bifidobacterium + fructooligosaccharide",
+        "recommended_dosage": "1 capsule",
         "exists": true
     }}
     """
@@ -524,7 +526,7 @@ async def resolve_brand(req: ResolveBrandRequest):
     parsed = {}
     try:
         messages = [
-            SystemMessage(content="You are a clinical pharmacist assistant who resolves brand names to their active generic ingredients or compositions. Be extremely precise and objective. Return ONLY valid JSON."),
+            SystemMessage(content="You are a clinical pharmacist assistant who resolves brand names to their active generic ingredients and recommended dosages. Be extremely precise and objective. Return ONLY valid JSON."),
             HumanMessage(content=direct_prompt)
         ]
         response = client.invoke(messages)
@@ -548,6 +550,7 @@ async def resolve_brand(req: ResolveBrandRequest):
         logger.error(f"Direct LLM resolution call failed: {str(e)}")
 
     generic_name = parsed.get("generic_name")
+    recommended_dosage = parsed.get("recommended_dosage", "")
     exists = parsed.get("exists", False)
     
     generic_name_str = str(generic_name or "no such medicine found").lower()
@@ -557,24 +560,24 @@ async def resolve_brand(req: ResolveBrandRequest):
     if not is_confident:
         search_query_term = cleaned_brand if cleaned_brand else brand
         logger.info(f"Direct LLM was not confident for '{brand}'. Falling back to Tavily search for '{search_query_term}'.")
-        query = f"{search_query_term} medicine composition active generic ingredients formula"
+        query = f"{search_query_term} medicine composition active generic ingredients formula recommended dosage"
         search_context = await _search_web_grounding(query)
         logger.info(f"Search results context for '{search_query_term}': {search_context}")
         
         search_prompt = f"""
         You are a clinical pharmacist assistant. Resolve the active generic ingredient(s), composition, or formula of the brand medicine name: '{brand}' (Cleaned: '{cleaned_brand}').
         
-        We performed a real-time web search for '{search_query_term} medicine composition active generic ingredients formula':
+        We performed a real-time web search for '{search_query_term} medicine composition active generic ingredients formula recommended dosage':
         ---
         {search_context}
         ---
         
-        Based on the search results and your clinical knowledge, resolve the active generic ingredients or composition of '{brand}'.
-        For probiotics, multivitamins, ORS, or combination products, list the key active ingredients separated by " + " (e.g. "lactobacillus acidophilus + streptococcus faecalis + bifidobacterium + fructooligosaccharide").
+        Based on the search results and your clinical knowledge, resolve the active generic ingredients, composition, and standard recommended adult dosage of '{brand}'.
         
-        You must answer in a JSON format with exactly two keys:
+        You must answer in a JSON format with three keys:
         1. "generic_name": The lowercase generic active ingredient(s), composition, or formula (e.g. "cefixime", "aspirin", "racecadotril", "lactobacillus acidophilus + bifidobacterium", "probiotic + prebiotic supplement"). Only write "no such medicine found" if non-medical gibberish.
-        2. "exists": boolean (true if it's a real medicine brand or supplement, false if not).
+        2. "recommended_dosage": Standard adult dosage string (e.g. "500mg", "1 tablet", "1 capsule", "1 sachet").
+        3. "exists": boolean (true if it's a real medicine brand or supplement, false if not).
         """
         
         try:
@@ -603,9 +606,11 @@ async def resolve_brand(req: ResolveBrandRequest):
             logger.error(f"Search-grounded LLM call failed: {str(e)}")
             
         generic_name = parsed.get("generic_name")
+        recommended_dosage = parsed.get("recommended_dosage", recommended_dosage)
         exists = parsed.get("exists", False)
         generic_name_str = str(generic_name or "no such medicine found").lower()
 
+    fuzzy_parsed = {}
     # 3. Final Fallback: Clinical Pharmacist Handwriting & OCR Typos Pass
     if (generic_name_str == "no such medicine found" or not exists) and cleaned_brand:
         logger.info(f"Exact lookup failed for '{brand}'. Trying Tier 3 OCR/phonetic fuzzy matching pass.")
@@ -614,18 +619,12 @@ async def resolve_brand(req: ResolveBrandRequest):
         The brand name '{brand}' (Cleaned: '{cleaned_brand}') was extracted from a doctor's handwritten prescription.
         
         It may contain a minor OCR typo, handwriting misreading, or regional trade brand variant.
-        Identify the most probable active generic ingredient(s), composition, or formula for this prescription medication.
-        
-        Example matches:
-        - "Zugut XT" / "Zigut XT" -> "lactobacillus acidophilus + streptococcus faecalis + bifidobacterium + fructooligosaccharide" (probiotic + prebiotic)
-        - "Disprn" -> "aspirin"
-        - "Taxim-OF" -> "cefixime + ofloxacin"
-        - "Dexarab DSR" -> "dexlansoprazole + domperidone"
-        - "Redotil" -> "racecadotril"
+        Identify the most probable active generic ingredient(s), composition, or formula for this prescription medication and standard recommended dosage.
         
         Return ONLY a JSON with:
         1. "generic_name": The lowercase generic active ingredient(s), composition, or formula (e.g. "lactobacillus acidophilus + streptococcus faecalis + bifidobacterium + fructooligosaccharide" or "cefixime"). Only return "no such medicine found" if it is completely non-medical gibberish.
-        2. "exists": boolean (true if it's a real medicine brand, probiotic, supplement, or recognizable typo, false if not).
+        2. "recommended_dosage": Standard adult dosage string (e.g. "500mg", "1 tablet", "1 capsule", "1 sachet").
+        3. "exists": boolean (true if it's a real medicine brand, probiotic, supplement, or recognizable typo, false if not).
         """
         try:
             messages = [
@@ -638,6 +637,7 @@ async def resolve_brand(req: ResolveBrandRequest):
             f_exists = fuzzy_parsed.get("exists", False)
             if f_generic and f_generic != "no such medicine found" and f_exists:
                 generic_name_str = f_generic
+                recommended_dosage = fuzzy_parsed.get("recommended_dosage", recommended_dosage)
                 exists = True
                 logger.info(f"Tier 3 OCR/Fuzzy pass successfully resolved '{brand}' -> '{generic_name_str}'")
         except Exception as f_err:
@@ -647,17 +647,20 @@ async def resolve_brand(req: ResolveBrandRequest):
     if generic_name_str == "no such medicine found" or not exists:
         final_generic_name = "no such medicine found"
         final_exists = False
+        final_dosage = ""
         RESOLUTION_METRICS["not_found"] += 1
     else:
         final_generic_name = generic_name_str
         final_exists = True
+        final_dosage = str(recommended_dosage or "").strip()
         RESOLUTION_METRICS["resolved"] += 1
         
-    logger.info(f"Final resolution for '{brand}': generic_name='{final_generic_name}', exists={final_exists}")
+    logger.info(f"Final resolution for '{brand}': generic_name='{final_generic_name}', recommended_dosage='{final_dosage}', exists={final_exists}")
     logger.info(f"Metrics -> Resolved: {RESOLUTION_METRICS['resolved']}, Not Found: {RESOLUTION_METRICS['not_found']}, Errors: {RESOLUTION_METRICS['unresolved_error']}")
         
     return {
         "success": True,
         "generic_name": final_generic_name,
+        "recommended_dosage": final_dosage,
         "exists": final_exists
     }

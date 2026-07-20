@@ -16,6 +16,11 @@
   --mg-border: rgba(226, 232, 240, 0.8);
   --mg-red: #dc2626;
   --mg-red-bg: rgba(220, 38, 38, 0.08);
+
+  /* Section 11 AI-Imputed Field tokens */
+  --mg-ai-bg: #FDFCF7;
+  --mg-ai-border: #D4BC7E;
+  --mg-ai-text: #6B5A2E;
   
   --sans: 'Manrope', system-ui, -apple-system, sans-serif;
   --heading: 'Plus Jakarta Sans', sans-serif;

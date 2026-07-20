@@ -15,7 +15,7 @@ export function InfoButton({ fieldName, description, example, onShowInfo, classN
       title={`Help for ${fieldName}`}
       aria-label={`Show info for ${fieldName}`}
     >
-      <span className="material-symbols-outlined text-[13px] leading-none">info</span>
+      <span className="material-symbols-outlined text-[11px] leading-none">info</span>
     </button>
   );
 }
