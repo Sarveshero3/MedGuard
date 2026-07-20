@@ -73,6 +73,8 @@ export default function Upload() {
   const [activeInfo, setActiveInfo] = useState(null)
   // Preview panel zoom level
   const [zoom, setZoom] = useState(1)
+  // Preview panel visibility state
+  const [hidePreview, setHidePreview] = useState(false)
   // Guard ref to prevent form re-initialization on every uploadedFiles change
   const lastInitializedRef = useRef(null)
 
