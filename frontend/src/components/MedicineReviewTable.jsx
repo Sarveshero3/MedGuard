@@ -108,9 +108,9 @@ export function MedicineReviewTable({
         <table className="w-full text-left text-xs text-slate-700 table-fixed">
           <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider font-semibold border-b border-slate-200">
             <tr>
-              <th className="px-3 py-3 w-[20%]">Brand Name</th>
-              <th className="px-3 py-3 w-[26%]">Generic / Composition</th>
-              <th className="px-3 py-3 w-[15%]">
+              <th className="px-3 py-3 w-[24%]">Brand Name</th>
+              <th className="px-3 py-3 w-[14%]">Generic / Composition</th>
+              <th className="px-3 py-3 w-[18%]">
                 <span className="flex items-center gap-1">Dosage
                   <InfoButton
                     onShowInfo={onShowInfo}
@@ -120,7 +120,7 @@ export function MedicineReviewTable({
                   />
                 </span>
               </th>
-              <th className="px-3 py-3 w-[16%]">
+              <th className="px-3 py-3 w-[18%]">
                 <span className="flex items-center gap-1">Frequency
                   <InfoButton
                     onShowInfo={onShowInfo}
@@ -130,7 +130,7 @@ export function MedicineReviewTable({
                   />
                 </span>
               </th>
-              <th className="px-3 py-3 w-[18%]">
+              <th className="px-3 py-3 w-[21%]">
                 <span className="flex items-center gap-1">Duration
                   <InfoButton
                     onShowInfo={onShowInfo}
@@ -163,7 +163,7 @@ export function MedicineReviewTable({
                   />
                 </td>
 
-                {/* Generic Name / Composition - Read-Only Display with Tooltip */}
+                {/* Generic Name / Composition - Compact 6-letter display with Tooltip */}
                 <td className="px-3 py-3">
                   <div className="w-full leading-snug">
                     {med.generic_name === 'no such medicine found' ? (
@@ -189,10 +189,12 @@ export function MedicineReviewTable({
                       </div>
                     ) : med.generic_name ? (
                       <span
-                        className="text-slate-700 font-bold block text-[11px] line-clamp-2 break-words cursor-help"
+                        className="text-slate-700 font-bold block text-[11px] truncate cursor-help bg-slate-100/70 border border-slate-200/60 rounded px-1.5 py-0.5 text-center font-mono"
                         title={med.generic_name}
                       >
-                        {med.generic_name}
+                        {med.generic_name.trim().length > 6
+                          ? `${med.generic_name.trim().substring(0, 6)}.....`
+                          : med.generic_name.trim()}
                       </span>
                     ) : med.brand_name ? (
                       <span className="text-[#0f766e] italic flex items-center gap-1.5 font-semibold">

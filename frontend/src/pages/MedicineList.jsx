@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext'
 import api from '../services/api'
 import { MgTabs } from '../components/ui/MgTabs'
 import { Skeleton } from '../components/ui/skeleton'
+import { PrescriptionSourceModal } from '../components/PrescriptionSourceModal'
 
 export default function MedicineList() {
   const { user, loading: authLoading, activePatientId } = useAuth()
@@ -17,6 +18,7 @@ export default function MedicineList() {
   const [selectedIds, setSelectedIds] = useState([])
   const [deleting, setDeleting] = useState(false)
   const [layout, setLayout] = useState(() => localStorage.getItem('meds_layout') || 'grid')
+  const [activeModalMed, setActiveModalMed] = useState(null)
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -268,8 +270,8 @@ export default function MedicineList() {
                       onChange={() => handleSelectToggle(med.id)}
                       className="w-4 h-4 text-[#0f766e] border-slate-300 rounded focus:ring-[#0f766e] cursor-pointer mt-0.5 flex-shrink-0"
                     />
-                    <div className="min-w-0 flex-grow text-left">
-                      <h4 className={`text-lg font-bold truncate ${isActive ? 'text-slate-900' : 'text-slate-400 line-through'}`} title={med.brand_name || med.generic_name}>
+                    <div className="min-w-0 flex-grow text-left cursor-pointer" onClick={() => setActiveModalMed(med)}>
+                      <h4 className={`text-lg font-bold truncate hover:text-[#0f766e] transition-colors ${isActive ? 'text-slate-900' : 'text-slate-400 line-through'}`} title={med.brand_name || med.generic_name}>
                         {med.brand_name || med.generic_name}
                       </h4>
                       {med.brand_name && med.generic_name && med.brand_name.toLowerCase() !== med.generic_name.toLowerCase() && (
@@ -277,18 +279,24 @@ export default function MedicineList() {
                           {med.generic_name}
                         </p>
                       )}
-                      <span className={`inline-block mt-1.5 text-[8px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider ${
-                        isActive 
-                          ? 'bg-teal-50 border border-teal-200 text-teal-800' 
-                          : 'bg-slate-100 border border-slate-200 text-slate-500'
-                      }`}>
-                        {med.status}
-                      </span>
+                      <div className="flex items-center gap-2 mt-1.5">
+                        <span className={`inline-block text-[8px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider ${
+                          isActive 
+                            ? 'bg-teal-50 border border-teal-200 text-teal-800' 
+                            : 'bg-slate-100 border border-slate-200 text-slate-500'
+                        }`}>
+                          {med.status}
+                        </span>
+                        <span className="text-[10px] text-[#0f766e] font-semibold hover:underline flex items-center gap-0.5">
+                          <span className="material-symbols-outlined text-xs">visibility</span>
+                          View Rx
+                        </span>
+                      </div>
                     </div>
                   </div>
 
                   {/* Info Block */}
-                  <div className="space-y-1.5 text-xs text-slate-500 border-t border-slate-100 pt-3 flex-grow text-left">
+                  <div className="space-y-1.5 text-xs text-slate-500 border-t border-slate-100 pt-3 flex-grow text-left cursor-pointer" onClick={() => setActiveModalMed(med)}>
                     <p className="flex items-center gap-1.5 font-medium truncate">
                       <span className="material-symbols-outlined text-slate-400 text-[18px]">medication</span>
                       <span className="font-bold text-slate-700">Dosage:</span> {med.dosage}
@@ -311,11 +319,21 @@ export default function MedicineList() {
                   </div>
 
                   {/* Actions Button */}
-                  <div className="border-t border-slate-100 pt-3 text-right">
+                  <div className="border-t border-slate-100 pt-3 flex items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setActiveModalMed(med)}
+                      className="text-slate-600 hover:text-[#0f766e] hover:bg-slate-100 font-semibold text-xs py-1.5 px-2.5 rounded-lg transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                      title="View Prescription Source Document"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">description</span>
+                      <span>Rx Source</span>
+                    </button>
+
                     {isActive ? (
                       <button 
                         onClick={() => toggleStatus(med.id, med.status)}
-                        className="text-[#ba1a1a] hover:bg-[#ba1a1a]/5 font-semibold text-xs py-1.5 px-3 rounded-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer w-full"
+                        className="text-[#ba1a1a] hover:bg-[#ba1a1a]/5 font-semibold text-xs py-1.5 px-3 rounded-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
                       >
                         <span className="material-symbols-outlined text-[16px]">block</span>
                         Discontinue
@@ -323,7 +341,7 @@ export default function MedicineList() {
                     ) : (
                       <button 
                         onClick={() => toggleStatus(med.id, med.status)}
-                        className="text-[#0f766e] hover:bg-[#0f766e]/5 font-semibold text-xs py-1.5 px-3 rounded-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer w-full"
+                        className="text-[#0f766e] hover:bg-[#0f766e]/5 font-semibold text-xs py-1.5 px-3 rounded-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
                       >
                         <span className="material-symbols-outlined text-[16px]">restart_alt</span>
                         Reactivate
@@ -336,6 +354,11 @@ export default function MedicineList() {
           </div>
         ) : (
           <div className="flex flex-col gap-3">
+            {/* Prescription Source Modal Popup */}
+            <PrescriptionSourceModal
+              medicine={activeModalMed}
+              onClose={() => setActiveModalMed(null)}
+            />
             {filteredMeds.map((med) => {
               const isActive = med.status === 'active'
               const isChecked = selectedIds.includes(med.id)
