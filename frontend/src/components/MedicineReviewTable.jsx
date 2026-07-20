@@ -230,31 +230,31 @@ export function MedicineReviewTable({
                       }`}
                       placeholder="e.g. 500mg"
                     />
-                    {med.is_ai_dosage && (
-                      <span
-                        className="text-[9px] font-semibold tracking-tight self-start px-1.5 py-0.5 rounded flex items-center gap-0.5"
-                        style={{
-                          backgroundColor: 'var(--mg-ai-bg)',
-                          borderColor: 'var(--mg-ai-border)',
-                          color: 'var(--mg-ai-text)',
-                          border: '1px solid var(--mg-ai-border)'
-                        }}
-                      >
-                        <span className="material-symbols-outlined text-[10px]">auto_awesome</span>
-                        AI Recommended
-                      </span>
-                    )}
                   </div>
                 </td>
 
-                {/* Frequency Input */}
+                {/* Frequency Input with AI Inferred Styling */}
                 <td className="px-2 py-3">
                   <input
                     type="text"
                     required
                     value={med.frequency}
-                    onChange={(e) => updateMedicine(index, 'frequency', e.target.value)}
-                    className="w-full bg-transparent border border-transparent hover:border-slate-300 focus:border-[#0f766e] focus:bg-white rounded px-2 py-1.5 focus:outline-none transition-all font-medium text-slate-800"
+                    onChange={(e) => {
+                      updateMedicine(index, {
+                        frequency: e.target.value,
+                        is_ai_frequency: false
+                      });
+                    }}
+                    style={med.is_ai_frequency ? {
+                      backgroundColor: 'var(--mg-ai-bg)',
+                      borderColor: 'var(--mg-ai-border)',
+                      color: 'var(--mg-ai-text)'
+                    } : {}}
+                    className={`w-full rounded px-2 py-1.5 text-xs font-medium focus:outline-none transition-all ${
+                      med.is_ai_frequency
+                        ? 'border shadow-2xs font-semibold'
+                        : 'bg-transparent border border-transparent hover:border-slate-300 focus:border-[#0f766e] focus:bg-white text-slate-800'
+                    }`}
                     placeholder="e.g. Twice daily"
                   />
                 </td>
@@ -314,21 +314,6 @@ export function MedicineReviewTable({
                         <option value="year">years</option>
                       </select>
                     </div>
-
-                    {med.is_ai_duration && !med.is_lifetime && (
-                      <span
-                        className="text-[9px] font-semibold tracking-tight self-start px-1.5 py-0.5 rounded flex items-center gap-0.5"
-                        style={{
-                          backgroundColor: 'var(--mg-ai-bg)',
-                          borderColor: 'var(--mg-ai-border)',
-                          color: 'var(--mg-ai-text)',
-                          border: '1px solid var(--mg-ai-border)'
-                        }}
-                      >
-                        <span className="material-symbols-outlined text-[10px]">auto_awesome</span>
-                        AI Inferred (Mode)
-                      </span>
-                    )}
 
                     <div className="flex gap-2.5 mt-0.5">
                       <label className="flex items-center gap-1 text-[10px] text-slate-500 cursor-pointer select-none font-medium">

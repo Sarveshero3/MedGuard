@@ -223,55 +223,110 @@ export default function Upload() {
     }
   };
 
-  // Helper to calculate mode of extracted duration_value and impute missing dosage/duration
+  // Helper to calculate mode of extracted duration & frequency values and impute missing dosage/duration/frequency
   const imputeMissingFields = (meds) => {
     if (!Array.isArray(meds) || meds.length === 0) return meds;
 
-    // 1. Collect all non-null, non-zero, non-lifetime duration values
+    // 1. Collect all non-null, non-zero, non-lifetime duration values for statistical mode
     const extractedDurations = meds
       .map(m => m.duration_value)
       .filter(val => val !== null && val !== undefined && val !== '' && !isNaN(Number(val)) && Number(val) > 0);
 
     let modeDuration = 1;
     if (extractedDurations.length > 0) {
-      const freqMap = {};
-      let maxFreq = 0;
+      const durationFreqMap = {};
+      let maxDurationFreq = 0;
       extractedDurations.forEach(val => {
         const num = Number(val);
-        freqMap[num] = (freqMap[num] || 0) + 1;
-        if (freqMap[num] > maxFreq) {
-          maxFreq = freqMap[num];
+        durationFreqMap[num] = (durationFreqMap[num] || 0) + 1;
+        if (durationFreqMap[num] > maxDurationFreq) {
+          maxDurationFreq = durationFreqMap[num];
           modeDuration = num;
         }
       });
     }
 
+    // 2. Collect all non-empty frequency values for statistical mode
+    const extractedFrequencies = meds
+      .map(m => m.frequency)
+      .filter(f => f && typeof f === 'string' && f.trim().length > 0);
+
+    let modeFrequency = 'Once Daily';
+    if (extractedFrequencies.length > 0) {
+      const frequencyFreqMap = {};
+      let maxFrequencyFreq = 0;
+      extractedFrequencies.forEach(freq => {
+        const normalized = freq.trim();
+        frequencyFreqMap[normalized] = (frequencyFreqMap[normalized] || 0) + 1;
+        if (frequencyFreqMap[normalized] > maxFrequencyFreq) {
+          maxFrequencyFreq = frequencyFreqMap[normalized];
+          modeFrequency = normalized;
+        }
+      });
+    }
+
+    // Helper for dosage inference when dosage is missing
+    const inferRecommendedDosage = (med) => {
+      if (med.recommended_dosage && med.recommended_dosage.trim()) {
+        return med.recommended_dosage.trim();
+      }
+      const name = `${med.brand_name || ''} ${med.generic_name || ''}`.toLowerCase();
+      if (name.includes('cap') || name.includes('capsule') || name.includes('probiotic')) {
+        return '1 capsule';
+      }
+      if (name.includes('tab') || name.includes('tablet')) {
+        return '1 tablet';
+      }
+      if (name.includes('ors') || name.includes('electral') || name.includes('sachet') || name.includes('powder')) {
+        return '1 sachet in 1L water';
+      }
+      if (name.includes('syp') || name.includes('syrup')) {
+        return '5ml';
+      }
+      if (name.includes('inj') || name.includes('injection')) {
+        return '1 vial';
+      }
+      return '1 tablet';
+    };
+
     return meds.map(med => {
+      // Duration Mode Imputation
       let is_ai_duration = !!med.is_ai_duration;
       let duration_value = med.duration_value;
       let duration_unit = med.duration_unit;
 
-      // If duration is missing and not lifetime
       if (!med.is_lifetime && (duration_value === null || duration_value === undefined || duration_value === '')) {
         duration_value = modeDuration;
         duration_unit = duration_unit || 'day';
         is_ai_duration = true;
       }
 
+      // Frequency Mode Imputation
+      let is_ai_frequency = !!med.is_ai_frequency;
+      let frequency = med.frequency || '';
+
+      if (!frequency || !frequency.trim()) {
+        frequency = modeFrequency;
+        is_ai_frequency = true;
+      }
+
+      // Dosage Recommendation Imputation
       let is_ai_dosage = !!med.is_ai_dosage;
       let dosage = med.dosage || '';
 
-      if (!dosage.trim() && med.recommended_dosage) {
-        dosage = med.recommended_dosage;
+      if (!dosage || !dosage.trim()) {
+        dosage = inferRecommendedDosage(med);
         is_ai_dosage = true;
       }
 
       return {
         ...med,
         dosage,
+        frequency,
         duration_value,
         duration_unit,
         is_ai_duration,
+        is_ai_frequency,
         is_ai_dosage
       };
     });
@@ -732,7 +787,7 @@ export default function Upload() {
 
                     // 5. Completed review form
                     if (activeItem.status === 'completed' && activeExtraction) {
-                      const hasAiFields = activeItem.docType === 'prescription' && prescriptionMedicines.some(m => m.is_ai_dosage || m.is_ai_duration);
+                      const hasAiFields = activeItem.docType === 'prescription' && prescriptionMedicines.some(m => m.is_ai_dosage || m.is_ai_frequency || m.is_ai_duration);
 
                       return (
                         <div className="flex flex-col w-full text-left">
