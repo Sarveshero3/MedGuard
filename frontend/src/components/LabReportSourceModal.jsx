@@ -1,8 +1,21 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { unescapeHTML } from '../lib/utils';
 
 export function LabReportSourceModal({ report, onClose }) {
   if (!report) return null;
+
+  // Lock background page scroll while popup is open on mobile/desktop
+  useEffect(() => {
+    const originalOverflow = document.body.style.overflow;
+    const originalTouchAction = document.body.style.touchAction;
+    document.body.style.overflow = 'hidden';
+    document.body.style.touchAction = 'none';
+
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      document.body.style.touchAction = originalTouchAction;
+    };
+  }, []);
 
   // Resolve best available original document photo/file source
   const getDocumentUrl = () => {
@@ -42,19 +55,19 @@ export function LabReportSourceModal({ report, onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fade-in text-left">
-      <div className="bg-white border border-slate-200 rounded-2xl shadow-2xl max-w-3xl w-full overflow-hidden flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-fade-in text-left overscroll-contain overflow-hidden">
+      <div className="bg-white border border-slate-200 rounded-2xl shadow-2xl max-w-3xl w-full overflow-hidden flex flex-col max-h-[85vh] sm:max-h-[90vh]">
         {/* Modal Header */}
-        <div className="bg-slate-50 border-b border-slate-200 px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-teal-50 border border-teal-200 flex items-center justify-center text-[#0f766e]">
+        <div className="bg-slate-50 border-b border-slate-200 px-4 sm:px-6 py-3.5 sm:py-4 flex items-center justify-between flex-shrink-0">
+          <div className="flex items-center gap-2.5 min-w-0 pr-2">
+            <div className="w-8 h-8 rounded-lg bg-teal-50 border border-teal-200 flex items-center justify-center text-[#0f766e] flex-shrink-0">
               <span className="material-symbols-outlined text-lg font-bold">science</span>
             </div>
-            <div>
-              <h3 className="text-base font-bold text-slate-800 leading-tight">
+            <div className="min-w-0">
+              <h3 className="text-sm sm:text-base font-bold text-slate-800 leading-tight truncate">
                 Source Lab Report: {report.doctor_name ? `Dr. ${report.doctor_name}` : 'Clinical Diagnostic Panel'}
               </h3>
-              <p className="text-[11px] text-slate-500 font-medium">
+              <p className="text-[10px] sm:text-[11px] text-slate-500 font-medium truncate">
                 Recorded on {report.uploaded_at ? new Date(report.uploaded_at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : 'Date Unspecified'}
               </p>
             </div>
@@ -62,7 +75,7 @@ export function LabReportSourceModal({ report, onClose }) {
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 rounded-lg transition-colors cursor-pointer"
+            className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 rounded-lg transition-colors cursor-pointer flex-shrink-0"
             title="Close Popup"
           >
             <span className="material-symbols-outlined text-xl">close</span>
@@ -70,15 +83,15 @@ export function LabReportSourceModal({ report, onClose }) {
         </div>
 
         {/* Modal Body */}
-        <div className="p-6 overflow-y-auto space-y-6 flex-grow">
+        <div className="p-4 sm:p-6 overflow-y-auto space-y-4 sm:space-y-6 flex-grow overscroll-contain">
           {/* Document Preview Box */}
-          <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-100/70 min-h-[240px] flex flex-col items-center justify-center p-4">
+          <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-100/70 min-h-[200px] sm:min-h-[240px] flex flex-col items-center justify-center p-2 sm:p-4">
             {isRealFile ? (
               isPdf ? (
                 <object
                   data={documentUrl}
                   type="application/pdf"
-                  className="w-full h-[380px] rounded border border-slate-200 shadow-xs"
+                  className="w-full h-[240px] sm:h-[380px] rounded border border-slate-200 shadow-xs"
                 >
                   <div className="text-center p-4 text-xs text-slate-500">
                     PDF Document Preview — Use download button below to view.
@@ -88,11 +101,11 @@ export function LabReportSourceModal({ report, onClose }) {
                 <img
                   src={documentUrl}
                   alt="Original Uploaded Lab Report Document"
-                  className="max-h-[380px] w-auto object-contain rounded border border-slate-200 shadow-xs"
+                  className="max-h-[240px] sm:max-h-[380px] w-auto object-contain rounded border border-slate-200 shadow-xs"
                 />
               )
             ) : (
-              <div className="text-center p-8 space-y-2">
+              <div className="text-center p-6 sm:p-8 space-y-2">
                 <span className="material-symbols-outlined text-4xl text-slate-300">no_photography</span>
                 <p className="text-xs font-bold text-slate-700">No Original Lab Report Photo Attached</p>
                 <p className="text-[11px] text-slate-500 max-w-sm mx-auto leading-relaxed">
