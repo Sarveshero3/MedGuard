@@ -7,13 +7,10 @@ export function LabReportSourceModal({ report, onClose }) {
   // Lock background page scroll while popup is open on mobile/desktop
   useEffect(() => {
     const originalOverflow = document.body.style.overflow;
-    const originalTouchAction = document.body.style.touchAction;
     document.body.style.overflow = 'hidden';
-    document.body.style.touchAction = 'none';
 
     return () => {
       document.body.style.overflow = originalOverflow;
-      document.body.style.touchAction = originalTouchAction;
     };
   }, []);
 
@@ -59,13 +56,13 @@ export function LabReportSourceModal({ report, onClose }) {
       {/* Mobile Dedicated View Page (< 640px) */}
       <div className="fixed inset-0 z-50 bg-white flex flex-col h-full overflow-y-auto sm:hidden animate-fade-in text-left">
         {/* Mobile Header Bar */}
-        <div className="bg-slate-50 border-b border-slate-200 px-4 py-3 flex items-center justify-between sticky top-0 z-20">
+        <div className="bg-slate-50 border-b border-slate-200 px-4 py-3 flex items-center justify-between sticky top-0 z-20 shadow-xs">
           <div className="flex items-center gap-2.5 min-w-0 pr-2">
             <button
               type="button"
               onClick={onClose}
               className="p-1 text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 rounded-lg transition-colors cursor-pointer flex-shrink-0"
-              title="Back to Reports"
+              title="Back"
             >
               <span className="material-symbols-outlined text-2xl block">arrow_back</span>
             </button>
@@ -88,16 +85,16 @@ export function LabReportSourceModal({ report, onClose }) {
           </button>
         </div>
 
-        {/* Mobile Page Body */}
-        <div className="p-4 space-y-4 pb-24">
+        {/* Mobile Page Body (Scrollable) */}
+        <div className="p-4 space-y-4 pb-12 overflow-y-auto">
           {/* Document Display Container */}
-          <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-100/70 p-2 min-h-[260px] flex flex-col items-center justify-center">
+          <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-100/70 p-2 min-h-[300px] flex flex-col items-center justify-center">
             {isRealFile ? (
               isPdf ? (
                 <object
                   data={documentUrl}
                   type="application/pdf"
-                  className="w-full h-[380px] rounded border border-slate-200 shadow-xs"
+                  className="w-full h-[450px] rounded border border-slate-200 shadow-xs"
                 >
                   <div className="text-center p-4 text-xs text-slate-500">
                     PDF Document Preview — Use download button below to view.
@@ -107,7 +104,7 @@ export function LabReportSourceModal({ report, onClose }) {
                 <img
                   src={documentUrl}
                   alt="Original Uploaded Lab Report Document"
-                  className="w-full h-auto max-h-[460px] object-contain rounded border border-slate-200 shadow-xs"
+                  className="w-full h-auto object-contain rounded border border-slate-200 shadow-xs"
                 />
               )
             ) : (
@@ -120,37 +117,37 @@ export function LabReportSourceModal({ report, onClose }) {
               </div>
             )}
           </div>
-        </div>
 
-        {/* Mobile Fixed Action Bar at Bottom */}
-        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 p-3 flex items-center justify-between gap-3 z-30 shadow-lg">
-          {isRealFile ? (
+          {/* Action Buttons directly below image */}
+          <div className="pt-2 space-y-2.5">
+            {isRealFile ? (
+              <button
+                type="button"
+                onClick={downloadDocument}
+                className="w-full bg-[#0f766e] hover:bg-[#0d645c] text-white font-semibold text-sm py-3 px-4 rounded-xl flex items-center justify-center gap-2 cursor-pointer shadow-sm transition-all active:scale-[0.98]"
+              >
+                <span className="material-symbols-outlined text-lg">download</span>
+                Download Lab Report File
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled
+                className="w-full bg-slate-200 text-slate-400 font-semibold text-sm py-3 px-4 rounded-xl flex items-center justify-center gap-2 cursor-not-allowed"
+              >
+                <span className="material-symbols-outlined text-lg">download_off</span>
+                No File Attached
+              </button>
+            )}
             <button
               type="button"
-              onClick={downloadDocument}
-              className="flex-grow bg-[#0f766e] hover:bg-[#0d645c] text-white font-semibold text-xs py-2.5 px-3 rounded-xl flex items-center justify-center gap-1.5 cursor-pointer shadow-sm transition-all"
+              onClick={onClose}
+              className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-sm py-3 px-4 rounded-xl border border-slate-200 transition-all cursor-pointer flex items-center justify-center gap-1.5"
             >
-              <span className="material-symbols-outlined text-sm">download</span>
-              Download File
+              <span className="material-symbols-outlined text-lg">close</span>
+              Close Details
             </button>
-          ) : (
-            <button
-              type="button"
-              disabled
-              className="flex-grow bg-slate-200 text-slate-400 font-semibold text-xs py-2.5 px-3 rounded-xl flex items-center justify-center gap-1.5 cursor-not-allowed"
-            >
-              <span className="material-symbols-outlined text-sm">download_off</span>
-              No File
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={onClose}
-            className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs px-4 py-2.5 rounded-xl border border-slate-200 transition-all cursor-pointer flex items-center gap-1"
-          >
-            <span className="material-symbols-outlined text-sm">close</span>
-            Close
-          </button>
+          </div>
         </div>
       </div>
 
