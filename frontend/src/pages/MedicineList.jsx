@@ -5,6 +5,7 @@ import api from '../services/api'
 import { MgTabs } from '../components/ui/MgTabs'
 import { Skeleton } from '../components/ui/skeleton'
 import { PrescriptionSourceModal } from '../components/PrescriptionSourceModal'
+import { unescapeHTML } from '../lib/utils'
 
 export default function MedicineList() {
   const { user, loading: authLoading, activePatientId } = useAuth()
@@ -299,11 +300,11 @@ export default function MedicineList() {
                   <div className="space-y-1.5 text-xs text-slate-500 border-t border-slate-100 pt-3 flex-grow text-left cursor-pointer" onClick={() => setActiveModalMed(med)}>
                     <p className="flex items-center gap-1.5 font-medium truncate">
                       <span className="material-symbols-outlined text-slate-400 text-[18px]">medication</span>
-                      <span className="font-bold text-slate-700">Dosage:</span> {med.dosage}
+                      <span className="font-bold text-slate-700">Dosage:</span> {unescapeHTML(med.dosage || '')}
                     </p>
                     <p className="flex items-center gap-1.5 font-medium truncate">
                       <span className="material-symbols-outlined text-slate-400 text-[18px]">schedule</span>
-                      <span className="font-bold text-slate-700">Frequency:</span> {med.frequency}
+                      <span className="font-bold text-slate-700">Frequency:</span> {unescapeHTML(med.frequency || '')}
                     </p>
                     {isActive ? (
                       <p className="flex items-center gap-1.5 font-medium truncate">
@@ -370,12 +371,12 @@ export default function MedicineList() {
 
                     <div className="flex-grow flex flex-col md:flex-row md:items-center gap-4 md:gap-8 min-w-0">
                       <div className="min-w-[180px] max-w-[240px] truncate text-left cursor-pointer" onClick={() => setActiveModalMed(med)}>
-                        <h4 className={`text-base font-bold truncate hover:text-[#0f766e] transition-colors ${isActive ? 'text-slate-900' : 'text-slate-400 line-through'}`} title={med.brand_name || med.generic_name}>
-                          {med.brand_name || med.generic_name}
+                        <h4 className={`text-base font-bold truncate hover:text-[#0f766e] transition-colors ${isActive ? 'text-[#0f766e]' : 'text-slate-400 line-through'}`} title={unescapeHTML(med.brand_name || med.generic_name || '')}>
+                          {unescapeHTML(med.brand_name || med.generic_name || '')}
                         </h4>
                         {med.brand_name && med.generic_name && med.brand_name.toLowerCase() !== med.generic_name.toLowerCase() && (
-                          <p className="text-[10px] text-slate-500 font-semibold truncate mt-0.5" title={med.generic_name}>
-                            {med.generic_name}
+                          <p className="text-[10px] text-slate-500 font-semibold truncate mt-0.5" title={unescapeHTML(med.generic_name || '')}>
+                            {unescapeHTML(med.generic_name || '')}
                           </p>
                         )}
                         <span className={`inline-block mt-1.5 text-[8px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider ${
@@ -390,11 +391,11 @@ export default function MedicineList() {
                       <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-6 text-xs text-slate-500 cursor-pointer" onClick={() => setActiveModalMed(med)}>
                         <p className="flex items-center gap-1.5 font-medium">
                           <span className="material-symbols-outlined text-slate-400 text-[18px]">medication</span>
-                          <span className="font-bold text-slate-700">Dosage:</span> {med.dosage}
+                          <span className="font-bold text-slate-700">Dosage:</span> {unescapeHTML(med.dosage || '')}
                         </p>
                         <p className="flex items-center gap-1.5 font-medium">
                           <span className="material-symbols-outlined text-slate-400 text-[18px]">schedule</span>
-                          <span className="font-bold text-slate-700">Frequency:</span> {med.frequency}
+                          <span className="font-bold text-slate-700">Frequency:</span> {unescapeHTML(med.frequency || '')}
                         </p>
                         {isActive ? (
                           <p className="flex items-center gap-1.5 font-medium">

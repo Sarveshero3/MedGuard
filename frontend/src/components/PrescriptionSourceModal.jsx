@@ -1,4 +1,5 @@
 import React from 'react';
+import { unescapeHTML } from '../lib/utils';
 
 export function PrescriptionSourceModal({ medicine, onClose }) {
   if (!medicine) return null;
@@ -11,32 +12,41 @@ export function PrescriptionSourceModal({ medicine, onClose }) {
       medicine.base64,
       medicine.preview
     ];
+
+    // Priority 1: Direct permanent Data URL or HTTP URL
     for (const cand of candidates) {
-      if (typeof cand === 'string' && (cand.startsWith('data:') || cand.startsWith('http://') || cand.startsWith('https://') || cand.startsWith('blob:'))) {
+      if (typeof cand === 'string' && (cand.startsWith('data:image/') || cand.startsWith('data:application/pdf') || cand.startsWith('http://') || cand.startsWith('https://'))) {
         return cand;
       }
     }
 
-    // Try client-side cached file by medicine ID
+    // Priority 2: Client-side cached file by medicine ID
     if (medicine.id) {
       const cachedId = localStorage.getItem(`medguard_rx_id_${medicine.id}`);
-      if (cachedId && (cachedId.startsWith('data:') || cachedId.startsWith('http') || cachedId.startsWith('blob:'))) {
+      if (cachedId && (cachedId.startsWith('data:') || cachedId.startsWith('http'))) {
         return cachedId;
       }
     }
 
-    // Try client-side cached file by brand name
+    // Priority 3: Client-side cached file by brand name
     if (medicine.brand_name) {
       const cleanBrand = medicine.brand_name.toLowerCase().trim().replace(/[^a-z0-9]/g, '');
       const cachedBrand = localStorage.getItem(`medguard_rx_file_${cleanBrand}`);
-      if (cachedBrand && (cachedBrand.startsWith('data:') || cachedBrand.startsWith('http') || cachedBrand.startsWith('blob:'))) {
+      if (cachedBrand && (cachedBrand.startsWith('data:') || cachedBrand.startsWith('http'))) {
         return cachedBrand;
       }
     }
 
-    // Try latest uploaded rx file in localStorage
+    // Priority 4: Blob URL (only if valid in current session)
+    for (const cand of candidates) {
+      if (typeof cand === 'string' && cand.startsWith('blob:')) {
+        return cand;
+      }
+    }
+
+    // Priority 5: Latest uploaded rx file in localStorage
     const latest = localStorage.getItem('medguard_rx_file_latest');
-    if (latest && (latest.startsWith('data:') || latest.startsWith('http') || latest.startsWith('blob:'))) {
+    if (latest && (latest.startsWith('data:') || latest.startsWith('http'))) {
       return latest;
     }
 
@@ -50,7 +60,8 @@ export function PrescriptionSourceModal({ medicine, onClose }) {
   const downloadDocument = () => {
     if (!documentUrl) return;
     const ext = isPdf ? 'pdf' : 'png';
-    const filename = `Prescription_${(medicine.brand_name || 'Document').replace(/[^a-zA-Z0-9]/g, '_')}.${ext}`;
+    const cleanName = unescapeHTML(medicine.brand_name || 'Document').replace(/[^a-zA-Z0-9]/g, '_');
+    const filename = `Prescription_${cleanName}.${ext}`;
 
     const link = document.createElement('a');
     link.href = documentUrl;
@@ -71,7 +82,7 @@ export function PrescriptionSourceModal({ medicine, onClose }) {
             </div>
             <div>
               <h3 className="text-base font-bold text-slate-800 leading-tight">
-                Source Prescription: {medicine.brand_name || 'Medicine Record'}
+                Source Prescription: {unescapeHTML(medicine.brand_name || 'Medicine Record')}
               </h3>
               <p className="text-[11px] text-slate-500 font-medium">
                 Original Uploaded Prescription File
@@ -94,19 +105,19 @@ export function PrescriptionSourceModal({ medicine, onClose }) {
           <div className="bg-slate-50/80 border border-slate-200/80 rounded-xl p-4 grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
             <div>
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-0.5">Brand Name</span>
-              <span className="text-slate-800 font-bold text-sm">{medicine.brand_name || 'N/A'}</span>
+              <span className="text-slate-800 font-bold text-sm">{unescapeHTML(medicine.brand_name || 'N/A')}</span>
             </div>
             <div>
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-0.5">Generic / Composition</span>
-              <span className="text-slate-800 font-bold text-xs leading-relaxed block">{medicine.generic_name || 'N/A'}</span>
+              <span className="text-slate-800 font-bold text-xs leading-relaxed block">{unescapeHTML(medicine.generic_name || 'N/A')}</span>
             </div>
             <div>
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-0.5">Dosage</span>
-              <span className="text-slate-700 font-semibold">{medicine.dosage || 'N/A'}</span>
+              <span className="text-slate-700 font-semibold">{unescapeHTML(medicine.dosage || 'N/A')}</span>
             </div>
             <div>
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-0.5">Frequency</span>
-              <span className="text-slate-700 font-semibold">{medicine.frequency || 'N/A'}</span>
+              <span className="text-slate-700 font-semibold">{unescapeHTML(medicine.frequency || 'N/A')}</span>
             </div>
           </div>
 
@@ -128,6 +139,11 @@ export function PrescriptionSourceModal({ medicine, onClose }) {
                   src={documentUrl}
                   alt="Original Uploaded Prescription File"
                   className="max-h-[380px] w-auto object-contain rounded border border-slate-200 shadow-xs"
+                  onError={(e) => {
+                    e.target.onerror = null;
+                    e.target.style.display = 'none';
+                    e.target.parentNode.innerHTML = '<div class="text-center p-8 space-y-2"><span class="material-symbols-outlined text-4xl text-slate-300">broken_image</span><p class="text-xs font-bold text-slate-700">Prescription Photo Expired or Unavailable</p><p class="text-[11px] text-slate-500 max-w-sm mx-auto">Original prescription photo link has expired. Please re-upload this document to attach a permanent copy.</p></div>';
+                  }}
                 />
               )
             ) : (
