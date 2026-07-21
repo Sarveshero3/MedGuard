@@ -17,18 +17,26 @@ export function PrescriptionSourceModal({ medicine, onClose }) {
       }
     }
 
+    // Try client-side cached file by medicine ID
+    if (medicine.id) {
+      const cachedId = localStorage.getItem(`medguard_rx_id_${medicine.id}`);
+      if (cachedId && (cachedId.startsWith('data:') || cachedId.startsWith('http') || cachedId.startsWith('blob:'))) {
+        return cachedId;
+      }
+    }
+
     // Try client-side cached file by brand name
     if (medicine.brand_name) {
       const cleanBrand = medicine.brand_name.toLowerCase().trim().replace(/[^a-z0-9]/g, '');
       const cachedBrand = localStorage.getItem(`medguard_rx_file_${cleanBrand}`);
-      if (cachedBrand && (cachedBrand.startsWith('data:') || cachedBrand.startsWith('http'))) {
+      if (cachedBrand && (cachedBrand.startsWith('data:') || cachedBrand.startsWith('http') || cachedBrand.startsWith('blob:'))) {
         return cachedBrand;
       }
     }
 
     // Try latest uploaded rx file in localStorage
     const latest = localStorage.getItem('medguard_rx_file_latest');
-    if (latest && (latest.startsWith('data:') || latest.startsWith('http'))) {
+    if (latest && (latest.startsWith('data:') || latest.startsWith('http') || latest.startsWith('blob:'))) {
       return latest;
     }
 
@@ -125,9 +133,9 @@ export function PrescriptionSourceModal({ medicine, onClose }) {
             ) : (
               <div className="text-center p-8 space-y-2">
                 <span className="material-symbols-outlined text-4xl text-slate-300">no_photography</span>
-                <p className="text-xs font-bold text-slate-700">No Original Prescription Photo Attached</p>
+                <p className="text-xs font-bold text-slate-700">Uploaded Prescription Photo Not Found</p>
                 <p className="text-[11px] text-slate-500 max-w-sm mx-auto leading-relaxed">
-                  This medication was created manually or prior to original prescription file upload.
+                  Original prescription file was not found for this record.
                 </p>
               </div>
             )}

@@ -493,7 +493,16 @@ export default function Upload() {
           added_at: prescriptionDate
         }))
         const payload = buildPrescriptionPayload(activePatientId, finalVisitId, medsWithDate, activeItem)
-        await api.post('/medicines/batch', payload)
+        const res = await api.post('/medicines/batch', payload)
+        if (fileDataUrl && res.data?.data && Array.isArray(res.data.data)) {
+          res.data.data.forEach(m => {
+            if (m.id) {
+              try {
+                localStorage.setItem(`medguard_rx_id_${m.id}`, fileDataUrl);
+              } catch (e) {}
+            }
+          });
+        }
       } else {
         const payload = buildLabReportPayload(activePatientId, finalVisitId, labTests, labFields, activeItem)
         await api.post('/lab-reports/confirm', payload)
