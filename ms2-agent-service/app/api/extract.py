@@ -225,7 +225,7 @@ Do not include markdown formatting. Return only the raw JSON object."""
         if "rate_limit" in error_msg.lower() or "429" in error_msg:
             friendly_message = "The AI service is temporarily busy (API Rate Limit). Please wait 1-2 minutes and try again."
         else:
-            friendly_message = f"Analysis failed: {error_msg}. You can skip to manual entry."
+            friendly_message = "Analysis failed due to an internal error. You can skip to manual entry."
         
         # Return success=False with friendly error details
         from fastapi import HTTPException

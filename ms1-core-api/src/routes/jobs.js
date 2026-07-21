@@ -39,10 +39,11 @@ router.get('/status/stream/:jobId', (req, res) => {
               data: job.returnvalue
             })}\n\n`);
           } else if (state === 'failed') {
+            logger.warn('SSE_JOB_FAILED', `Job ${jobId} failed reason: ${job.failedReason}`);
             res.write(`data: ${JSON.stringify({
               status: 'failed',
               message: 'Extraction failed.',
-              error: job.failedReason || 'Previous extraction failed.'
+              error: 'Extraction failed. Please try uploading again.'
             })}\n\n`);
           }
         }

@@ -509,7 +509,6 @@ router.post('/documents/upload', authenticateUser, enforceConsent('health_data_p
       error: {
         code: 'INTERNAL_SERVER_ERROR',
         message: 'Failed to enqueue extraction job.',
-        details: [err.message],
       },
     });
   }
@@ -618,7 +617,6 @@ router.post('/medicines/upload', authenticateUser, enforceConsent('health_data_p
       error: {
         code: 'INTERNAL_SERVER_ERROR',
         message: 'Failed to enqueue extraction job.',
-        details: [err.message],
       },
     });
   }

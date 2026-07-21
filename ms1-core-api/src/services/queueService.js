@@ -135,7 +135,7 @@ if (redisConnection.isMock) {
           sendSSEMessage(jobId, { 
             status: 'failed', 
             message: 'Extraction failed.',
-            error: err.message,
+            error: 'Extraction failed. Please try uploading again.',
           });
           if (fs.existsSync(data.filePath)) {
             fs.unlinkSync(data.filePath);
@@ -208,7 +208,7 @@ if (redisConnection.isMock) {
         sendSSEMessage(job.id, { 
           status: 'failed', 
           message: 'Extraction failed.',
-          error: err.message,
+          error: 'Extraction failed. Please try uploading again.',
         });
         if (fs.existsSync(filePath)) {
           fs.unlinkSync(filePath);

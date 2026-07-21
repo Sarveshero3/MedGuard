@@ -23,12 +23,13 @@ router.get('/health', async (req, res) => {
       },
     });
   } catch (err) {
+    const logger = require('../utils/logger');
+    logger.error('HEALTH_CHECK_FAILED', `Database connection failed: ${err.message}`);
     res.status(503).json({
       success: false,
       error: {
         code: 'SERVICE_UNAVAILABLE',
-        message: 'Database connection failed',
-        details: [err.message],
+        message: 'Database connection failed. Please try again shortly.',
       },
     });
   }

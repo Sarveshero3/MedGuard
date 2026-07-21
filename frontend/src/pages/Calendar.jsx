@@ -383,8 +383,8 @@ export default function Calendar() {
               </div>
             </div>
 
-            {/* Weekdays Labels */}
-            <div className="grid grid-cols-7 gap-2 mb-2 text-center text-xs font-bold text-slate-400 uppercase tracking-wider">
+            {/* Weekdays Labels (Desktop >= 768px) */}
+            <div className="hidden md:grid grid-cols-7 gap-2 mb-2 text-center text-xs font-bold text-slate-400 uppercase tracking-wider">
               <div>Sun</div>
               <div>Mon</div>
               <div>Tue</div>
@@ -394,98 +394,229 @@ export default function Calendar() {
               <div>Sat</div>
             </div>
 
-            {/* Days Grid */}
+            {/* Days Grid (Desktop >= 768px & Mobile < 768px) */}
             {loading ? (
-              <div className="grid grid-cols-7 gap-2">
-                {Array.from({ length: 35 }).map((_, idx) => (
-                  <Skeleton key={idx} className="h-28 w-full rounded-xl" />
-                ))}
-              </div>
+              <>
+                <div className="hidden md:grid grid-cols-7 gap-2">
+                  {Array.from({ length: 35 }).map((_, idx) => (
+                    <Skeleton key={idx} className="h-28 w-full rounded-xl" />
+                  ))}
+                </div>
+                <div className="md:hidden flex gap-2 overflow-x-auto pb-2">
+                  {Array.from({ length: 7 }).map((_, idx) => (
+                    <Skeleton key={idx} className="h-16 w-14 shrink-0 rounded-xl" />
+                  ))}
+                </div>
+              </>
             ) : (
-              <div className="grid grid-cols-7 gap-2">
-                {daysGrid.map((date, index) => {
-                  if (!date) {
-                    return <div key={`empty-${index}`} className="h-28 bg-slate-50/30 border border-slate-100 rounded-xl opacity-30"></div>
-                  }
+              <>
+                {/* Desktop 7-Column Month Grid (>= 768px) */}
+                <div className="hidden md:grid grid-cols-7 gap-2">
+                  {daysGrid.map((date, index) => {
+                    if (!date) {
+                      return <div key={`empty-${index}`} className="h-28 bg-slate-50/30 border border-slate-100 rounded-xl opacity-30"></div>
+                    }
 
-                  const dayAppts = getDayAppointments(date)
-                  const dayIsToday = isToday(date)
-                  const dayIsSelected = isSelected(date)
+                    const dayAppts = getDayAppointments(date)
+                    const dayIsToday = isToday(date)
+                    const dayIsSelected = isSelected(date)
 
-                  return (
-                    <div 
-                      key={date.toISOString()}
-                      onClick={() => setSelectedDate(date)}
-                      className={`h-28 border rounded-xl p-1.5 flex flex-col justify-between cursor-pointer transition-all duration-155 text-left relative overflow-hidden select-none hover:shadow-sm ${
-                        dayIsSelected 
-                          ? 'border-[#0F766E] ring-1 ring-[#0F766E] bg-teal-50/5' 
-                          : dayIsToday
-                            ? 'border-teal-350 bg-teal-50/15'
-                            : 'border-slate-200 hover:border-slate-350 bg-white'
-                      }`}
-                    >
-                      {/* Day Number Row */}
-                      <div className="flex justify-between items-center w-full">
-                        <span className={`text-[11px] font-bold w-5 h-5 rounded-full flex items-center justify-center ${
-                          dayIsToday 
-                            ? 'bg-[#0F766E] text-white font-black' 
-                            : dayIsSelected
-                              ? 'text-[#0F766E] bg-teal-100/50'
-                              : 'text-slate-650'
-                        }`}>
-                          {date.getDate()}
-                        </span>
-                        
-                        {/* Tiny appointment notification badge */}
+                    return (
+                      <div 
+                        key={date.toISOString()}
+                        onClick={() => setSelectedDate(date)}
+                        className={`h-28 border rounded-xl p-1.5 flex flex-col justify-between cursor-pointer transition-all duration-155 text-left relative overflow-hidden select-none hover:shadow-sm ${
+                          dayIsSelected 
+                            ? 'border-[#0F766E] ring-1 ring-[#0F766E] bg-teal-50/5' 
+                            : dayIsToday
+                              ? 'border-teal-350 bg-teal-50/15'
+                              : 'border-slate-200 hover:border-slate-350 bg-white'
+                        }`}
+                      >
+                        {/* Day Number Row */}
+                        <div className="flex justify-between items-center w-full">
+                          <span className={`text-[11px] font-bold w-5 h-5 rounded-full flex items-center justify-center ${
+                            dayIsToday 
+                              ? 'bg-[#0F766E] text-white font-black' 
+                              : dayIsSelected
+                                ? 'text-[#0F766E] bg-teal-100/50'
+                                : 'text-slate-650'
+                          }`}>
+                            {date.getDate()}
+                          </span>
+                          
+                          {/* Tiny appointment notification badge */}
+                          {dayAppts.length > 0 && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-rose-500 mr-1 animate-pulse"></span>
+                          )}
+                        </div>
+
+                        {/* Visual Multi-Day Medicine Tracks (Gantt/Period Tracker flow) */}
+                        <div className="flex flex-col gap-0.5 w-full flex-grow mt-1.5 overflow-hidden">
+                          {sortedMedicines.slice(0, 3).map((med, trackIdx) => {
+                            const isActive = isMedicineActiveOnDate(med, date)
+                            
+                            if (!isActive) {
+                              return <div key={med.id} className="h-[14px] bg-transparent"></div>
+                            }
+
+                            // Calculate edges for periods continuous flow
+                            const isStart = new Date(med.added_at).toDateString() === date.toDateString()
+                            const isEnd = med.course_end_date && new Date(med.course_end_date).toDateString() === date.toDateString()
+                            const isSunday = date.getDay() === 0
+                            const isSaturday = date.getDay() === 6
+
+                            return (
+                              <div 
+                                key={med.id}
+                                className={`h-[14px] text-[8px] font-bold px-1 py-0 flex items-center overflow-hidden truncate transition-all leading-none ${
+                                  trackColors[trackIdx % trackColors.length]
+                                } ${
+                                  isStart || isSunday ? 'rounded-l-md border-l border-current/25 pl-1.5' : 'border-l-0 pl-0.5'
+                                } ${
+                                  isEnd || isSaturday ? 'rounded-r-md border-r border-current/25 pr-1.5' : 'border-r-0 pr-0.5'
+                                }`}
+                                title={`${med.brand_name || med.generic_name} (${med.dosage})`}
+                              >
+                                {(isStart || isSunday) ? (med.brand_name || med.generic_name) : ''}
+                              </div>
+                            )
+                          })}
+                        </div>
+
+                        {/* Bottom row displaying Doctor Consults if any */}
                         {dayAppts.length > 0 && (
-                          <span className="w-1.5 h-1.5 rounded-full bg-rose-500 mr-1 animate-pulse"></span>
+                          <div className="text-[7.5px] font-extrabold text-[#0F766E] uppercase tracking-wider flex items-center gap-0.5 pl-0.5 pb-0.5">
+                            <span className="material-symbols-outlined text-[9px] font-bold">medical_services</span>
+                            Dr. {dayAppts[0].doctor_name?.split(' ').slice(-1)[0] || 'Consult'}
+                          </div>
                         )}
                       </div>
+                    )
+                  })}
+                </div>
 
-                      {/* Visual Multi-Day Medicine Tracks (Gantt/Period Tracker flow) */}
-                      <div className="flex flex-col gap-0.5 w-full flex-grow mt-1.5 overflow-hidden">
-                        {sortedMedicines.slice(0, 3).map((med, trackIdx) => {
-                          const isActive = isMedicineActiveOnDate(med, date)
-                          
-                          if (!isActive) {
-                            return <div key={med.id} className="h-[14px] bg-transparent"></div>
-                          }
+                {/* Mobile Day Selector & Agenda View (< 768px) */}
+                <div className="md:hidden flex flex-col gap-5">
+                  {/* Horizontal Scrollable Day Strip */}
+                  <div className="flex gap-2 overflow-x-auto pb-3 pt-1 border-b border-slate-100 scrollbar-none -mx-1 px-1">
+                    {daysGrid.filter(Boolean).map((date) => {
+                      const dayAppts = getDayAppointments(date)
+                      const dayActiveMeds = sortedMedicines.filter(m => isMedicineActiveOnDate(m, date))
+                      const dayIsToday = isToday(date)
+                      const dayIsSelected = isSelected(date)
 
-                          // Calculate edges for periods continuous flow
-                          const isStart = new Date(med.added_at).toDateString() === date.toDateString()
-                          const isEnd = med.course_end_date && new Date(med.course_end_date).toDateString() === date.toDateString()
-                          const isSunday = date.getDay() === 0
-                          const isSaturday = date.getDay() === 6
+                      return (
+                        <button
+                          key={date.toISOString()}
+                          type="button"
+                          onClick={() => setSelectedDate(date)}
+                          className={`flex-shrink-0 flex flex-col items-center justify-between w-14 h-16 rounded-xl border p-1.5 transition-all cursor-pointer select-none ${
+                            dayIsSelected
+                              ? 'bg-[#0F766E] text-white border-[#0F766E] shadow-sm font-bold'
+                              : dayIsToday
+                                ? 'bg-teal-50 border-teal-300 text-teal-800 font-bold'
+                                : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                          }`}
+                        >
+                          <span className={`text-[10px] uppercase font-bold tracking-wider ${dayIsSelected ? 'text-teal-100' : 'text-slate-400'}`}>
+                            {date.toLocaleDateString([], { weekday: 'short' })}
+                          </span>
+                          <span className="text-base font-extrabold my-0.5 leading-none">
+                            {date.getDate()}
+                          </span>
+                          <div className="flex items-center gap-1 h-1.5">
+                            {dayAppts.length > 0 && (
+                              <span className={`w-1.5 h-1.5 rounded-full ${dayIsSelected ? 'bg-amber-300' : 'bg-rose-500'}`}></span>
+                            )}
+                            {dayActiveMeds.length > 0 && (
+                              <span className={`w-1.5 h-1.5 rounded-full ${dayIsSelected ? 'bg-white' : 'bg-[#0F766E]'}`}></span>
+                            )}
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </div>
 
-                          return (
-                            <div 
-                              key={med.id}
-                              className={`h-[14px] text-[8px] font-bold px-1 py-0 flex items-center overflow-hidden truncate transition-all leading-none ${
-                                trackColors[trackIdx % trackColors.length]
-                              } ${
-                                isStart || isSunday ? 'rounded-l-md border-l border-current/25 pl-1.5' : 'border-l-0 pl-0.5'
-                              } ${
-                                isEnd || isSaturday ? 'rounded-r-md border-r border-current/25 pr-1.5' : 'border-r-0 pr-0.5'
-                              }`}
-                              title={`${med.brand_name || med.generic_name} (${med.dosage})`}
-                            >
-                              {(isStart || isSunday) ? (med.brand_name || med.generic_name) : ''}
-                            </div>
-                          )
-                        })}
-                      </div>
-
-                      {/* Bottom row displaying Doctor Consults if any */}
-                      {dayAppts.length > 0 && (
-                        <div className="text-[7.5px] font-extrabold text-[#0F766E] uppercase tracking-wider flex items-center gap-0.5 pl-0.5 pb-0.5">
-                          <span className="material-symbols-outlined text-[9px] font-bold">medical_services</span>
-                          Dr. {dayAppts[0].doctor_name?.split(' ').slice(-1)[0] || 'Consult'}
-                        </div>
+                  {/* Single-Column Agenda Card for Mobile */}
+                  <div className="bg-slate-50/70 border border-slate-200 rounded-xl p-4 text-left space-y-3">
+                    <div className="flex items-center justify-between border-b border-slate-200/60 pb-2">
+                      <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                        {selectedDate.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' })}
+                      </span>
+                      {isToday(selectedDate) && (
+                        <span className="text-[10px] font-bold bg-[#0F766E] text-white px-2 py-0.5 rounded-md">
+                          Today
+                        </span>
                       )}
                     </div>
-                  )
-                })}
-              </div>
+
+                    {(() => {
+                      const dayAppts = getDayAppointments(selectedDate)
+                      const dayActiveMeds = activeMedicines.filter(m => isMedicineActiveOnDate(m, selectedDate))
+                      const dayEnds = courseEnds.filter(c => {
+                        const cDate = new Date(c.course_end_date)
+                        return cDate.getDate() === selectedDate.getDate() &&
+                          cDate.getMonth() === selectedDate.getMonth() &&
+                          cDate.getFullYear() === selectedDate.getFullYear()
+                      })
+
+                      if (dayAppts.length === 0 && dayActiveMeds.length === 0 && dayEnds.length === 0) {
+                        return (
+                          <p className="text-xs text-slate-400 italic py-2">
+                            No appointments or active medication courses for this date.
+                          </p>
+                        )
+                      }
+
+                      return (
+                        <div className="space-y-3">
+                          {/* Appointments */}
+                          {dayAppts.map(appt => (
+                            <div key={appt.id} className="bg-white border border-teal-200 rounded-lg p-3 flex items-center gap-3">
+                              <span className="material-symbols-outlined text-[#0F766E] text-xl">stethoscope</span>
+                              <div className="min-w-0 flex-grow">
+                                <div className="text-xs font-bold text-slate-800">
+                                  Dr. {appt.doctor_name || 'Clinician'} ({appt.visit_type})
+                                </div>
+                                <div className="text-[11px] text-slate-500">
+                                  {new Date(appt.scheduled_date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+
+                          {/* Active Medications Summary */}
+                          {dayActiveMeds.length > 0 && (
+                            <div className="bg-white border border-slate-200 rounded-lg p-3">
+                              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">
+                                Active Regimen ({dayActiveMeds.length})
+                              </div>
+                              <div className="flex flex-wrap gap-1.5">
+                                {dayActiveMeds.map(med => (
+                                  <span key={med.id} className="text-xs bg-slate-100 border border-slate-200 text-slate-700 font-semibold px-2 py-1 rounded-md">
+                                    {med.brand_name || med.generic_name} ({med.dosage})
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Course Ends */}
+                          {dayEnds.map(end => (
+                            <div key={end.id} className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-center gap-2">
+                              <span className="material-symbols-outlined text-amber-600 text-base">warning</span>
+                              <span className="text-xs font-bold text-amber-800">
+                                {end.brand_name} Course End Milestone
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )
+                    })()}
+                  </div>
+                </div>
+              </>
             )}
 
             {/* Visual Medicine Color Code Legend */}

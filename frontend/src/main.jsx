@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import App from './App.jsx'
 import { AuthProvider } from './context/AuthContext.jsx'
+import ErrorBoundary from './components/ErrorBoundary.jsx'
 import './index.css'
 
 import { GoogleReCaptchaProvider } from 'react-google-recaptcha-v3'
@@ -19,12 +20,14 @@ const RECAPTCHA_SITE_KEY = import.meta.env.VITE_RECAPTCHA_SITE_KEY || '6LdNflstA
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <GoogleReCaptchaProvider reCaptchaKey={RECAPTCHA_SITE_KEY}>
-      <BrowserRouter>
-        <AuthProvider>
-          <App />
-        </AuthProvider>
-      </BrowserRouter>
-    </GoogleReCaptchaProvider>
+    <ErrorBoundary>
+      <GoogleReCaptchaProvider reCaptchaKey={RECAPTCHA_SITE_KEY}>
+        <BrowserRouter>
+          <AuthProvider>
+            <App />
+          </AuthProvider>
+        </BrowserRouter>
+      </GoogleReCaptchaProvider>
+    </ErrorBoundary>
   </StrictMode>,
 )
