@@ -162,7 +162,8 @@ export default function MedicineList() {
             tabs={tabList}
           />
           
-          <div className="flex items-center gap-2">
+          {/* Change View Option (Visible on Desktop >= 768px) */}
+          <div className="hidden md:flex items-center gap-2">
             <button
               onClick={() => {
                 setLayout('grid');
@@ -170,8 +171,8 @@ export default function MedicineList() {
               }}
               className={`p-2 rounded-xl border transition-all cursor-pointer ${
                 layout === 'grid' 
-                  ? 'bg-slate-105 border-slate-350 text-[#0f766e] font-black' 
-                  : 'bg-white border-slate-200 text-slate-505 hover:bg-slate-50'
+                  ? 'bg-slate-100 border-slate-300 text-[#0f766e] font-black' 
+                  : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
               }`}
               title="Grid View"
             >
@@ -184,8 +185,8 @@ export default function MedicineList() {
               }}
               className={`p-2 rounded-xl border transition-all cursor-pointer ${
                 layout === 'list' 
-                  ? 'bg-slate-105 border-slate-350 text-[#0f766e] font-black' 
-                  : 'bg-white border-slate-200 text-slate-505 hover:bg-slate-50'
+                  ? 'bg-slate-100 border-slate-300 text-[#0f766e] font-black' 
+                  : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
               }`}
               title="List View"
             >
@@ -246,7 +247,7 @@ export default function MedicineList() {
             <span className="material-symbols-outlined text-slate-300 text-4xl mb-2">medication</span>
             <p className="text-xs text-slate-400 italic">No {filter} medications found.</p>
           </div>
-        ) : layout === 'grid' ? (
+        ) : (layout === 'grid' || (typeof window !== 'undefined' && window.innerWidth < 768)) ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
             {filteredMeds.map((med) => {
               const isActive = med.status === 'active'
