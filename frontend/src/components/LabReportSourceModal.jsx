@@ -33,17 +33,43 @@ export function LabReportSourceModal({ report, onClose }) {
   const isRealFile = !!documentUrl;
   const isPdf = typeof documentUrl === 'string' && (documentUrl.includes('application/pdf') || documentUrl.toLowerCase().endsWith('.pdf'));
 
-  const downloadDocument = () => {
+  const downloadDocument = async () => {
     if (!documentUrl) return;
     const ext = isPdf ? 'pdf' : 'png';
     const filename = `LabReport_${(report.doctor_name || 'Clinical').replace(/[^a-zA-Z0-9]/g, '_')}.${ext}`;
 
-    const link = document.createElement('a');
-    link.href = documentUrl;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    try {
+      if (documentUrl.startsWith('data:') || documentUrl.startsWith('blob:')) {
+        const fetchRes = await fetch(documentUrl);
+        const blob = await fetchRes.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+        return;
+      }
+
+      const response = await fetch(documentUrl);
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+    } catch (err) {
+      console.warn('Direct blob download fallback:', err);
+      const newWin = window.open(documentUrl, '_blank');
+      if (!newWin) {
+        window.location.href = documentUrl;
+      }
+    }
   };
 
   return (
