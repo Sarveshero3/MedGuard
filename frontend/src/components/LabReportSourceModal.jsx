@@ -4,14 +4,9 @@ import { unescapeHTML } from '../lib/utils';
 export function LabReportSourceModal({ report, onClose }) {
   if (!report) return null;
 
-  // Lock background page scroll while popup is open on mobile/desktop
+  // Scroll to top when view opens
   useEffect(() => {
-    const originalOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-
-    return () => {
-      document.body.style.overflow = originalOverflow;
-    };
+    window.scrollTo({ top: 0, behavior: 'instant' });
   }, []);
 
   // Resolve best available original document photo/file source
@@ -55,9 +50,9 @@ export function LabReportSourceModal({ report, onClose }) {
     <>
       {/* Mobile Dedicated View Page (< 640px) */}
       <div className="fixed inset-0 z-50 bg-white flex flex-col h-full overflow-y-auto sm:hidden animate-fade-in text-left">
-        {/* Mobile Header Bar */}
+        {/* Mobile Sticky Header Bar */}
         <div className="bg-slate-50 border-b border-slate-200 px-4 py-3 flex items-center justify-between sticky top-0 z-20 shadow-xs">
-          <div className="flex items-center gap-2.5 min-w-0 pr-2">
+          <div className="flex items-center gap-2 min-w-0 pr-2">
             <button
               type="button"
               onClick={onClose}
@@ -75,19 +70,33 @@ export function LabReportSourceModal({ report, onClose }) {
               </p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 rounded-lg transition-colors cursor-pointer flex-shrink-0"
-            title="Close"
-          >
-            <span className="material-symbols-outlined text-xl">close</span>
-          </button>
+
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            {isRealFile && (
+              <button
+                type="button"
+                onClick={downloadDocument}
+                className="bg-[#0f766e] hover:bg-[#0d645c] text-white font-semibold text-xs px-2.5 py-1.5 rounded-lg flex items-center gap-1 shadow-2xs transition-all cursor-pointer"
+                title="Download Lab Report"
+              >
+                <span className="material-symbols-outlined text-base font-bold">download</span>
+                <span className="text-[11px] font-bold">Download</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1.5 text-slate-500 hover:text-slate-900 hover:bg-slate-200/70 rounded-lg transition-colors cursor-pointer"
+              title="Close"
+            >
+              <span className="material-symbols-outlined text-xl font-bold">close</span>
+            </button>
+          </div>
         </div>
 
-        {/* Mobile Page Body (Scrollable) */}
-        <div className="p-4 space-y-4 pb-12 overflow-y-auto">
-          {/* Document Display Container */}
+        {/* Mobile Page Content (Scrollable from top) */}
+        <div className="p-4 space-y-4 pb-8 overflow-y-auto">
+          {/* Document Display Container (Full resolution scrollable) */}
           <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-100/70 p-2 min-h-[300px] flex flex-col items-center justify-center">
             {isRealFile ? (
               isPdf ? (
@@ -97,7 +106,7 @@ export function LabReportSourceModal({ report, onClose }) {
                   className="w-full h-[450px] rounded border border-slate-200 shadow-xs"
                 >
                   <div className="text-center p-4 text-xs text-slate-500">
-                    PDF Document Preview — Use download button below to view.
+                    PDF Document Preview — Use download button above to view.
                   </div>
                 </object>
               ) : (
@@ -116,37 +125,6 @@ export function LabReportSourceModal({ report, onClose }) {
                 </p>
               </div>
             )}
-          </div>
-
-          {/* Action Buttons directly below image */}
-          <div className="pt-2 space-y-2.5">
-            {isRealFile ? (
-              <button
-                type="button"
-                onClick={downloadDocument}
-                className="w-full bg-[#0f766e] hover:bg-[#0d645c] text-white font-semibold text-sm py-3 px-4 rounded-xl flex items-center justify-center gap-2 cursor-pointer shadow-sm transition-all active:scale-[0.98]"
-              >
-                <span className="material-symbols-outlined text-lg">download</span>
-                Download Lab Report File
-              </button>
-            ) : (
-              <button
-                type="button"
-                disabled
-                className="w-full bg-slate-200 text-slate-400 font-semibold text-sm py-3 px-4 rounded-xl flex items-center justify-center gap-2 cursor-not-allowed"
-              >
-                <span className="material-symbols-outlined text-lg">download_off</span>
-                No File Attached
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={onClose}
-              className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-sm py-3 px-4 rounded-xl border border-slate-200 transition-all cursor-pointer flex items-center justify-center gap-1.5"
-            >
-              <span className="material-symbols-outlined text-lg">close</span>
-              Close Details
-            </button>
           </div>
         </div>
       </div>
