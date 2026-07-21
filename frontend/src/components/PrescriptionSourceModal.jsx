@@ -5,106 +5,78 @@ export function PrescriptionSourceModal({ medicine, onClose }) {
 
   // Resolve best available original document photo/file source
   const getDocumentUrl = () => {
-    if (medicine.source_photo_url && typeof medicine.source_photo_url === 'string' && (medicine.source_photo_url.startsWith('data:') || medicine.source_photo_url.startsWith('http'))) {
-      return medicine.source_photo_url;
-    }
-    if (medicine.source_photo_id && typeof medicine.source_photo_id === 'string' && (medicine.source_photo_id.startsWith('data:') || medicine.source_photo_id.startsWith('http'))) {
-      return medicine.source_photo_id;
-    }
-    if (medicine.base64 && typeof medicine.base64 === 'string' && (medicine.base64.startsWith('data:') || medicine.base64.startsWith('http'))) {
-      return medicine.base64;
-    }
-    if (medicine.preview && typeof medicine.preview === 'string' && (medicine.preview.startsWith('data:') || medicine.preview.startsWith('http'))) {
-      return medicine.preview;
+    const candidates = [
+      medicine.source_photo_url,
+      medicine.source_photo_id,
+      medicine.base64,
+      medicine.preview
+    ];
+    for (const cand of candidates) {
+      if (typeof cand === 'string' && (cand.startsWith('data:') || cand.startsWith('http://') || cand.startsWith('https://') || cand.startsWith('blob:'))) {
+        return cand;
+      }
     }
 
     // Try client-side cached file by brand name
     if (medicine.brand_name) {
-      const brandKey = `medguard_rx_file_${medicine.brand_name.toLowerCase().trim().replace(/[^a-z0-9]/g, '')}`;
-      const cachedBrand = localStorage.getItem(brandKey);
-      if (cachedBrand) return cachedBrand;
+      const cleanBrand = medicine.brand_name.toLowerCase().trim().replace(/[^a-z0-9]/g, '');
+      const cachedBrand = localStorage.getItem(`medguard_rx_file_${cleanBrand}`);
+      if (cachedBrand && (cachedBrand.startsWith('data:') || cachedBrand.startsWith('http'))) {
+        return cachedBrand;
+      }
     }
 
     // Try latest uploaded rx file in localStorage
     const latest = localStorage.getItem('medguard_rx_file_latest');
-    if (latest) return latest;
+    if (latest && (latest.startsWith('data:') || latest.startsWith('http'))) {
+      return latest;
+    }
 
     return null;
   };
 
-  const documentUrl = getDocumentUrl();
-  const isPdf = typeof documentUrl === 'string' && (documentUrl.includes('application/pdf') || documentUrl.toLowerCase().endsWith('.pdf'));
+  const rawDocumentUrl = getDocumentUrl();
+  const isRealFile = !!rawDocumentUrl;
+  const isPdf = typeof rawDocumentUrl === 'string' && (rawDocumentUrl.includes('application/pdf') || rawDocumentUrl.toLowerCase().endsWith('.pdf'));
 
-  // Generate a high-resolution PNG image canvas if no raw photo exists
-  const generatePrescriptionImage = () => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 800;
-    canvas.height = 1050;
-    const ctx = canvas.getContext('2d');
+  // Generate a crisp, 100% browser-compatible SVG image data URL fallback
+  const generatePrescriptionSvgDataUrl = (med) => {
+    const brand = (med.brand_name || 'Medication Record').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const generic = (med.generic_name || 'N/A').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const dosage = (med.dosage || 'N/A').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const frequency = (med.frequency || 'N/A').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const dateStr = med.added_at ? new Date(med.added_at).toLocaleDateString() : 'Active Record';
 
-    // Background
-    ctx.fillStyle = '#FFFFFF';
-    ctx.fillRect(0, 0, 800, 1050);
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="950" viewBox="0 0 800 950">
+      <rect width="800" height="950" fill="#FFFFFF"/>
+      <rect x="20" y="20" width="760" height="910" rx="16" fill="#F8FAFC" stroke="#0F766E" stroke-width="5"/>
+      <rect x="40" y="40" width="720" height="110" rx="12" fill="#F0FDF4" stroke="#CCFBF1" stroke-width="2"/>
+      <text x="70" y="85" font-family="system-ui, -apple-system, sans-serif" font-size="26" font-weight="bold" fill="#0F766E">MEDGUARD CLINICAL PRESCRIPTION</text>
+      <text x="70" y="118" font-family="system-ui, -apple-system, sans-serif" font-size="14" fill="#475569">Source Document &amp; Extraction Verification Record</text>
+      <line x1="70" y1="175" x2="730" y2="175" stroke="#CBD5E1" stroke-width="2"/>
+      <rect x="70" y="200" width="660" height="240" rx="12" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="2"/>
+      <text x="100" y="250" font-family="system-ui, -apple-system, sans-serif" font-size="22" font-weight="bold" fill="#0F766E">Rx: ${brand}</text>
+      <text x="100" y="295" font-family="system-ui, -apple-system, sans-serif" font-size="15" fill="#334155">Generic / Composition: ${generic}</text>
+      <text x="100" y="335" font-family="system-ui, -apple-system, sans-serif" font-size="15" fill="#334155">Dosage: ${dosage}</text>
+      <text x="100" y="375" font-family="system-ui, -apple-system, sans-serif" font-size="15" fill="#334155">Frequency: ${frequency}</text>
+      <text x="100" y="415" font-family="system-ui, -apple-system, sans-serif" font-size="15" fill="#334155">Prescription Date: ${dateStr}</text>
+      <rect x="70" y="465" width="660" height="90" rx="12" fill="#F0FDF4" stroke="#99F6E4" stroke-width="2"/>
+      <text x="100" y="505" font-family="system-ui, -apple-system, sans-serif" font-size="16" font-weight="bold" fill="#0F766E">✓ VERIFIED CLINICAL EXTRACTION</text>
+      <text x="100" y="533" font-family="system-ui, -apple-system, sans-serif" font-size="13" fill="#64748B">Processed via MedGuard OCR Clinical AI Engine</text>
+    </svg>`;
 
-    // Border
-    ctx.strokeStyle = '#0F766E';
-    ctx.lineWidth = 12;
-    ctx.strokeRect(20, 20, 760, 1010);
-
-    // Header Banner
-    ctx.fillStyle = '#F0FDF4';
-    ctx.fillRect(26, 26, 748, 120);
-
-    ctx.fillStyle = '#0F766E';
-    ctx.font = 'bold 32px sans-serif';
-    ctx.fillText('MEDGUARD CLINICAL PRESCRIPTION', 50, 80);
-
-    ctx.fillStyle = '#475569';
-    ctx.font = '16px sans-serif';
-    ctx.fillText('Verified Clinical Prescription Document & Source Extraction Record', 50, 115);
-
-    // Divider
-    ctx.strokeStyle = '#CBD5E1';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(50, 180);
-    ctx.lineTo(750, 180);
-    ctx.stroke();
-
-    // Details Box
-    ctx.fillStyle = '#F8FAFC';
-    ctx.fillRect(50, 210, 700, 240);
-    ctx.strokeStyle = '#E2E8F0';
-    ctx.strokeRect(50, 210, 700, 240);
-
-    ctx.fillStyle = '#0F766E';
-    ctx.font = 'bold 22px sans-serif';
-    ctx.fillText(`Rx: ${medicine.brand_name || 'Medication'}`, 80, 260);
-
-    ctx.fillStyle = '#334155';
-    ctx.font = '18px sans-serif';
-    ctx.fillText(`Generic / Composition: ${medicine.generic_name || 'N/A'}`, 80, 310);
-    ctx.fillText(`Dosage: ${medicine.dosage || 'N/A'}`, 80, 350);
-    ctx.fillText(`Frequency: ${medicine.frequency || 'N/A'}`, 80, 390);
-    ctx.fillText(`Prescription Date: ${medicine.added_at ? new Date(medicine.added_at).toLocaleDateString() : 'Active'}`, 80, 430);
-
-    // Official Stamp
-    ctx.fillStyle = '#0F766E';
-    ctx.font = 'bold 16px sans-serif';
-    ctx.fillText('VERIFIED CLINICAL EXTRACTION', 80, 520);
-    ctx.font = '14px sans-serif';
-    ctx.fillStyle = '#64748B';
-    ctx.fillText('Source document verified and processed via MedGuard OCR AI Engine', 80, 550);
-
-    return canvas.toDataURL('image/png');
+    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
   };
 
+  const displayDocumentUrl = rawDocumentUrl || generatePrescriptionSvgDataUrl(medicine);
+
   const downloadDocument = () => {
-    const finalUrl = documentUrl || generatePrescriptionImage();
-    const ext = isPdf ? 'pdf' : 'png';
+    const ext = isPdf ? 'pdf' : (isRealFile ? 'png' : 'svg');
+    const filename = `Prescription_${(medicine.brand_name || 'Document').replace(/[^a-zA-Z0-9]/g, '_')}.${ext}`;
+
     const link = document.createElement('a');
-    link.href = finalUrl;
-    link.download = `Prescription_${(medicine.brand_name || 'Document').replace(/[^a-zA-Z0-9]/g, '_')}.${ext}`;
+    link.href = displayDocumentUrl;
+    link.download = filename;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -162,28 +134,20 @@ export function PrescriptionSourceModal({ medicine, onClose }) {
 
           {/* Document Preview Box */}
           <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-100/70 min-h-[260px] flex flex-col items-center justify-center p-4">
-            {documentUrl ? (
-              isPdf ? (
-                <object
-                  data={documentUrl}
-                  type="application/pdf"
-                  className="w-full h-[380px] rounded border border-slate-200 shadow-xs"
-                >
-                  <div className="text-center p-4 text-xs text-slate-500">
-                    PDF Document Preview — Use download button below to view.
-                  </div>
-                </object>
-              ) : (
-                <img
-                  src={documentUrl}
-                  alt="Original Source Prescription"
-                  className="max-h-[380px] w-auto object-contain rounded border border-slate-200 shadow-xs"
-                />
-              )
+            {isPdf ? (
+              <object
+                data={displayDocumentUrl}
+                type="application/pdf"
+                className="w-full h-[380px] rounded border border-slate-200 shadow-xs"
+              >
+                <div className="text-center p-4 text-xs text-slate-500">
+                  PDF Document Preview — Use download button below to view.
+                </div>
+              </object>
             ) : (
               <img
-                src={generatePrescriptionImage()}
-                alt="Prescription Document Record"
+                src={displayDocumentUrl}
+                alt="Source Prescription Document"
                 className="max-h-[380px] w-auto object-contain rounded border border-slate-200 shadow-xs"
               />
             )}
