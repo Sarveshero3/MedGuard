@@ -104,7 +104,190 @@ export function MedicineReviewTable({
         )}
       </div>
 
-      <div className="overflow-x-auto border border-slate-200 rounded-xl shadow-xs">
+      {/* Mobile Card List (Visible < 768px) */}
+      <div className="block md:hidden space-y-4">
+        {medicines.map((med, index) => (
+          <div key={index} className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs space-y-3">
+            {/* Card Header */}
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+              <div className="flex items-center gap-2">
+                <span className="w-6 h-6 rounded-full bg-teal-50 text-[#0f766e] text-xs font-bold flex items-center justify-center border border-teal-200">
+                  {index + 1}
+                </span>
+                <span className="text-xs font-bold text-slate-700">Medicine #{index + 1}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => removeMedicine(index)}
+                className="text-slate-400 hover:text-red-500 hover:bg-red-50 p-1.5 rounded-lg transition-colors flex items-center justify-center"
+                title="Remove medicine"
+              >
+                <span className="material-symbols-outlined text-[18px]">delete</span>
+              </button>
+            </div>
+
+            {/* Brand Name Input */}
+            <div className="space-y-1">
+              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Brand Name</label>
+              <input
+                type="text"
+                required
+                value={med.brand_name}
+                onChange={(e) => updateMedicine(index, 'brand_name', e.target.value)}
+                onBlur={(e) => {
+                  if (onResolveBrand && e.target.value.trim()) {
+                    onResolveBrand(index, e.target.value);
+                  }
+                }}
+                className="w-full bg-slate-50 border border-slate-200 focus:border-[#0f766e] focus:bg-white rounded-lg px-3 py-2 text-xs font-medium text-slate-800 focus:outline-none transition-all"
+                placeholder="e.g. Taxim O"
+              />
+            </div>
+
+            {/* Generic / Composition */}
+            <div className="space-y-1">
+              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Generic / Composition</label>
+              {med.generic_name === 'no such medicine found' ? (
+                <div className="flex items-center justify-between bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">
+                  <span className="text-rose-600 font-semibold text-xs flex items-center gap-1">
+                    <span className="material-symbols-outlined text-sm">warning</span>
+                    No such medicine found
+                  </span>
+                  {onResolveBrand && med.brand_name && retryCount < 5 && (
+                    <button
+                      type="button"
+                      disabled={isRetrying}
+                      onClick={() => {
+                        setRetryCount((prev) => prev + 1);
+                        onResolveBrand(index, med.brand_name);
+                      }}
+                      className="text-xs text-[#0f766e] font-bold underline"
+                    >
+                      Retry
+                    </button>
+                  )}
+                </div>
+              ) : med.generic_name ? (
+                <div className="bg-slate-100/80 border border-slate-200 rounded-lg px-3 py-2 text-slate-800 font-bold text-xs leading-normal">
+                  {med.generic_name}
+                </div>
+              ) : med.brand_name ? (
+                <span className="text-[#0f766e] italic text-xs flex items-center gap-1.5 font-semibold py-1">
+                  <span className="w-2 h-2 rounded-full bg-[#0f766e] animate-ping"></span>
+                  Researching generic composition...
+                </span>
+              ) : (
+                <span className="text-slate-400 italic text-xs block py-1">Enter brand name above</span>
+              )}
+            </div>
+
+            {/* Dosage & Frequency Grid */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Dosage</label>
+                <input
+                  type="text"
+                  required
+                  value={med.dosage}
+                  onChange={(e) => {
+                    updateMedicine(index, {
+                      dosage: e.target.value,
+                      is_ai_dosage: false
+                    });
+                  }}
+                  className="w-full bg-slate-50 border border-slate-200 focus:border-[#0f766e] focus:bg-white rounded-lg px-3 py-2 text-xs font-medium text-slate-800 focus:outline-none transition-all"
+                  placeholder="e.g. 500mg"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Frequency</label>
+                <input
+                  type="text"
+                  required
+                  value={med.frequency}
+                  onChange={(e) => {
+                    updateMedicine(index, {
+                      frequency: e.target.value,
+                      is_ai_frequency: false
+                    });
+                  }}
+                  className="w-full bg-slate-50 border border-slate-200 focus:border-[#0f766e] focus:bg-white rounded-lg px-3 py-2 text-xs font-medium text-slate-800 focus:outline-none transition-all"
+                  placeholder="e.g. Twice daily"
+                />
+              </div>
+            </div>
+
+            {/* Duration Row */}
+            <div className="space-y-1 pt-1">
+              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Duration</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min="1"
+                  required={!med.is_lifetime}
+                  disabled={med.is_lifetime}
+                  value={med.is_lifetime ? '' : (med.duration_value || '')}
+                  onChange={(e) => {
+                    updateMedicine(index, {
+                      duration_value: e.target.value ? parseInt(e.target.value, 10) : '',
+                      is_ai_duration: false
+                    });
+                  }}
+                  className="w-20 bg-slate-50 border border-slate-200 focus:border-[#0f766e] focus:bg-white rounded-lg px-2.5 py-1.5 text-xs font-bold text-slate-800 text-center focus:outline-none disabled:opacity-50"
+                  placeholder="e.g. 5"
+                />
+                <select
+                  disabled={med.is_lifetime}
+                  value={med.is_lifetime ? '' : (med.duration_unit || 'day')}
+                  onChange={(e) => {
+                    updateMedicine(index, {
+                      duration_unit: e.target.value,
+                      is_ai_duration: false
+                    });
+                  }}
+                  className="bg-slate-50 border border-slate-200 focus:border-[#0f766e] focus:bg-white rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-800 focus:outline-none disabled:opacity-50"
+                >
+                  {med.is_lifetime && <option value=""></option>}
+                  <option value="day">days</option>
+                  <option value="week">weeks</option>
+                  <option value="month">months</option>
+                  <option value="year">years</option>
+                </select>
+                <label className="flex items-center gap-1 text-xs text-slate-600 cursor-pointer select-none font-semibold ml-auto">
+                  <input
+                    type="checkbox"
+                    checked={!!med.is_lifetime}
+                    onChange={(e) => {
+                      const val = e.target.checked;
+                      if (val) {
+                        updateMedicine(index, {
+                          is_lifetime: true,
+                          duration_value: null,
+                          duration_unit: null,
+                          is_ai_duration: false
+                        });
+                      } else {
+                        updateMedicine(index, {
+                          is_lifetime: false,
+                          duration_value: 1,
+                          duration_unit: 'day',
+                          is_ai_duration: false
+                        });
+                      }
+                    }}
+                    className="accent-[#0f766e] h-4 w-4 rounded cursor-pointer"
+                  />
+                  Lifetime
+                </label>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Desktop Table View (Visible >= 768px) */}
+      <div className="hidden md:block overflow-x-auto border border-slate-200 rounded-xl shadow-xs">
         <table className="w-full text-left text-xs text-slate-700 table-fixed">
           <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider font-semibold border-b border-slate-200">
             <tr>
@@ -376,7 +559,7 @@ export function MedicineReviewTable({
         <button
           type="button"
           onClick={addMedicine}
-          className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs px-4 py-2 rounded-lg flex items-center gap-1.5 cursor-pointer border border-slate-200 transition-colors"
+          className="w-full sm:w-auto bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5 cursor-pointer border border-slate-200 transition-colors"
         >
           <span className="material-symbols-outlined text-[16px]">add</span> Add Medicine
         </button>

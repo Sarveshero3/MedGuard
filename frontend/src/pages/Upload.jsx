@@ -551,20 +551,20 @@ export default function Upload() {
 
   return (
     <>
-      <main className="flex-grow flex flex-col items-center py-16 px-6 md:px-16 w-full max-w-[1440px] mx-auto animate-fade-in text-left">
+      <main className="flex-grow flex flex-col items-center py-6 sm:py-12 px-3 sm:px-8 w-full max-w-[1440px] mx-auto animate-fade-in text-left overflow-x-hidden">
 
         {/* Header */}
-        <header className="mb-12 w-full flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
+        <header className="mb-6 sm:mb-12 w-full flex flex-col md:flex-row justify-between items-start md:items-end gap-4 sm:gap-6">
           <div>
-            <h1 className="font-sans text-5xl font-bold text-slate-900 mb-4">Clinical Upload Center</h1>
-            <p className="text-sm text-slate-500">
+            <h1 className="font-sans text-3xl sm:text-5xl font-bold text-slate-900 mb-2 sm:mb-4">Clinical Upload Center</h1>
+            <p className="text-xs sm:text-sm text-slate-500">
               Digitize clinical prescriptions and lab analysis reports for safety checks and trend monitoring.
             </p>
           </div>
         </header>
 
         {/* Workspace Card */}
-        <div className="w-full bg-white border border-slate-200/80 rounded-2xl p-6 md:p-10 shadow-sm">
+        <div className="w-full bg-white border border-slate-200/80 rounded-2xl p-3 sm:p-6 md:p-10 shadow-sm overflow-x-hidden">
 
           {error && (
             <div className="mb-8 p-4 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
@@ -722,7 +722,7 @@ export default function Upload() {
                       return (
                         <div className="flex flex-col items-center justify-center p-8 border border-slate-200 rounded-2xl bg-white min-h-[420px] shadow-sm text-left max-w-xl mx-auto w-full">
                           <div className="flex items-center gap-3 mb-6 w-full border-b border-slate-100 pb-4">
-                            <span className="material-symbols-outlined text-2xl text-[#0f766e] animate-pulse">clinical_research</span>
+                            <span className="material-symbols-outlined text-2xl text-[#0f766e] animate-pulse">analytics</span>
                             <div>
                               <h3 className="text-sm font-bold text-slate-800">Clinical Agent Research Active</h3>
                               <p className="text-[10px] text-slate-500">Groq Consensus & Literature Search Loop</p>
