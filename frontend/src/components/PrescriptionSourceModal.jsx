@@ -87,29 +87,39 @@ export function PrescriptionSourceModal({ medicine, onClose }) {
   return (
     <>
       {/* Mobile Dedicated View Page (< 640px) */}
-      <div className="fixed inset-0 z-50 bg-white flex flex-col min-h-screen overflow-y-auto sm:hidden animate-fade-in text-left">
+      <div className="fixed inset-0 z-50 bg-white flex flex-col h-full overflow-y-auto sm:hidden animate-fade-in text-left">
         {/* Mobile Header Bar */}
-        <div className="bg-slate-50 border-b border-slate-200 px-4 py-3 flex items-center gap-3 sticky top-0 z-10">
+        <div className="bg-slate-50 border-b border-slate-200 px-4 py-3 flex items-center justify-between sticky top-0 z-20">
+          <div className="flex items-center gap-2.5 min-w-0 pr-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1 text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 rounded-lg transition-colors cursor-pointer flex-shrink-0"
+              title="Back to Medicines"
+            >
+              <span className="material-symbols-outlined text-2xl block">arrow_back</span>
+            </button>
+            <div className="min-w-0">
+              <h3 className="text-sm font-bold text-slate-800 leading-tight truncate">
+                {unescapeHTML(medicine.brand_name || 'Prescription Details')}
+              </h3>
+              <p className="text-[10px] text-slate-500 font-medium truncate">
+                Original Uploaded Prescription File
+              </p>
+            </div>
+          </div>
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 rounded-lg transition-colors cursor-pointer"
-            title="Back to Medicines"
+            className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 rounded-lg transition-colors cursor-pointer flex-shrink-0"
+            title="Close"
           >
-            <span className="material-symbols-outlined text-2xl">arrow_back</span>
+            <span className="material-symbols-outlined text-xl">close</span>
           </button>
-          <div className="min-w-0 flex-grow">
-            <h3 className="text-sm font-bold text-slate-800 leading-tight truncate">
-              {unescapeHTML(medicine.brand_name || 'Prescription Details')}
-            </h3>
-            <p className="text-[10px] text-slate-500 font-medium truncate">
-              Original Uploaded Prescription File
-            </p>
-          </div>
         </div>
 
-        {/* Mobile Page Content */}
-        <div className="p-4 space-y-4 flex-grow">
+        {/* Mobile Page Body */}
+        <div className="p-4 space-y-4 pb-24">
           {/* Medicine Details Summary */}
           <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-4 space-y-3 text-xs">
             <div>
@@ -120,7 +130,7 @@ export function PrescriptionSourceModal({ medicine, onClose }) {
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-0.5">Generic / Composition</span>
               <span className="text-slate-800 font-bold text-xs leading-relaxed block">{unescapeHTML(medicine.generic_name || 'N/A')}</span>
             </div>
-            <div className="grid grid-cols-2 gap-3 pt-1 border-t border-slate-200/60">
+            <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-200/60">
               <div>
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-0.5">Dosage</span>
                 <span className="text-slate-700 font-semibold">{unescapeHTML(medicine.dosage || 'N/A')}</span>
@@ -133,7 +143,7 @@ export function PrescriptionSourceModal({ medicine, onClose }) {
           </div>
 
           {/* Document Display Container */}
-          <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-100/70 p-2 min-h-[300px] flex flex-col items-center justify-center">
+          <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-100/70 p-2 min-h-[260px] flex flex-col items-center justify-center">
             {isRealFile ? (
               isPdf ? (
                 <object
@@ -169,33 +179,34 @@ export function PrescriptionSourceModal({ medicine, onClose }) {
           </div>
         </div>
 
-        {/* Mobile Sticky Footer */}
-        <div className="bg-slate-50 border-t border-slate-200 p-4 space-y-2 sticky bottom-0 z-10">
+        {/* Mobile Fixed Action Bar at Bottom */}
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 p-3 flex items-center justify-between gap-3 z-30 shadow-lg">
           {isRealFile ? (
             <button
               type="button"
               onClick={downloadDocument}
-              className="w-full bg-[#0f766e] hover:bg-[#0d645c] text-white font-semibold text-xs py-3 rounded-xl flex items-center justify-center gap-1.5 cursor-pointer shadow-sm transition-all"
+              className="flex-grow bg-[#0f766e] hover:bg-[#0d645c] text-white font-semibold text-xs py-2.5 px-3 rounded-xl flex items-center justify-center gap-1.5 cursor-pointer shadow-sm transition-all"
             >
               <span className="material-symbols-outlined text-sm">download</span>
-              Download Original File
+              Download File
             </button>
           ) : (
             <button
               type="button"
               disabled
-              className="w-full bg-slate-200 text-slate-400 font-semibold text-xs py-3 rounded-xl flex items-center justify-center gap-1.5 cursor-not-allowed"
+              className="flex-grow bg-slate-200 text-slate-400 font-semibold text-xs py-2.5 px-3 rounded-xl flex items-center justify-center gap-1.5 cursor-not-allowed"
             >
               <span className="material-symbols-outlined text-sm">download_off</span>
-              No File Attached
+              No File
             </button>
           )}
           <button
             type="button"
             onClick={onClose}
-            className="w-full bg-white text-slate-700 border border-slate-200 font-semibold text-xs py-2.5 rounded-xl transition-all cursor-pointer text-center block"
+            className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs px-4 py-2.5 rounded-xl border border-slate-200 transition-all cursor-pointer flex items-center gap-1"
           >
-            Back to Medicines
+            <span className="material-symbols-outlined text-sm">close</span>
+            Close
           </button>
         </div>
       </div>
