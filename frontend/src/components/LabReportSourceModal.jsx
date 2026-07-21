@@ -55,43 +55,39 @@ export function LabReportSourceModal({ report, onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-fade-in text-left overscroll-contain overflow-hidden">
-      <div className="bg-white border border-slate-200 rounded-2xl shadow-2xl max-w-3xl w-full overflow-hidden flex flex-col max-h-[85vh] sm:max-h-[90vh]">
-        {/* Modal Header */}
-        <div className="bg-slate-50 border-b border-slate-200 px-4 sm:px-6 py-3.5 sm:py-4 flex items-center justify-between flex-shrink-0">
-          <div className="flex items-center gap-2.5 min-w-0 pr-2">
-            <div className="w-8 h-8 rounded-lg bg-teal-50 border border-teal-200 flex items-center justify-center text-[#0f766e] flex-shrink-0">
-              <span className="material-symbols-outlined text-lg font-bold">science</span>
-            </div>
-            <div className="min-w-0">
-              <h3 className="text-sm sm:text-base font-bold text-slate-800 leading-tight truncate">
-                Source Lab Report: {report.doctor_name ? `Dr. ${report.doctor_name}` : 'Clinical Diagnostic Panel'}
-              </h3>
-              <p className="text-[10px] sm:text-[11px] text-slate-500 font-medium truncate">
-                Recorded on {report.uploaded_at ? new Date(report.uploaded_at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : 'Date Unspecified'}
-              </p>
-            </div>
-          </div>
+    <>
+      {/* Mobile Dedicated View Page (< 640px) */}
+      <div className="fixed inset-0 z-50 bg-white flex flex-col min-h-screen overflow-y-auto sm:hidden animate-fade-in text-left">
+        {/* Mobile Header Bar */}
+        <div className="bg-slate-50 border-b border-slate-200 px-4 py-3 flex items-center gap-3 sticky top-0 z-10">
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 rounded-lg transition-colors cursor-pointer flex-shrink-0"
-            title="Close Popup"
+            className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 rounded-lg transition-colors cursor-pointer"
+            title="Back to Reports"
           >
-            <span className="material-symbols-outlined text-xl">close</span>
+            <span className="material-symbols-outlined text-2xl">arrow_back</span>
           </button>
+          <div className="min-w-0 flex-grow">
+            <h3 className="text-sm font-bold text-slate-800 leading-tight truncate">
+              {report.doctor_name ? `Dr. ${report.doctor_name}` : 'Source Lab Report'}
+            </h3>
+            <p className="text-[10px] text-slate-500 font-medium truncate">
+              Recorded on {report.uploaded_at ? new Date(report.uploaded_at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : 'Date Unspecified'}
+            </p>
+          </div>
         </div>
 
-        {/* Modal Body */}
-        <div className="p-4 sm:p-6 overflow-y-auto space-y-4 sm:space-y-6 flex-grow overscroll-contain">
-          {/* Document Preview Box */}
-          <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-100/70 min-h-[200px] sm:min-h-[240px] flex flex-col items-center justify-center p-2 sm:p-4">
+        {/* Mobile Page Content */}
+        <div className="p-4 space-y-4 flex-grow">
+          {/* Document Display Container */}
+          <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-100/70 p-2 min-h-[300px] flex flex-col items-center justify-center">
             {isRealFile ? (
               isPdf ? (
                 <object
                   data={documentUrl}
                   type="application/pdf"
-                  className="w-full h-[240px] sm:h-[380px] rounded border border-slate-200 shadow-xs"
+                  className="w-full h-[380px] rounded border border-slate-200 shadow-xs"
                 >
                   <div className="text-center p-4 text-xs text-slate-500">
                     PDF Document Preview — Use download button below to view.
@@ -101,11 +97,11 @@ export function LabReportSourceModal({ report, onClose }) {
                 <img
                   src={documentUrl}
                   alt="Original Uploaded Lab Report Document"
-                  className="max-h-[240px] sm:max-h-[380px] w-auto object-contain rounded border border-slate-200 shadow-xs"
+                  className="w-full h-auto max-h-[460px] object-contain rounded border border-slate-200 shadow-xs"
                 />
               )
             ) : (
-              <div className="text-center p-6 sm:p-8 space-y-2">
+              <div className="text-center p-8 space-y-2">
                 <span className="material-symbols-outlined text-4xl text-slate-300">no_photography</span>
                 <p className="text-xs font-bold text-slate-700">No Original Lab Report Photo Attached</p>
                 <p className="text-[11px] text-slate-500 max-w-sm mx-auto leading-relaxed">
@@ -114,55 +110,24 @@ export function LabReportSourceModal({ report, onClose }) {
               </div>
             )}
           </div>
-
-          {/* Extracted Values Summary Table */}
-          <div className="border border-slate-200 rounded-xl overflow-hidden">
-            <table className="w-full text-left text-xs text-slate-700">
-              <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider font-semibold border-b border-slate-200">
-                <tr>
-                  <th className="px-4 py-2.5">Test Parameter</th>
-                  <th className="px-4 py-2.5">Measured Value</th>
-                  <th className="px-4 py-2.5">Panel</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 bg-white">
-                {report.values && report.values.length > 0 ? (
-                  report.values.map((val, idx) => (
-                    <tr key={idx} className="hover:bg-slate-50">
-                      <td className="px-4 py-3 font-bold text-slate-800">{unescapeHTML(val.test_type)}</td>
-                      <td className="px-4 py-3 font-extrabold text-[#0f766e]">
-                        {val.value} <span className="font-semibold text-slate-500 text-[11px]">{unescapeHTML(val.unit || '')}</span>
-                      </td>
-                      <td className="px-4 py-3 text-slate-500 font-medium">{unescapeHTML(val.panel_name || 'Standard Panel')}</td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={3} className="px-4 py-6 text-center text-slate-400 italic">No lab values recorded.</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
         </div>
 
-        {/* Modal Footer */}
-        <div className="bg-slate-50 border-t border-slate-200 px-6 py-3.5 flex items-center justify-between">
+        {/* Mobile Sticky Footer */}
+        <div className="bg-slate-50 border-t border-slate-200 p-4 space-y-2 sticky bottom-0 z-10">
           {isRealFile ? (
             <button
               type="button"
               onClick={downloadDocument}
-              className="bg-[#0f766e] hover:bg-[#0d645c] text-white font-semibold text-xs px-4 py-2 rounded-xl flex items-center gap-1.5 cursor-pointer shadow-sm transition-all hover:scale-[1.02] active:scale-[0.98]"
+              className="w-full bg-[#0f766e] hover:bg-[#0d645c] text-white font-semibold text-xs py-3 rounded-xl flex items-center justify-center gap-1.5 cursor-pointer shadow-sm transition-all"
             >
               <span className="material-symbols-outlined text-sm">download</span>
-              Download Original File
+              Download Lab Report File
             </button>
           ) : (
             <button
               type="button"
               disabled
-              className="bg-slate-200 text-slate-400 font-semibold text-xs px-4 py-2 rounded-xl flex items-center gap-1.5 cursor-not-allowed"
-              title="No original uploaded lab report file available for this record"
+              className="w-full bg-slate-200 text-slate-400 font-semibold text-xs py-3 rounded-xl flex items-center justify-center gap-1.5 cursor-not-allowed"
             >
               <span className="material-symbols-outlined text-sm">download_off</span>
               No File Attached
@@ -171,12 +136,107 @@ export function LabReportSourceModal({ report, onClose }) {
           <button
             type="button"
             onClick={onClose}
-            className="bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 font-semibold text-xs px-4 py-2 rounded-xl transition-all cursor-pointer"
+            className="w-full bg-white text-slate-700 border border-slate-200 font-semibold text-xs py-2.5 rounded-xl transition-all cursor-pointer text-center block"
           >
-            Close
+            Back to Lab Reports
           </button>
         </div>
       </div>
-    </div>
+
+      {/* Desktop Modal Popup (>= 640px) */}
+      <div className="hidden sm:flex fixed inset-0 z-50 items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fade-in text-left overscroll-contain overflow-hidden">
+        <div className="bg-white border border-slate-200 rounded-2xl shadow-2xl max-w-3xl w-full overflow-hidden flex flex-col max-h-[90vh]">
+          {/* Modal Header */}
+          <div className="bg-slate-50 border-b border-slate-200 px-6 py-4 flex items-center justify-between flex-shrink-0">
+            <div className="flex items-center gap-2.5 min-w-0 pr-2">
+              <div className="w-8 h-8 rounded-lg bg-teal-50 border border-teal-200 flex items-center justify-center text-[#0f766e] flex-shrink-0">
+                <span className="material-symbols-outlined text-lg font-bold">science</span>
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-base font-bold text-slate-800 leading-tight truncate">
+                  Source Lab Report: {report.doctor_name ? `Dr. ${report.doctor_name}` : 'Clinical Diagnostic Panel'}
+                </h3>
+                <p className="text-[11px] text-slate-500 font-medium truncate">
+                  Recorded on {report.uploaded_at ? new Date(report.uploaded_at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : 'Date Unspecified'}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 rounded-lg transition-colors cursor-pointer flex-shrink-0"
+              title="Close Popup"
+            >
+              <span className="material-symbols-outlined text-xl">close</span>
+            </button>
+          </div>
+
+          {/* Modal Body */}
+          <div className="p-6 overflow-y-auto space-y-6 flex-grow overscroll-contain">
+            {/* Document Preview Box */}
+            <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-100/70 min-h-[240px] flex flex-col items-center justify-center p-4">
+              {isRealFile ? (
+                isPdf ? (
+                  <object
+                    data={documentUrl}
+                    type="application/pdf"
+                    className="w-full h-[380px] rounded border border-slate-200 shadow-xs"
+                  >
+                    <div className="text-center p-4 text-xs text-slate-500">
+                      PDF Document Preview — Use download button below to view.
+                    </div>
+                  </object>
+                ) : (
+                  <img
+                    src={documentUrl}
+                    alt="Original Uploaded Lab Report Document"
+                    className="max-h-[380px] w-auto object-contain rounded border border-slate-200 shadow-xs"
+                  />
+                )
+              ) : (
+                <div className="text-center p-8 space-y-2">
+                  <span className="material-symbols-outlined text-4xl text-slate-300">no_photography</span>
+                  <p className="text-xs font-bold text-slate-700">No Original Lab Report Photo Attached</p>
+                  <p className="text-[11px] text-slate-500 max-w-sm mx-auto leading-relaxed">
+                    This report was created manually or prior to original document file upload.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Modal Footer */}
+          <div className="bg-slate-50 border-t border-slate-200 px-6 py-3.5 flex items-center justify-between flex-shrink-0">
+            {isRealFile ? (
+              <button
+                type="button"
+                onClick={downloadDocument}
+                className="bg-[#0f766e] hover:bg-[#0d645c] text-white font-semibold text-xs px-4 py-2 rounded-xl flex items-center gap-1.5 cursor-pointer shadow-sm transition-all hover:scale-[1.02] active:scale-[0.98]"
+              >
+                <span className="material-symbols-outlined text-sm">download</span>
+                Download Lab Report File
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled
+                className="bg-slate-200 text-slate-400 font-semibold text-xs px-4 py-2 rounded-xl flex items-center gap-1.5 cursor-not-allowed"
+                title="No original lab report file attached"
+              >
+                <span className="material-symbols-outlined text-sm">download_off</span>
+                No File Attached
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              className="bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 font-semibold text-xs px-4 py-2 rounded-xl transition-all cursor-pointer"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
   );
 }

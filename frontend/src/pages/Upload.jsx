@@ -854,9 +854,11 @@ export default function Upload() {
                           </div>
 
                           {activeExtraction.needs_follow_up && (
-                            <div className="mb-6 p-4 bg-sky-50 border-l-4 border-sky-500 text-sky-800 text-xs rounded-r-lg">
-                              <strong className="block mb-1 font-bold">Extraction Validation Mismatch:</strong>
-                              {activeExtraction.follow_up_question}
+                            <div className="mb-4 p-3 bg-amber-50 border-l-4 border-amber-500 text-amber-900 text-xs font-medium rounded-r-xl flex items-center gap-2 shadow-2xs">
+                              <span className="material-symbols-outlined text-amber-600 text-base font-bold flex-shrink-0">warning</span>
+                              <span>
+                                <strong className="font-bold">Extraction Validation Mismatch:</strong> Model A &amp; B extracted slight differences. Please verify the pre-filled fields below before saving.
+                              </span>
                             </div>
                           )}
 
