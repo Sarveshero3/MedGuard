@@ -128,7 +128,15 @@ export function MedicineReviewTable({
 
             {/* Brand Name Input */}
             <div className="space-y-1">
-              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Brand Name</label>
+              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center justify-between">
+                <span>Brand Name</span>
+                <InfoButton
+                  onShowInfo={onShowInfo}
+                  fieldName="Brand Name"
+                  description="The commercial brand or trade name of the medicine printed on the prescription."
+                  example="Taxim-O, Amoxil, Lipitor"
+                />
+              </label>
               <input
                 type="text"
                 required
@@ -146,7 +154,15 @@ export function MedicineReviewTable({
 
             {/* Generic / Composition */}
             <div className="space-y-1">
-              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Generic / Composition</label>
+              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center justify-between">
+                <span>Generic / Composition</span>
+                <InfoButton
+                  onShowInfo={onShowInfo}
+                  fieldName="Generic / Composition"
+                  description="The active chemical ingredient(s) contained in the medication."
+                  example="Cefixime, Amoxicillin, Atorvastatin"
+                />
+              </label>
               {med.generic_name === 'no such medicine found' ? (
                 <div className="flex items-center justify-between bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">
                   <span className="text-rose-600 font-semibold text-xs flex items-center gap-1">
@@ -184,7 +200,15 @@ export function MedicineReviewTable({
             {/* Dosage & Frequency Grid */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Dosage</label>
+                <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center justify-between">
+                  <span>Dosage</span>
+                  <InfoButton
+                    onShowInfo={onShowInfo}
+                    fieldName="Dosage"
+                    description="The amount and strength of the medication per dose, as printed on the prescription."
+                    example="500mg, 1 tablet, 5ml"
+                  />
+                </label>
                 <input
                   type="text"
                   required
@@ -201,7 +225,15 @@ export function MedicineReviewTable({
               </div>
 
               <div className="space-y-1">
-                <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Frequency</label>
+                <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center justify-between">
+                  <span>Frequency</span>
+                  <InfoButton
+                    onShowInfo={onShowInfo}
+                    fieldName="Frequency"
+                    description="How often the medication should be taken per day or per week."
+                    example="Twice daily, Once at bedtime, Every 8 hours"
+                  />
+                </label>
                 <input
                   type="text"
                   required
@@ -220,7 +252,15 @@ export function MedicineReviewTable({
 
             {/* Duration Row */}
             <div className="space-y-1 pt-1">
-              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Duration</label>
+              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center justify-between">
+                <span>Duration</span>
+                <InfoButton
+                  onShowInfo={onShowInfo}
+                  fieldName="Duration"
+                  description="The total period for which the medication is prescribed. Enter a number and select a unit (days/weeks/months/years), or check 'Lifetime' for ongoing medications."
+                  example="5 days, 2 weeks, 3 months"
+                />
+              </label>
               <div className="flex items-center gap-2">
                 <input
                   type="number"
