@@ -165,11 +165,21 @@ Minimal-claim JWT used solely to rotate and request new token pairs.
 
 ### 3. Confidence-Tier Thresholds (Section 16.3)
 
-*   **High Confidence (>= 85%)**: Extracted fields scoring >= 0.85 are processed automatically. Medicine resolution is attempted immediately.
-*   **Low Confidence / Ambiguous (< 85%)**:
-    *   If `brand_name`, `dosage`, or `duration_text` falls below `0.85`, the extraction triggers a follow-up question to the user in Phase 2 — never routed anywhere else.
-    *   If the LLM flags ambiguity in OCR, the system prompts the user with one follow-up clarification before completing the upload.
-    *   An unresolved brand name or low-confidence dosage must **never** reach the deterministic interaction checker silently.
+The extraction pipeline uses a **dual-model consensus approach**, not a single numeric threshold, to determine confidence. Two separate Groq models (`orchestrator_model` = `llama-3.3-70b-versatile`, `disambiguation_model` = `llama-3.1-8b-instant`) independently extract fields from OCR text. Their outputs are compared field-by-field:
+
+*   **Agreement (models agree on all fields)**: Synthetic confidence scores assigned:
+    *   **Prescriptions**: `brand_name: 0.95`, `dosage: 0.95`, `frequency: 0.95`, `prescribing_doctor: 0.98`
+    *   **Lab Reports**: `test_type: 0.96`, `value: 0.95`, `unit: 0.98`
+    *   `needs_follow_up` is set to `false`. Medicine resolution proceeds immediately.
+
+*   **Disagreement (mismatch detected on any field)**: Synthetic confidence scores are reduced:
+    *   **Prescriptions**: `brand_name: 0.70`, `dosage: 0.70`, `frequency: 0.70`, `prescribing_doctor: 0.95`
+    *   **Lab Reports**: `test_type: 0.70`, `value: 0.70`, `unit: 0.95`
+    *   `needs_follow_up` is set to `true`. A follow-up question describing the specific disagreement is surfaced to the user.
+
+*   **Document classification confidence**: If the classifier's confidence that a document is a prescription vs. lab report is `< 0.80`, `needs_classification_confirmation` is set to `true`, prompting the user to confirm the document type before extraction proceeds.
+
+*   **Safety invariant**: An unresolved brand name or a disagreement-flagged field must **never** reach the deterministic interaction checker silently. The user must confirm before any interaction check runs.
 
 ---
 

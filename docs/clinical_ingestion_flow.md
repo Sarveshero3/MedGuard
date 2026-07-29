@@ -19,7 +19,7 @@ sequenceDiagram
 
     %% Step 1: Upload Ingestion
     User->>UI: Selects medical files (Prescription/Lab) & clicks Upload
-    Note over UI: handleFileChange()<br/>Converts file to Base64
+    Note over UI: handleFileChange()<br/>Calculates SHA-256 hash of file
     UI->>Express: POST /api/documents/upload (FormData: photo, patient_id)
     
     %% Step 2: Idempotency & Ingestion
@@ -46,12 +46,12 @@ sequenceDiagram
 
     %% Step 5: AI Parsing & Classification (FastAPI Agent)
     Note over MS2: extract.py -> POST /api/extract/document
-    MS2->>MS2: _extract_text_from_file()<br/>Docling / PyPDF + VLM OCR
-    MS2->>MS2: Classify doc_type ("prescription" vs "lab_report") using GLM-5.2
+    MS2->>MS2: _extract_text_from_file()<br/>Docling / PyPDF + VLM OCR (Qwen-3.6-27B)
+    MS2->>MS2: Classify doc_type ("prescription" vs "lab_report") using Llama-3.3-70B
     
     alt Document is Classified as Prescription
         MS2->>MS2: prescription_graph.ainvoke()
-        Note over MS2: ocr_vlm_extraction_node<br/>ocr_vlm_lab_extraction_node<br/>Runs dual-model extraction & consensus checks<br/>resolves brands to generic names
+        Note over MS2: ocr_vlm_extraction_node<br/>Runs dual-model extraction & consensus checks<br/>(Llama-3.3-70B + Llama-3.1-8B)
         Note over MS2: proximity_auto_link_node<br/>Links to visits scheduled within ±3 days
     else Document is Classified as Lab Report
         MS2->>MS2: lab_report_graph.ainvoke()
@@ -79,7 +79,7 @@ sequenceDiagram
         %% Background Research Loop
         Note over Express: Async background research trigger (anonymous IIFE)
         Express->>MS2: POST /api/research-interaction (generic_a, generic_b)
-        MS2->>MS2: critique_research_graph.ainvoke()<br/>Critique-research review loop (GLM-5.2)
+        MS2->>MS2: critique_research_graph.ainvoke()<br/>Critique-research review loop (Llama-3.1-8B)
         MS2-->>Express: Research explanation markdown
         Express->>DB: INSERT INTO interaction_kb (Groq Research Agent)
         Express->>DB: INSERT INTO interaction_flags (status: shown)
@@ -139,13 +139,13 @@ sequenceDiagram
 ### Step 5: FastAPI Document Analysis & Graph Execution
 - **Source File**: [extract.py](../ms2-agent-service/app/api/extract.py)
 - **Logic**:
-  - Extracts document text using `DocumentConverter()` (Docling) for clean markdown export, or falls back to page OCR using the VLM vision model if it is a scanned image/PDF.
-  - Classifies the text using a GLM-5.2 orchestrator model with `classify_prompt` to get `doc_type` ("prescription" or "lab_report").
+  - Extracts document text using `DocumentConverter()` (Docling) for clean markdown export, or falls back to page OCR using the `vision_model` (Qwen-3.6-27B) if it is a scanned image/PDF.
+  - Classifies the text using a `orchestrator_model` (Llama-3.3-70B) with `classify_prompt` to get `doc_type` ("prescription" or "lab_report").
   - Routes the text to the appropriate LangGraph:
     - **Prescriptions**: Invokes `prescription_graph.ainvoke()` in [prescription_graph.py](../ms2-agent-service/app/graphs/prescription_graph.py).
-      - `ocr_vlm_extraction_node`: Calls GLM-5.2 and Llama-3.1-70B. Resolves medicine brands to generics using `resolve_brand_to_generic()` and verifies consensus. Mismatches flag `needs_follow_up: true`.
+      - `ocr_vlm_extraction_node`: Calls `orchestrator_model` (Llama-3.3-70B) and `disambiguation_model` (Llama-3.1-8B-instant). Compares field outputs and checks consensus. Mismatches flag `needs_follow_up: true` and assign low confidence (`0.70`).
       - `proximity_auto_link_node`: Searches dates in `existing_visits` context. If scheduled within 3 days, it auto-sets `proposed_visit_id`.
-    - **Lab Reports**: Invokes `lab_report_graph.ainvoke()` in [lab_report_graph.py](../ms2-agent-service/app/graphs/lab_report_graph.py) to parse values and run date-proximity linking.
+    - **Lab Reports**: Invokes `lab_report_graph.ainvoke()` in [lab_report_graph.py](../ms2-agent-service/app/graphs/lab_report_graph.py) to parse values, check consensus, and run date-proximity linking.
   - Returns output JSON, which the worker publishes via `sendSSEMessage()`.
 
 ### Step 6: Confirmation, Normalization & Safety Checks

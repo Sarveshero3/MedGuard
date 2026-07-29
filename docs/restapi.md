@@ -16,7 +16,8 @@ The MedGuard Core API runs on port 4000 (`http://localhost:4000/api`) and expose
     "email": "john.doe@example.com",
     "password": "securePassword123!",
     "role": "patient",
-    "consentGranted": true
+    "consentGranted": true,
+    "recaptchaToken": "reCAPTCHA_TOKEN_STRING"
   }
   ```
 - **Response**:
@@ -27,11 +28,11 @@ The MedGuard Core API runs on port 4000 (`http://localhost:4000/api`) and expose
       "accessToken": "JWT_ACCESS_TOKEN_STRING",
       "refreshToken": "JWT_REFRESH_TOKEN_STRING",
       "user": {
-        "id": "1",
+        "id": "user-uuid-v4",
         "name": "John Doe",
         "email": "john.doe@example.com",
         "role": "patient",
-        "isEmailVerified": true
+        "isEmailVerified": false
       }
     }
   }
@@ -39,17 +40,39 @@ The MedGuard Core API runs on port 4000 (`http://localhost:4000/api`) and expose
 
 ### 2. Login User
 - **Endpoint**: `POST /auth/login`
-- **Description**: Authenticates a user and returns a signed JWT.
+- **Description**: Authenticates a user credentials. Initiates the 2-step verification (MFA) flow.
 - **Request Body**:
   ```json
   {
     "email": "john.doe@example.com",
-    "password": "securePassword123!"
+    "password": "securePassword123!",
+    "recaptchaToken": "reCAPTCHA_TOKEN_STRING"
   }
   ```
-- **Response**: Same as registration (or returns `requiresMfa: true` and `mfaToken` if 2FA is pending).
+- **Response**:
+  ```json
+  {
+    "success": true,
+    "data": {
+      "requiresMfa": true,
+      "mfaToken": "JWT_MFA_PENDING_TOKEN_STRING"
+    }
+  }
+  ```
 
-### 3. Refresh Access Token
+### 3. Verify MFA Code
+- **Endpoint**: `POST /auth/verify-mfa`
+- **Description**: Verifies the 6-digit one-time passcode sent to the user's email.
+- **Request Body**:
+  ```json
+  {
+    "mfaToken": "JWT_MFA_PENDING_TOKEN_STRING",
+    "otp": "123456"
+  }
+  ```
+- **Response**: Returns the final `accessToken` and `refreshToken` pair.
+
+### 4. Refresh Access Token
 - **Endpoint**: `POST /auth/refresh`
 - **Description**: Rotates the refresh token and issues a new access + refresh token pair.
 - **Request Body**:
@@ -58,209 +81,120 @@ The MedGuard Core API runs on port 4000 (`http://localhost:4000/api`) and expose
     "refreshToken": "JWT_REFRESH_TOKEN_STRING"
   }
   ```
-- **Response**:
-  ```json
-  {
-    "success": true,
-    "data": {
-      "accessToken": "NEW_JWT_ACCESS_TOKEN_STRING",
-      "refreshToken": "NEW_JWT_REFRESH_TOKEN_STRING"
-    }
-  }
-  ```
+- **Response**: Returns a new `accessToken` and `refreshToken` pair.
 
-### 4. Logout / Revoke Token
+### 5. Logout User
 - **Endpoint**: `POST /auth/logout`
-- **Description**: Explicitly revokes the refresh token on the server side.
+- **Description**: Explicitly revokes the refresh token in the database.
 - **Request Body**:
   ```json
   {
     "refreshToken": "JWT_REFRESH_TOKEN_STRING"
   }
   ```
-- **Response**:
-  ```json
-  {
-    "success": true,
-    "data": {
-      "message": "Logged out successfully."
-    }
-  }
-  ```
+- **Response**: Success message.
 
 ---
 
-## Regimen & Prescription Endpoints (`/medicines`, `/prescriptions`)
+## Regimen & Ingestion Endpoints (`/documents`, `/medicines`)
 
-### 1. Upload Prescription
-- **Endpoint**: `POST /prescriptions/upload`
-- **Description**: Uploads a prescription image/PDF to extract regimen information.
-- **Request Parameters**: Multipart form data with a `prescription` file and optional `patient_id`.
+### 1. Unified Document Upload (Prescription or Lab Report)
+- **Endpoint**: `POST /api/documents/upload`
+- **Description**: Uploads a medical document photo or PDF, hashes it for deduplication, and enqueues a background extraction job.
+- **Request Parameters**: Multipart form data with a `photo` file and `patient_id`.
 - **Response**:
   ```json
   {
     "success": true,
     "data": {
-      "extracted_data": {
-        "brand_name": "Amoxicillin",
-        "dosage": "500mg",
-        "frequency": "Three times daily",
-        "duration_text": "7 days",
-        "visit_type": "general",
-        "course_end_date": "2026-07-22"
-      }
+      "jobId": "job-id-string"
     }
   }
   ```
 
-### 2. Retrieve Medicines List
-- **Endpoint**: `GET /medicines`
-- **Query Parameters**: `patient_id` (string)
-- **Response**:
+### 2. Stream Job Status (Server-Sent Events)
+- **Endpoint**: `GET /api/status/stream/:jobId`
+- **Description**: Real-time event stream tracking extraction progress. Yields `queued`, `active`, and `completed` events (with final extraction payload).
+
+### 3. Save Medicines Batch
+- **Endpoint**: `POST /api/medicines/batch`
+- **Description**: Confirms and saves reviewed medicine extraction results.
+- **Request Body**:
   ```json
   {
-    "success": true,
-    "data": [
+    "patient_id": "patient-uuid-v4",
+    "medicines": [
       {
-        "id": "1",
-        "brand_name": "Amoxicillin",
-        "dosage": "500mg",
-        "frequency": "Three times daily",
-        "status": "active",
-        "course_end_date": "2026-07-22"
+        "brand_name": "Lipitor",
+        "generic_name": "atorvastatin",
+        "dosage": "10mg",
+        "frequency": "Once daily",
+        "duration_text": "30 days"
       }
     ]
   }
   ```
 
-### 3. Update Medicine Status
-- **Endpoint**: `PUT /medicines/:id/status`
+### 4. Batch Delete Medicines
+- **Endpoint**: `POST /api/medicines/batch-delete`
+- **Description**: Deletes multiple active medicines at once.
 - **Request Body**:
   ```json
   {
-    "status": "active" | "discontinued"
+    "ids": ["medicine-uuid-1", "medicine-uuid-2"]
   }
   ```
-- **Response**:
-  ```json
-  {
-    "success": true
-  }
-  ```
+
+### 5. Check Active Medicine List
+- **Endpoint**: `GET /api/medicines`
+- **Query Parameters**: `patient_id` (string)
 
 ---
 
-## Clinical Alerts & Timeline Endpoints (`/alerts`, `/calendar`, `/appointments`)
+## Lab Reports & Norm Endpoints (`/lab-reports`)
 
-### 1. Retrieve Active Alerts
-- **Endpoint**: `GET /alerts`
-- **Query Parameters**: `patient_id` (string)
-- **Response**:
+### 1. Confirm Lab Report
+- **Endpoint**: `POST /api/lab-reports/confirm`
+- **Description**: Saves parsed lab values and calculates trend comparisons.
+- **Request Body**:
   ```json
   {
-    "success": true,
-    "data": [
+    "patient_id": "patient-uuid-v4",
+    "panel_name": "Complete Glycation Panel",
+    "values": [
       {
-        "id": "1",
-        "severity": "monitor_closely",
-        "trigger_cause": "Amoxicillin and Ibuprofen interaction",
-        "status": "shown",
-        "created_at": "2026-07-14T12:00:00Z"
+        "test_type": "HbA1c",
+        "value": 7.2,
+        "unit": "%",
+        "ref_range": "4.0 - 5.6"
       }
     ]
   }
   ```
 
-### 2. Acknowledge Alert
-- **Endpoint**: `PUT /alerts/:id/acknowledge`
-- **Response**:
-  ```json
-  {
-    "success": true
-  }
-  ```
-
-### 3. Retrieve Calendar Timeline
-- **Endpoint**: `GET /calendar`
-- **Query Parameters**: `patient_id` (string)
-- **Response**: Returns merged appointments and course-end timeline actions.
-
-### 4. Book Appointment
-- **Endpoint**: `POST /appointments`
-- **Request Body**:
-  ```json
-  {
-    "patient_id": "1",
-    "doctor_name": "Dr. Sarah Smith",
-    "visit_type": "general",
-    "scheduled_date": "2026-07-20T14:30:00Z",
-    "notes": "Follow-up consultation"
-  }
-  ```
-- **Response**:
-  ```json
-  {
-    "success": true
-  }
-  ```
-
-### 5. Generate Visit Prep Brief
-- **Endpoint**: `GET /visits/:id/brief`
-- **Description**: Generates or retrieves a cached clinical prep brief for the given visit. Pass `?regenerate=true` to bypass cache.
-- **Response**:
-  ```json
-  {
-    "success": true,
-    "data": {
-      "brief": {
-        "id": "brief-uuid-string",
-        "patient_id": "patient-uuid-string",
-        "visit_id": "visit-uuid-string",
-        "content": {
-          "visit_type": "Cardiology",
-          "generated_at": "2026-07-16T21:37:34.000Z",
-          "active_medicines": [
-            "Glycomet 500mg (Metformin) — 500mg, Twice daily after meals",
-            "Coumadin 5mg (Warfarin) — 5mg, Once daily at bedtime"
-          ],
-          "warnings": [],
-          "lab_trends": [
-            "📈 HbA1c: 7.2 → 7.6 %",
-            "📈 Creatinine: 1.1 → 1.5 mg/dL"
-          ],
-          "suggested_questions": [
-            "My HbA1c and Creatinine values have been rising — what could be causing this?"
-          ],
-          "disclaimer": "Discuss this with your doctor — this is not a diagnosis."
-        }
-      },
-      "cached": false
-    }
-  }
-  ```
+### 2. Get Lab reports
+- **Endpoint**: `GET /api/lab-reports`
+- **Query Parameters**: `patient_id`
 
 ---
 
-## Consent & Privacy Endpoints (`/consent`)
+## Clinical Alerts & Briefs Endpoints (`/alerts`, `/briefs`)
 
-### 1. Get Consent Settings
-- **Endpoint**: `GET /consent`
-- **Response**:
-  ```json
-  {
-    "success": true,
-    "data": {
-      "consentGranted": true
-    }
-  }
-  ```
+### 1. Get Drug Alerts
+- **Endpoint**: `GET /api/alerts`
+- **Query Parameters**: `patient_id`
 
-### 2. Update Consent Settings
-- **Endpoint**: `PUT /consent`
+### 2. Generate Visit Prep Brief
+- **Endpoint**: `POST /api/briefs`
+- **Description**: Compiles a visit brief based on active medicines, safety warnings, and lab value trends.
 - **Request Body**:
   ```json
   {
-    "consentGranted": false
+    "patient_id": "patient-uuid-v4",
+    "visit_date": "2026-07-20"
   }
   ```
-- **Response**: Same as GET.
+
+### 3. Get Visit Prep Briefs
+- **Endpoint**: `GET /api/briefs`
+- **Query Parameters**: `patient_id`
