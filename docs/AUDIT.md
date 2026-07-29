@@ -54,6 +54,9 @@ Every file and directory deleted was searched across the entire repository using
 | `ms2-agent-service/test_tavily_grounding.py` | File | Redundant duplicate test script. | `grep_search("test_tavily_grounding")` -> **0 matches** |
 | `ms2-agent-service/test_image.jpeg` | File | Unreferenced test image in service root. | `grep_search("test_image.jpeg")` -> **0 code matches** |
 | `ms1-core-api/infra` | Directory | Empty directory inside `ms1-core-api`. | Directory contents -> **Empty** |
+| `docs/handoff-m2.md` | File | Legacy Milestone 2 status snapshot document. | `grep_search("handoff-m2.md")` -> **0 matches** |
+| `docs/handover.md` | File | Legacy Milestone 1/2 handover notes document. | `grep_search("handover.md")` -> **0 matches** |
+| `docs/primer.md` | File | Legacy preliminary draft primer document. | `grep_search("primer.md")` -> **0 matches** |
 
 ---
 

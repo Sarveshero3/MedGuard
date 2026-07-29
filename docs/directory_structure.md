@@ -61,6 +61,7 @@ MedGuard/
 ---
 
 ### 2. Documentation Directory (`docs/`)
+- **[AUDIT.md](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/docs/AUDIT.md)**: Deep Audit, Cleanup & Architecture Verification Report.
 - **[architecture.md](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/docs/architecture.md)**: System topology, security specifications, and AWS/Vercel guides.
 - **[appflow.md](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/docs/appflow.md)**: Sequential data paths (Auth, AI uploads, Safety alerts, Briefs).
 - **[ms1-core-api.md](file:///c:/Users/Sarvesh/Desktop/hackathon/MedGuard/docs/ms1-core-api.md)**: Node backend architecture.
