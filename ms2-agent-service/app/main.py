@@ -69,4 +69,3 @@ app.add_middleware(
 # ── Routers ──────────────────────────────────────────────────
 app.include_router(health_router, tags=["Health"])
 app.include_router(extract_router, prefix="/api", tags=["Extraction"])
-

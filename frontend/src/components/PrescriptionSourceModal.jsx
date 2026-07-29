@@ -2,12 +2,14 @@ import React, { useEffect } from 'react';
 import { unescapeHTML } from '../lib/utils';
 
 export function PrescriptionSourceModal({ medicine, onClose }) {
-  if (!medicine) return null;
-
   // Scroll to top when view opens
   useEffect(() => {
-    window.scrollTo({ top: 0, behavior: 'instant' });
-  }, []);
+    if (medicine) {
+      window.scrollTo({ top: 0, behavior: 'instant' });
+    }
+  }, [medicine]);
+
+  if (!medicine) return null;
 
   // Resolve best available original document photo/file source
   const getDocumentUrl = () => {

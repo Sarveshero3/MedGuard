@@ -232,7 +232,6 @@ Do not include markdown formatting. Return only the raw JSON object."""
             friendly_message = "Analysis failed due to an internal error. You can skip to manual entry."
         
         # Return success=False with friendly error details
-        from fastapi import HTTPException
         raise HTTPException(
             status_code=400,
             detail={"message": friendly_message}

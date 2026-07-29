@@ -2,12 +2,14 @@ import React, { useEffect } from 'react';
 import { unescapeHTML } from '../lib/utils';
 
 export function LabReportSourceModal({ report, onClose }) {
-  if (!report) return null;
-
   // Scroll to top when view opens
   useEffect(() => {
-    window.scrollTo({ top: 0, behavior: 'instant' });
-  }, []);
+    if (report) {
+      window.scrollTo({ top: 0, behavior: 'instant' });
+    }
+  }, [report]);
+
+  if (!report) return null;
 
   // Resolve best available original document photo/file source
   const getDocumentUrl = () => {
