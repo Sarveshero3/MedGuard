@@ -74,8 +74,12 @@ async function start() {
     if (process.env.CLEAN_DB === 'true') {
       logger.info('DB_CLEANUP_START', 'CLEAN_DB is set to true. Resetting schema and cleaning up old data...');
       const fs = require('fs');
-      const initSqlPath = path.resolve(__dirname, '../infra/db/init.sql');
-      if (fs.existsSync(initSqlPath)) {
+      const candidatePaths = [
+        path.resolve(__dirname, '../infra/db/init.sql'),
+        path.resolve(__dirname, '../../infra/db/init.sql'),
+      ];
+      const initSqlPath = candidatePaths.find((p) => fs.existsSync(p));
+      if (initSqlPath) {
         const initSql = fs.readFileSync(initSqlPath, 'utf8');
         const client = await pool.connect();
         try {
@@ -95,7 +99,7 @@ async function start() {
           client.release();
         }
       } else {
-        logger.warn('DB_CLEANUP_WARNING', `Could not find init.sql at ${initSqlPath}. Skipping cleanup.`);
+        logger.warn('DB_CLEANUP_WARNING', `Could not find init.sql at ${candidatePaths.join(' or ')}. Skipping cleanup.`);
       }
     }
 

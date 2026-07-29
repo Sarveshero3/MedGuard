@@ -1,3 +1,4 @@
+import re
 from typing import TypedDict, List, Dict, Any
 from langgraph.graph import StateGraph, END
 from app.services.client import get_client
@@ -93,7 +94,6 @@ def ocr_vlm_extraction_node(state: PrescriptionState) -> Dict[str, Any]:
         brand = med.get("brand_name")
         
         # Robust validation and resolution of range-to-max for duration_value
-        import re
         duration_text = med.get("duration_text") or ""
         raw_val = med.get("duration_value")
         clean_val = None

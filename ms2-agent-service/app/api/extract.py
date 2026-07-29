@@ -4,7 +4,11 @@ import tempfile
 import logging
 import os
 import base64
-from fastapi import APIRouter, UploadFile, File, Form
+import re
+import asyncio
+import urllib.request
+import urllib.parse
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from pydantic import BaseModel
 from typing import List, Dict, Any
 from pypdf import PdfReader
@@ -421,7 +425,6 @@ RESOLUTION_METRICS = {
 
 
 def clean_brand_name(brand: str) -> str:
-    import re
     # Remove common dosage form prefixes (case-insensitive)
     cleaned = re.sub(r'^(tab\b|cap\b|syp\b|tablet\b|capsule\b|syrup\b|inj\b|injection\b|ors\b|dr\b|dtr\b)\.?\s*', '', brand, flags=re.IGNORECASE)
     # Remove strength numbers and parenthetical noise e.g. (1mg), (Electral), (200), (;)
@@ -436,10 +439,6 @@ async def _search_web_grounding(query: str) -> str:
     if not settings.tavily_api_key:
         logger.error("TAVILY_API_KEY is not configured; web grounding is unavailable.")
         return "No results found."
-
-    import urllib.request
-    import urllib.parse
-    import asyncio
 
     url = "https://api.tavily.com/search"
     payload = {
